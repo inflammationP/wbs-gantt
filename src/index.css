@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-bg text-fg font-sans antialiased;
+  font-size: 13px;
+  overflow: hidden;
+}
+
+/* Industrial scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2a333d #0a0d10;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: #0a0d10;
+}
+*::-webkit-scrollbar-thumb {
+  background: #2a333d;
+  border: 2px solid #0a0d10;
+  border-radius: 6px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #3a4550;
+}
+*::-webkit-scrollbar-corner {
+  background: #0a0d10;
+}
+
+::selection {
+  background: rgba(70, 184, 230, 0.25);
+}
