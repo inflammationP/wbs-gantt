@@ -2,12 +2,11 @@ import type { MouseEvent } from 'react'
 import { ChevronDown, ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react'
 import { Row } from '../../lib/tree'
 import { PRIORITY_META, STATUS_META } from '../../lib/ui'
-import { formatShort } from '../../lib/dates'
 import { useStore } from '../../store/useStore'
 
 export const LEFT_WIDTH = 560
 
-const COLS = { chevron: 20, wbs: 44, start: 78, end: 78, progress: 48, status: 96, actions: 60 }
+const COLS = { chevron: 20, wbs: 44, progress: 48, status: 96, actions: 60 }
 
 // Per-level indentation applied to the whole tree area (chevron + WBS + name).
 const INDENT = 16
@@ -65,9 +64,6 @@ export function RowLeft({ row, onAddChild, onEdit, onContext }: Props) {
         <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: prio.color }} title={`${prio.label} priority`} />
         <span className={`truncate ${row.hasKids ? 'font-semibold text-fg' : 'text-fg/90'}`}>{row.task.name}</span>
       </div>
-      {/* start / end */}
-      <div className="shrink-0 flex items-center font-mono text-[11px] text-muted" style={{ width: COLS.start }}>{row.eff.start ? formatShort(row.eff.start) : '—'}</div>
-      <div className="shrink-0 flex items-center font-mono text-[11px] text-muted" style={{ width: COLS.end }}>{row.eff.end ? formatShort(row.eff.end) : 'TBD'}</div>
       {/* progress */}
       <div className="shrink-0 flex items-center justify-end pr-2 font-mono text-[11px] text-fg" style={{ width: COLS.progress }}>
         {row.eff.progress}%
@@ -100,8 +96,6 @@ export function LeftHeader() {
       <div className="shrink-0" style={{ width: COLS.chevron }} />
       <div className="shrink-0 flex items-end justify-end pr-1.5 pb-1.5" style={{ width: COLS.wbs }}>WBS</div>
       <div className="flex-1 min-w-0 flex items-end pb-1.5 pr-1">Task</div>
-      <div className="shrink-0 flex items-end pb-1.5" style={{ width: COLS.start }}>Start</div>
-      <div className="shrink-0 flex items-end pb-1.5" style={{ width: COLS.end }}>End</div>
       <div className="shrink-0 flex items-end justify-end pr-2 pb-1.5" style={{ width: COLS.progress }}>Prog</div>
       <div className="shrink-0 flex items-end pb-1.5" style={{ width: COLS.status }}>Status</div>
       <div className="shrink-0 flex items-end justify-center pb-1.5 gap-1" style={{ width: COLS.actions }}>
