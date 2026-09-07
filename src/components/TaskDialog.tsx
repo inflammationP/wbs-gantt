@@ -38,7 +38,7 @@ export function TaskDialog({ onClose, existing, defaultParentId }: Props) {
 
   const setType = (type: TaskType) => {
     if (type === 'long-term') {
-      setForm((f) => ({ ...f, type, startDate: '', endDate: '' }))
+      setForm((f) => ({ ...f, type, startDate: f.startDate || todayISO(), endDate: '' }))
     } else {
       setForm((f) => ({ ...f, type, startDate: f.startDate || todayISO(), endDate: f.endDate || todayISO() }))
     }
@@ -59,7 +59,6 @@ export function TaskDialog({ onClose, existing, defaultParentId }: Props) {
     let s: string | null = form.startDate || todayISO()
     let e: string | null = form.endDate || s
     if (isLT) {
-      s = null
       e = null
     } else if (s && e && s > e) {
       const tmp = s
@@ -115,13 +114,15 @@ export function TaskDialog({ onClose, existing, defaultParentId }: Props) {
           </select>
         </Field>
 
-        {!isLT ? (
+        {isLT ? (
+          <Field label="Start date">
+            <input type="date" className={inputCls} value={form.startDate ?? ''} onChange={(e) => set('startDate', e.target.value)} />
+          </Field>
+        ) : (
           <div className="grid grid-cols-2 gap-3">
             <Field label="Start date"><input type="date" className={inputCls} value={form.startDate ?? ''} onChange={(e) => set('startDate', e.target.value)} /></Field>
             <Field label="End date"><input type="date" className={inputCls} value={form.endDate ?? ''} onChange={(e) => set('endDate', e.target.value)} /></Field>
           </div>
-        ) : (
-          <div className="text-[11px] text-dim">Long-term goal — no start or end date.</div>
         )}
 
         <Field label={`Progress — ${form.progress}%`}>

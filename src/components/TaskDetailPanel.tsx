@@ -38,7 +38,7 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
   )
 
   const setType = (v: TaskType) => {
-    if (v === 'long-term') up({ type: v, startDate: null, endDate: null })
+    if (v === 'long-term') up({ type: v, endDate: null, startDate: task.startDate ?? todayISO() })
     else up({ type: v, startDate: task.startDate ?? todayISO(), endDate: task.endDate ?? todayISO() })
   }
 
@@ -104,7 +104,16 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
 
         {/* dates */}
         {isLT ? (
-          <div className="text-[11px] text-dim">Long-term goal — no fixed dates.</div>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block">
+              <span className="text-[10px] uppercase tracking-wider text-dim">Start</span>
+              <input type="date" className={inputCls + ' mt-1'} value={task.startDate ?? ''} onChange={(e) => up({ startDate: e.target.value || null })} />
+            </label>
+            <label className="block">
+              <span className="text-[10px] uppercase tracking-wider text-dim">End</span>
+              <div className="mt-1 h-8 px-2 flex items-center bg-panel2 border border-border rounded-[3px] text-[12px] text-muted">TBD</div>
+            </label>
+          </div>
         ) : (
           <>
             <div className="grid grid-cols-2 gap-3">

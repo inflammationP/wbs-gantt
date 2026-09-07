@@ -41,8 +41,8 @@ export function TasksPage() {
                 <span className="font-mono text-[11px] text-dim">{wbs.get(t.id) ?? ''}</span>
                 <span className="truncate text-fg/90">{t.name}</span>
                 <span className="text-muted truncate">{projectName(t.projectId)}</span>
-                <span className="font-mono text-[11px] text-muted">{t.startDate ? formatShort(t.startDate) : '∞'}</span>
-                <span className="font-mono text-[11px] text-muted">{t.endDate ? formatShort(t.endDate) : '—'}</span>
+                <span className="font-mono text-[11px] text-muted">{t.startDate ? formatShort(t.startDate) : '—'}</span>
+                <span className="font-mono text-[11px] text-muted">{t.endDate ? formatShort(t.endDate) : 'TBD'}</span>
                 <span className="font-mono text-[11px] text-fg">{t.progress}%</span>
                 <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-[2px]" style={{ background: meta.color }} /><span style={{ color: meta.text }}>{meta.label}</span></span>
                 <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full" style={{ background: prio.color }} /><span className="text-muted">{prio.label}</span></span>

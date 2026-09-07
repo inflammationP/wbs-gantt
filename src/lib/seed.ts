@@ -27,9 +27,9 @@ const PROJECTS: Project[] = [
 ]
 
 const SPECS: Spec[] = [
-  // Long-term goals (open-ended, no dates)
-  { id: 'fr-goal', name: 'Become conversational', project: 'french', type: 'long-term', progress: 25, status: 'in-progress' },
-  { id: 'pe-goal', name: 'Master embedded systems', project: 'personal', type: 'long-term', progress: 0, status: 'not-started' },
+  // Long-term goals (open-ended: real start, no end)
+  { id: 'fr-goal', name: 'Become conversational', project: 'french', type: 'long-term', start: -120, progress: 25, status: 'in-progress' },
+  { id: 'pe-goal', name: 'Master embedded systems', project: 'personal', type: 'long-term', start: -200, progress: 0, status: 'not-started' },
   { id: 'pe-goal-robot', name: 'Build a personal robot', parent: 'pe-goal', project: 'personal', start: 30, end: 90, progress: 0, status: 'not-started' },
 
   // STM32
@@ -79,7 +79,7 @@ export function buildSeed(): { projects: Project[]; tasks: Task[] } {
     parentId: s.parent ?? null,
     projectId: s.project,
     type: s.type ?? 'phase',
-    startDate: s.type === 'long-term' ? null : d(s.start ?? 0),
+    startDate: d(s.start ?? 0),
     endDate: s.type === 'long-term' ? null : d(s.end ?? 0),
     progress: s.progress,
     status: s.status,

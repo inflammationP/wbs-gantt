@@ -8,16 +8,20 @@ export interface PersistedData {
 const KEY = 'wbs-gantt.v1'
 
 // Normalize data loaded from disk or import: backfill the `type` field and
-// coerce missing dates to null so older saved data keeps working.
+// coerce missing dates to null so older saved data keeps working. Long-term
+// goals always have an unresolved (null) end date.
 function normalize(data: PersistedData): PersistedData {
   return {
     projects: data.projects,
-    tasks: data.tasks.map((t) => ({
-      ...t,
-      type: t.type === 'long-term' ? 'long-term' : 'phase',
-      startDate: t.startDate ?? null,
-      endDate: t.endDate ?? null,
-    })),
+    tasks: data.tasks.map((t) => {
+      const isLT = t.type === 'long-term'
+      return {
+        ...t,
+        type: isLT ? 'long-term' : 'phase',
+        startDate: t.startDate ?? null,
+        endDate: isLT ? null : (t.endDate ?? null),
+      }
+    }),
   }
 }
 

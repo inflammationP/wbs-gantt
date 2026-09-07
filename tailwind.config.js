@@ -7,6 +7,7 @@ export default {
         bg: '#0a0d10',
         panel: '#11151b',
         panel2: '#171c23',
+        stripe: '#151b22',
         border: '#242c35',
         line: '#1b222a',
         fg: '#e6edf3',

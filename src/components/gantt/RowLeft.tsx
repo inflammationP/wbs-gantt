@@ -9,6 +9,9 @@ export const LEFT_WIDTH = 560
 
 const COLS = { chevron: 20, wbs: 44, start: 78, end: 78, progress: 48, status: 96, actions: 60 }
 
+// Per-level indentation applied to the whole tree area (chevron + WBS + name).
+const INDENT = 16
+
 interface Props {
   row: Row
   onAddChild: (row: Row) => void
@@ -43,6 +46,8 @@ export function RowLeft({ row, onAddChild, onEdit, onContext }: Props) {
         onContext(e, row)
       }}
     >
+      {/* hierarchy indent — shifts chevron + WBS + name as a unit */}
+      <div className="shrink-0" style={{ width: row.depth * INDENT }} />
       {/* chevron */}
       <div className="shrink-0 flex items-center justify-center" style={{ width: COLS.chevron }}>
         {row.hasKids ? (
@@ -56,13 +61,13 @@ export function RowLeft({ row, onAddChild, onEdit, onContext }: Props) {
         {row.wbs}
       </div>
       {/* name */}
-      <div className="flex-1 min-w-0 flex items-center gap-1.5 pr-1" style={{ paddingLeft: row.depth * 13 }}>
+      <div className="flex-1 min-w-0 flex items-center gap-1.5 pr-1">
         <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: prio.color }} title={`${prio.label} priority`} />
         <span className={`truncate ${row.hasKids ? 'font-semibold text-fg' : 'text-fg/90'}`}>{row.task.name}</span>
       </div>
       {/* start / end */}
-      <div className="shrink-0 flex items-center font-mono text-[11px] text-muted" style={{ width: COLS.start }}>{row.eff.start ? formatShort(row.eff.start) : '∞'}</div>
-      <div className="shrink-0 flex items-center font-mono text-[11px] text-muted" style={{ width: COLS.end }}>{row.eff.end ? formatShort(row.eff.end) : '—'}</div>
+      <div className="shrink-0 flex items-center font-mono text-[11px] text-muted" style={{ width: COLS.start }}>{row.eff.start ? formatShort(row.eff.start) : '—'}</div>
+      <div className="shrink-0 flex items-center font-mono text-[11px] text-muted" style={{ width: COLS.end }}>{row.eff.end ? formatShort(row.eff.end) : 'TBD'}</div>
       {/* progress */}
       <div className="shrink-0 flex items-center justify-end pr-2 font-mono text-[11px] text-fg" style={{ width: COLS.progress }}>
         {row.eff.progress}%

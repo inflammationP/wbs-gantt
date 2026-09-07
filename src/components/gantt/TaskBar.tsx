@@ -3,7 +3,7 @@ import type { MouseEvent, PointerEvent } from 'react'
 import { Row } from '../../lib/tree'
 import { Timeline, dateToX } from '../../lib/timeline'
 import { addDays, addUnit, toDate, toISO } from '../../lib/dates'
-import { STATUS_META } from '../../lib/ui'
+import { STATUS_META, hexToRgba } from '../../lib/ui'
 import { useStore } from '../../store/useStore'
 
 type DragMode = 'move' | 'start' | 'end'
@@ -32,13 +32,16 @@ export function TaskBar({ row, timeline, rowH }: { row: Row; timeline: Timeline;
   const isParent = row.hasKids
   const meta = STATUS_META[row.eff.status]
 
-  const { left, width } = useMemo(() => {
-    if (isGoal || row.eff.start == null || row.eff.end == null) return { left: 0, width: 0 }
-    const s = toDate(row.eff.start)
-    const eEnd = addDays(toDate(row.eff.end), 1)
-    const l = dateToX(s, timeline)
-    return { left: l, width: dateToX(eEnd, timeline) - l }
-  }, [isGoal, row.eff.start, row.eff.end, timeline])
+  // Continuous x position of the start (and, for phases, the exclusive end).
+  const startX = useMemo(() => {
+    if (row.eff.start == null) return 0
+    return dateToX(toDate(row.eff.start), timeline)
+  }, [row.eff.start, timeline])
+
+  const endX = useMemo(() => {
+    if (isGoal || row.eff.end == null) return timeline.totalWidth
+    return dateToX(addDays(toDate(row.eff.end), 1), timeline)
+  }, [isGoal, row.eff.end, timeline])
 
   const onClickBar = (e: MouseEvent<HTMLDivElement>) => {
     e.stopPropagation()
@@ -49,37 +52,9 @@ export function TaskBar({ row, timeline, rowH }: { row: Row; timeline: Timeline;
     setSelected(row.id)
   }
 
-  if (isGoal) {
-    const top = (rowH - 14) / 2
-    return (
-      <div
-        className="absolute select-none cursor-pointer"
-        style={{ left: 6, right: 6, top, height: 14 }}
-        onClick={onClickBar}
-        title={`${row.wbs} ${row.task.name} — long-term goal`}
-      >
-        <span
-          className="absolute left-0 top-1/2 -translate-y-1/2 font-mono text-[12px] leading-none"
-          style={{ color: meta.color }}
-        >
-          ∞
-        </span>
-        <div className="absolute left-5 right-6 top-1/2 border-t border-dashed" style={{ borderColor: meta.color, opacity: 0.55 }} />
-        <span
-          className="absolute right-0 top-1/2 -translate-y-1/2 text-[11px] leading-none"
-          style={{ color: meta.color, opacity: 0.9 }}
-        >
-          →
-        </span>
-      </div>
-    )
-  }
-
-  const barH = isParent ? 10 : 18
-  const top = (rowH - barH) / 2
-
   const begin = (mode: DragMode) => (e: PointerEvent<HTMLDivElement>) => {
     if (isParent && mode !== 'move') return
+    if (isGoal && mode !== 'move') return
     e.stopPropagation()
     e.preventDefault()
     const el = barRef.current
@@ -88,10 +63,10 @@ export function TaskBar({ row, timeline, rowH }: { row: Row; timeline: Timeline;
     dragRef.current = {
       mode,
       startX: e.clientX,
-      origLeft: left,
-      origWidth: width,
-      origStart: toDate(row.eff.start!),
-      origEnd: toDate(row.eff.end!),
+      origLeft: isGoal ? Math.max(0, startX) : startX,
+      origWidth: isGoal ? timeline.totalWidth - Math.max(0, startX) : endX - startX,
+      origStart: toDate(row.eff.start ?? toISO(new Date())),
+      origEnd: toDate(row.eff.end ?? toISO(new Date())),
       unit: timeline.unit,
       colWidth: timeline.colWidth,
       moved: false,
@@ -106,7 +81,14 @@ export function TaskBar({ row, timeline, rowH }: { row: Row; timeline: Timeline;
     if (Math.abs(deltaPx) > 2) d.moved = true
     const deltaUnits = Math.round(deltaPx / d.colWidth)
     if (d.mode === 'move') {
-      el.style.left = `${d.origLeft + deltaUnits * d.colWidth}px`
+      const nl = d.origLeft + deltaUnits * d.colWidth
+      if (isGoal) {
+        const cl = Math.max(0, nl)
+        el.style.left = `${cl}px`
+        el.style.width = `${timeline.totalWidth - cl}px`
+      } else {
+        el.style.left = `${nl}px`
+      }
     } else if (d.mode === 'start') {
       const nl = d.origLeft + deltaUnits * d.colWidth
       const nw = d.origWidth - deltaUnits * d.colWidth
@@ -137,6 +119,52 @@ export function TaskBar({ row, timeline, rowH }: { row: Row; timeline: Timeline;
     }
   }
 
+  if (isGoal) {
+    if (row.eff.start == null) return null
+    const gLeft = Math.max(0, startX)
+    const gWidth = timeline.totalWidth - gLeft
+    if (gWidth <= 0) return null
+    const top = (rowH - 14) / 2
+    const fadeColor = hexToRgba(meta.color, 0.3)
+    return (
+      <div
+        ref={barRef}
+        className="absolute cursor-grab active:cursor-grabbing select-none"
+        style={{
+          left: gLeft,
+          width: gWidth,
+          top,
+          height: 14,
+          background: `linear-gradient(to right, ${meta.color}, ${fadeColor})`,
+          borderRadius: '2px',
+          zIndex: 10,
+        }}
+        onPointerDown={begin('move')}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onClick={onClickBar}
+        title={`${row.wbs} ${row.task.name} — ongoing`}
+      >
+        {/* start marker */}
+        <div className="absolute inset-y-0 left-0 w-[2px]" style={{ background: meta.color }} />
+        {/* label */}
+        <div
+          className="absolute inset-0 flex items-center px-2 text-[10px] text-fg truncate pointer-events-none"
+          style={{ textShadow: '0 1px 2px rgba(0,0,0,0.7)' }}
+        >
+          {row.task.name}
+        </div>
+        {/* ongoing hint */}
+        <span className="absolute inset-y-0 right-1.5 flex items-center text-[11px] pointer-events-none" style={{ color: fadeColor }}>→</span>
+      </div>
+    )
+  }
+
+  const barH = isParent ? 10 : 18
+  const top = (rowH - barH) / 2
+  const left = startX
+  const width = endX - startX
+
   return (
     <div
       ref={barRef}
@@ -148,6 +176,7 @@ export function TaskBar({ row, timeline, rowH }: { row: Row; timeline: Timeline;
         height: barH,
         background: meta.dim,
         borderColor: meta.color,
+        zIndex: 10,
       }}
       onPointerDown={begin('move')}
       onPointerMove={onMove}

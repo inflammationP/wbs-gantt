@@ -71,24 +71,26 @@ export function effectiveStates(tasks: Task[]): Map<string, EffState> {
     const kids = children.get(t.id) ?? []
     let r: EffState
     if (kids.length === 0) {
-      r = { start: t.startDate, end: t.endDate, progress: t.progress, status: t.status }
+      // Leaf: long-term goals always have a real start and an unresolved end.
+      r = t.type === 'long-term'
+        ? { start: t.startDate, end: null, progress: t.progress, status: t.status }
+        : { start: t.startDate, end: t.endDate, progress: t.progress, status: t.status }
     } else {
       const es = kids.map(derive)
       const progress = Math.round(es.reduce((s, e) => s + e.progress, 0) / es.length)
       const status = deriveStatus(es.map((e) => e.status))
-      let start: string | null
-      let end: string | null
       if (t.type === 'long-term') {
-        // Long-term goals never derive dates from their children.
-        start = null
-        end = null
+        // Long-term goal: anchored to its own start, no resolved end.
+        r = { start: t.startDate, end: null, progress, status }
       } else {
         const starts = es.map((e) => e.start).filter((s): s is string => s != null)
         const ends = es.map((e) => e.end).filter((s): s is string => s != null)
-        start = starts.length ? starts.reduce((min, s) => (s < min ? s : min), starts[0]) : t.startDate
-        end = ends.length ? ends.reduce((max, s) => (s > max ? s : max), ends[0]) : t.endDate
+        const start = starts.length ? starts.reduce((min, s) => (s < min ? s : min), starts[0]) : t.startDate
+        // If any child has an unresolved end, the parent's end is unresolved too
+        // (never converted into Infinity or a fake date).
+        const end = es.some((e) => e.end == null) ? null : (ends.length ? ends.reduce((max, s) => (s > max ? s : max), ends[0]) : t.endDate)
+        r = { start, end, progress, status }
       }
-      r = { start, end, progress, status }
     }
     cache.set(t.id, r)
     return r

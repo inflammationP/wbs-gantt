@@ -1,4 +1,4 @@
-export type Unit = 'hour' | 'day' | 'week' | 'month'
+export type Unit = 'hour' | 'day' | 'week' | 'month' | 'quarter' | 'year'
 
 export const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -84,6 +84,15 @@ export function isToday(d: Date): boolean {
   return diffDays(d, new Date()) === 0
 }
 
+/** ISO-8601 week number (Monday = day 1, week 1 contains Jan 4). */
+export function isoWeekNumber(d: Date): number {
+  const target = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  const dayNum = ((target.getDay() + 6) % 7) + 1 // 1=Mon .. 7=Sun
+  target.setDate(target.getDate() + 4 - dayNum) // Thursday of this week
+  const yearStart = new Date(target.getFullYear(), 0, 1)
+  return Math.ceil((((target.getTime() - yearStart.getTime()) / 86400000) + 1) / 7)
+}
+
 export function addUnit(d: Date, unit: Unit, n: number): Date {
   switch (unit) {
     case 'hour':
@@ -94,6 +103,10 @@ export function addUnit(d: Date, unit: Unit, n: number): Date {
       return addWeeks(d, n)
     case 'month':
       return addMonths(d, n)
+    case 'quarter':
+      return addMonths(d, n * 3)
+    case 'year':
+      return addMonths(d, n * 12)
   }
 }
 

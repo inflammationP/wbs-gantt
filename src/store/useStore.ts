@@ -29,6 +29,7 @@ interface State {
   tasks: Task[]
   activeView: AppView
   selectedTaskId: string | null
+  selectedProjectId: string | null
   viewMode: ViewMode
   anchorISO: string
   expanded: Record<string, boolean>
@@ -36,6 +37,7 @@ interface State {
 
   setActiveView: (v: AppView) => void
   setSelected: (id: string | null) => void
+  setSelectedProject: (id: string | null) => void
   setViewMode: (m: ViewMode) => void
   goPrev: () => void
   goNext: () => void
@@ -74,13 +76,15 @@ export const useStore = create<State>()((set) => ({
   tasks: initial.tasks,
   activeView: 'gantt',
   selectedTaskId: null,
+  selectedProjectId: null,
   viewMode: 'month',
   anchorISO: todayISO(),
   expanded: {},
   projectFilter: 'all',
 
   setActiveView: (v) => set({ activeView: v }),
-  setSelected: (id) => set({ selectedTaskId: id }),
+  setSelected: (id) => set({ selectedTaskId: id, selectedProjectId: null }),
+  setSelectedProject: (id) => set({ selectedProjectId: id, selectedTaskId: null }),
   setViewMode: (m) => set({ viewMode: m }),
   goPrev: () => set((s) => ({ anchorISO: shiftAnchor(s.viewMode, s.anchorISO, -1) })),
   goNext: () => set((s) => ({ anchorISO: shiftAnchor(s.viewMode, s.anchorISO, 1) })),
@@ -109,6 +113,7 @@ export const useStore = create<State>()((set) => ({
       tasks: s.tasks.filter((t) => t.projectId !== id),
       projectFilter: s.projectFilter === id ? 'all' : s.projectFilter,
       selectedTaskId: null,
+      selectedProjectId: null,
     })),
 
   addTask: (input) => {
@@ -126,7 +131,7 @@ export const useStore = create<State>()((set) => ({
         parentId: input.parentId ?? null,
         projectId,
         type: isLT ? 'long-term' : 'phase',
-        startDate: isLT ? null : input.startDate,
+        startDate: input.startDate,
         endDate: isLT ? null : input.endDate,
         progress: Math.max(0, Math.min(100, input.progress ?? 0)),
         status: input.status ?? 'not-started',
@@ -169,19 +174,26 @@ export const useStore = create<State>()((set) => ({
   moveTask: (id, deltaUnits, unit) =>
     set((s) => {
       const task = s.tasks.find((t) => t.id === id)
-      if (!task || task.type === 'long-term' || deltaUnits === 0) return {}
+      if (!task || deltaUnits === 0) return {}
       const ids = new Set(hasChildren(s.tasks, id) ? collectDescendants(s.tasks, id).concat(id) : [id])
       return {
-        tasks: s.tasks.map((t) =>
-          ids.has(t.id) && t.startDate != null && t.endDate != null
-            ? {
-                ...t,
-                startDate: addUnitISO(t.startDate, unit, deltaUnits),
-                endDate: addUnitISO(t.endDate, unit, deltaUnits),
-                updatedAt: new Date().toISOString(),
-              }
-            : t,
-        ),
+        tasks: s.tasks.map((t) => {
+          if (!ids.has(t.id)) return t
+          const updatedAt = new Date().toISOString()
+          if (t.type === 'long-term') {
+            // Long-term goals shift their start only; the end stays unresolved.
+            return t.startDate != null ? { ...t, startDate: addUnitISO(t.startDate, unit, deltaUnits), updatedAt } : t
+          }
+          if (t.startDate != null && t.endDate != null) {
+            return {
+              ...t,
+              startDate: addUnitISO(t.startDate, unit, deltaUnits),
+              endDate: addUnitISO(t.endDate, unit, deltaUnits),
+              updatedAt,
+            }
+          }
+          return t
+        }),
       }
     }),
   resizeTask: (id, startISO, endISO) =>
@@ -203,7 +215,7 @@ export const useStore = create<State>()((set) => ({
     }),
 
   importData: (data) =>
-    set({ projects: data.projects, tasks: data.tasks, selectedTaskId: null, projectFilter: 'all' }),
+    set({ projects: data.projects, tasks: data.tasks, selectedTaskId: null, selectedProjectId: null, projectFilter: 'all' }),
 }))
 
 // Persist data (only) to localStorage whenever projects/tasks change.

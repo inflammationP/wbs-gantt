@@ -23,12 +23,17 @@ export function Sidebar() {
   const tasks = useStore((s) => s.tasks)
   const projectFilter = useStore((s) => s.projectFilter)
   const setProjectFilter = useStore((s) => s.setProjectFilter)
+  const setSelected = useStore((s) => s.setSelected)
+  const setSelectedProject = useStore((s) => s.setSelectedProject)
   const expandAll = useStore((s) => s.expandAll)
   const collapseAll = useStore((s) => s.collapseAll)
   const importData = useStore((s) => s.importData)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  const taskCount = (pid: string) => tasks.filter((t) => t.projectId === pid).length
+  const projectProgress = (pid: string) => {
+    const leaves = tasks.filter((t) => t.projectId === pid && !tasks.some((x) => x.parentId === t.id))
+    return leaves.length ? Math.round(leaves.reduce((s, t) => s + t.progress, 0) / leaves.length) : 0
+  }
 
   const handleExport = () => {
     const blob = new Blob([exportJson({ projects, tasks })], { type: 'application/json' })
@@ -94,7 +99,7 @@ export function Sidebar() {
           </div>
         </div>
         <button
-          onClick={() => { setProjectFilter('all'); setActiveView('gantt') }}
+          onClick={() => { setSelectedProject(null); setProjectFilter('all'); setActiveView('gantt') }}
           className={`w-full flex items-center gap-2 px-2 h-8 rounded-[3px] text-[12px] ${
             projectFilter === 'all' ? 'bg-panel2 text-fg' : 'text-muted hover:text-fg hover:bg-panel2/50'
           }`}
@@ -103,19 +108,27 @@ export function Sidebar() {
           <span className="flex-1 text-left">All projects</span>
           <span className="text-[10px] text-dim">{tasks.length}</span>
         </button>
-        {projects.map((p) => (
-          <button
-            key={p.id}
-            onClick={() => { setProjectFilter(p.id); setActiveView('gantt') }}
-            className={`w-full flex items-center gap-2 px-2 h-8 rounded-[3px] text-[12px] ${
-              projectFilter === p.id ? 'bg-panel2 text-fg' : 'text-muted hover:text-fg hover:bg-panel2/50'
-            }`}
-          >
-            <span className="w-2 h-2 rounded-full" style={{ background: p.color }} />
-            <span className="flex-1 text-left truncate">{p.name}</span>
-            <span className="text-[10px] text-dim">{taskCount(p.id)}</span>
-          </button>
-        ))}
+        {projects.map((p) => {
+          const pct = projectProgress(p.id)
+          return (
+            <button
+              key={p.id}
+              onClick={() => { setSelected(null); setSelectedProject(p.id); setProjectFilter(p.id); setActiveView('gantt') }}
+              className={`w-full flex items-center gap-2 px-2 h-8 rounded-[3px] text-[12px] ${
+                projectFilter === p.id ? 'bg-panel2 text-fg' : 'text-muted hover:text-fg hover:bg-panel2/50'
+              }`}
+            >
+              <span className="w-2 h-2 rounded-full" style={{ background: p.color }} />
+              <span className="flex-1 text-left truncate">{p.name}</span>
+              <span className="flex items-center gap-1.5 shrink-0">
+                <span className="w-6 h-1 rounded-full bg-panel2 overflow-hidden">
+                  <span className="block h-full rounded-full" style={{ width: `${pct}%`, background: p.color }} />
+                </span>
+                <span className="text-[10px] font-mono text-muted w-7 text-right">{pct}%</span>
+              </span>
+            </button>
+          )
+        })}
       </div>
 
       {/* Data */}
