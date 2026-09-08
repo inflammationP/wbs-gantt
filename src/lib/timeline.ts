@@ -40,27 +40,15 @@ const CONFIG: Record<ViewMode, { unit: Unit; colWidth: number; groupUnit: Unit |
   year: { unit: 'year', colWidth: 200, groupUnit: null },
 }
 
-// Visible range = previous + current + next of the next-larger unit.
-function rangeBounds(mode: ViewMode, anchor: Date): { start: Date; end: Date } {
+// Range start: center the anchor's current period and span `count` columns.
+function rangeStart(mode: ViewMode, anchor: Date, count: number): Date {
+  const half = Math.floor(count / 2)
   switch (mode) {
-    case 'day': {
-      const cur = startOfWeek(anchor)
-      return { start: addDays(cur, -7), end: addDays(cur, 14) } // 3 weeks = 21 days
-    }
-    case 'week': {
-      const cur = startOfMonth(anchor)
-      const start = startOfWeek(addMonths(cur, -1))
-      return { start, end: addMonths(cur, 2) } // through end of next month
-    }
-    case 'month': {
-      const cur = startOfQuarter(anchor)
-      return { start: addMonths(cur, -3), end: addMonths(cur, 6) } // 3 quarters
-    }
-    case 'quarter':
-    case 'year': {
-      const cur = startOfYear(anchor)
-      return { start: addMonths(cur, -12), end: addMonths(cur, 24) } // 3 years
-    }
+    case 'day': return addDays(startOfDay(anchor), -half)
+    case 'week': return addDays(startOfWeek(anchor), -half * 7)
+    case 'month': return addMonths(startOfMonth(anchor), -half)
+    case 'quarter': return addMonths(startOfQuarter(anchor), -half * 3)
+    case 'year': return addMonths(startOfYear(anchor), -half * 12)
   }
 }
 
@@ -102,16 +90,18 @@ function groupLabelFor(unit: Unit, d: Date): string {
   }
 }
 
-export function buildTimeline(mode: ViewMode, anchorISO: string): Timeline {
+export function buildTimeline(mode: ViewMode, anchorISO: string, canvasWidth: number): Timeline {
   const anchor = toDate(anchorISO)
   const { unit, colWidth, groupUnit } = CONFIG[mode]
-  const { start, end } = rangeBounds(mode, anchor)
+  // Integer number of columns that fills the visible canvas.
+  const count = Math.max(1, Math.ceil(canvasWidth / colWidth))
+  const start = rangeStart(mode, anchor, count)
+  const end = addUnit(start, unit, count)
 
   const cells: TimelineCell[] = []
-  let d = start
-  let i = 0
   const today = startOfDay(new Date())
-  while (d < end) {
+  for (let i = 0; i < count; i++) {
+    const d = addUnit(start, unit, i)
     const next = addUnit(d, unit, 1)
     cells.push({
       key: `${toISO(d)}#${i}`,
@@ -121,8 +111,6 @@ export function buildTimeline(mode: ViewMode, anchorISO: string): Timeline {
       weekend: unit === 'day' && isWeekend(d),
       today: today >= d && today < next,
     })
-    d = next
-    i++
   }
 
   let groups: TimelineGroup[]

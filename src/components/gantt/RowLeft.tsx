@@ -11,6 +11,14 @@ const COLS = { chevron: 20, wbs: 44, progress: 48, status: 96, actions: 60 }
 // Per-level indentation applied to the whole tree area (chevron + WBS + name).
 const INDENT = 16
 
+// Name font size/weight by hierarchy level: 0 = top ("1"), 1 = child ("1.1"),
+// 2 = grandchild and deeper ("1.1.1"+). Differences shrink with depth.
+const NAME_CLASS = [
+  'text-[17px] font-bold text-fg',
+  'text-[13px] font-medium text-fg',
+  'text-[12px] text-fg/90',
+]
+
 interface Props {
   row: Row
   onAddChild: (row: Row) => void
@@ -62,7 +70,7 @@ export function RowLeft({ row, onAddChild, onEdit, onContext }: Props) {
       {/* name */}
       <div className="flex-1 min-w-0 flex items-center gap-1.5 pr-1">
         <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: prio.color }} title={`${prio.label} priority`} />
-        <span className={`truncate ${row.hasKids ? 'font-semibold text-fg' : 'text-fg/90'}`}>{row.task.name}</span>
+        <span className={`truncate ${NAME_CLASS[Math.min(row.depth, 2)]}`}>{row.task.name}</span>
       </div>
       {/* progress */}
       <div className="shrink-0 flex items-center justify-end pr-2 font-mono text-[11px] text-fg" style={{ width: COLS.progress }}>

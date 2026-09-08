@@ -20,6 +20,10 @@ interface DragState {
   moved: boolean
 }
 
+// Phase bar thickness by hierarchy level: 0 = top, 1 = child, 2 = grandchild+.
+// Differences shrink with depth (0→1 gap > 1→2 gap).
+const BAR_H = [40, 20, 12]
+
 export function TaskBar({ row, timeline, rowH }: { row: Row; timeline: Timeline; rowH: number }) {
   const barRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<DragState | null>(null)
@@ -158,7 +162,10 @@ export function TaskBar({ row, timeline, rowH }: { row: Row; timeline: Timeline;
     )
   }
 
-  const barH = isParent ? 10 : 18
+  // Hide phase bars that extend beyond the right edge of the date range.
+  if (endX > timeline.totalWidth) return null
+
+  const barH = BAR_H[Math.min(row.depth, 2)]
   const top = (rowH - barH) / 2
   const left = startX
   const width = endX - startX

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent, PointerEvent } from 'react'
 import { Row } from '../../lib/tree'
 import { buildTimeline, dateToX } from '../../lib/timeline'
@@ -10,7 +10,7 @@ import { RowLeft, LeftHeader, LEFT_WIDTH } from './RowLeft'
 import { TaskBar } from './TaskBar'
 
 const HEADER_H = 52
-const ROW_H = 34
+const ROW_H = 48
 
 // Splitter between the left task table and the right timeline.
 const SPLITTER_W = 6
@@ -20,6 +20,9 @@ const MAX_LEFT = 960
 // Alternating row background so each task row reads as one continuous stripe
 // across the full Gantt width (left labels + timeline).
 const rowBg = (i: number) => (i % 2 === 1 ? 'bg-stripe' : 'bg-panel')
+
+// Semi-transparent version for the left task overlay (frosted glass base).
+const rowBgLeft = (i: number) => (i % 2 === 1 ? 'bg-stripe/30' : 'bg-panel/30')
 
 interface Props {
   rows: Row[]
@@ -38,8 +41,23 @@ export function GanttChart({ rows, onContext, onAddChild, onEdit }: Props) {
   const [dragging, setDragging] = useState(false)
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const splitterRef = useRef<HTMLDivElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [viewportW, setViewportW] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1200))
 
-  const timeline = useMemo(() => buildTimeline(viewMode, anchorISO), [viewMode, anchorISO])
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const update = () => setViewportW(el.clientWidth)
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  const timeline = useMemo(
+    () => buildTimeline(viewMode, anchorISO, Math.max(0, viewportW)),
+    [viewMode, anchorISO, viewportW],
+  )
 
   const todayX = useMemo(() => {
     const x = dateToX(startOfDay(new Date()), timeline)
@@ -70,21 +88,27 @@ export function GanttChart({ rows, onContext, onAddChild, onEdit }: Props) {
 
   return (
     <div
+      ref={containerRef}
       className="flex-1 overflow-auto bg-panel"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) setSelected(null)
       }}
     >
       <div className="relative" style={{ width: leftWidth + timeline.totalWidth }}>
-        {/* left task labels (sticky horizontally, on the same striped row grid) */}
-        <div className="sticky left-0 z-30" style={{ width: leftWidth }}>
+        {/* date grid background — full-width bottom layer behind the left overlay */}
+        <div className="absolute pointer-events-none" style={{ top: HEADER_H, bottom: 0, left: 0, right: 0, zIndex: 5 }}>
+          <GridBackground timeline={timeline} leftWidth={leftWidth} />
+        </div>
+
+        {/* left task labels — frosted-glass overlay on top of the date grid */}
+        <div className="sticky left-0 z-30 backdrop-blur-[6px]" style={{ width: leftWidth }}>
           {/* left header */}
-          <div className="sticky top-0 z-20 bg-panel border-b border-border" style={{ height: HEADER_H }}>
+          <div className="sticky top-0 z-20 bg-panel/30 backdrop-blur-[6px] border-b border-border" style={{ height: HEADER_H }}>
             <LeftHeader />
           </div>
           {/* left rows */}
           {rows.map((row, i) => (
-            <div key={row.id} className={`${rowBg(i)} border-b border-line`} style={{ height: ROW_H }}>
+            <div key={row.id} className={`${rowBgLeft(i)} border-b border-line`} style={{ height: ROW_H }}>
               <RowLeft row={row} onAddChild={onAddChild} onEdit={onEdit} onContext={onContext} />
             </div>
           ))}
@@ -110,11 +134,6 @@ export function GanttChart({ rows, onContext, onAddChild, onEdit }: Props) {
 
         {/* timeline region (scrolls horizontally under the left labels) */}
         <div className="absolute top-0 bottom-0" style={{ left: leftWidth, width: timeline.totalWidth }}>
-          {/* date grid — drawn above the row stripes, below the task bars */}
-          <div className="absolute pointer-events-none" style={{ top: HEADER_H, bottom: 0, left: 0, right: 0, zIndex: 5 }}>
-            <GridBackground timeline={timeline} />
-          </div>
-
           {/* today line */}
           {todayX != null && (
             <div

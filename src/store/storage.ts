@@ -5,7 +5,7 @@ export interface PersistedData {
   tasks: Task[]
 }
 
-const KEY = 'wbs-gantt.v1'
+const KEY = 'wbs-gantt.v2'
 
 // Normalize data loaded from disk or import: backfill the `type` field and
 // coerce missing dates to null so older saved data keeps working. Long-term
