@@ -124,7 +124,6 @@ export function TaskBar({ row, timeline, rowH }: { row: Row; timeline: Timeline;
     const gLeft = Math.max(0, startX)
     const gWidth = timeline.totalWidth - gLeft
     if (gWidth <= 0) return null
-    const top = (rowH - 14) / 2
     const fadeColor = hexToRgba(meta.color, 0.3)
     return (
       <div
@@ -133,10 +132,9 @@ export function TaskBar({ row, timeline, rowH }: { row: Row; timeline: Timeline;
         style={{
           left: gLeft,
           width: gWidth,
-          top,
-          height: 14,
+          top: 0,
+          height: rowH,
           background: `linear-gradient(to right, ${meta.color}, ${fadeColor})`,
-          borderRadius: '2px',
           zIndex: 10,
         }}
         onPointerDown={begin('move')}
