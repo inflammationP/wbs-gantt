@@ -1,11 +1,12 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import {
-  BarChart2, BarChart3, Calendar, Download, Folder, LayoutDashboard, ListTodo, Minus, Plus, Upload,
+  BarChart2, BarChart3, Calendar, Download, Folder, LayoutDashboard, ListTodo, Minus, Pencil, Plus, Upload,
 } from 'lucide-react'
-import { AppView } from '../types'
+import { AppView, Project } from '../types'
 import { useStore } from '../store/useStore'
 import { exportJson, parseImport } from '../store/storage'
 import { todayISO } from '../lib/dates'
+import { ProjectDialog } from './ProjectDialog'
 
 const NAV: { id: AppView; label: string; icon: typeof BarChart2 }[] = [
   { id: 'gantt', label: 'Gantt', icon: BarChart2 },
@@ -29,6 +30,7 @@ export function Sidebar() {
   const collapseAll = useStore((s) => s.collapseAll)
   const importData = useStore((s) => s.importData)
   const fileRef = useRef<HTMLInputElement>(null)
+  const [editingProject, setEditingProject] = useState<Project | null>(null)
 
   const projectProgress = (pid: string) => {
     const leaves = tasks.filter((t) => t.projectId === pid && !tasks.some((x) => x.parentId === t.id))
@@ -111,14 +113,14 @@ export function Sidebar() {
         {projects.map((p) => {
           const pct = projectProgress(p.id)
           return (
-            <button
+            <div
               key={p.id}
               onClick={() => { setSelected(null); setSelectedProject(p.id); setProjectFilter(p.id); setActiveView('gantt') }}
-              className={`w-full flex items-center gap-2 px-2 h-8 rounded-[3px] text-[12px] ${
+              className={`group w-full flex items-center gap-2 px-2 h-8 rounded-[3px] text-[12px] cursor-pointer ${
                 projectFilter === p.id ? 'bg-panel2 text-fg' : 'text-muted hover:text-fg hover:bg-panel2/50'
               }`}
             >
-              <span className="w-2 h-2 rounded-full" style={{ background: p.color }} />
+              <span className="w-2 h-2 rounded-full shrink-0" style={{ background: p.color }} />
               <span className="flex-1 text-left truncate">{p.name}</span>
               <span className="flex items-center gap-1.5 shrink-0">
                 <span className="w-6 h-1 rounded-full bg-panel2 overflow-hidden">
@@ -126,7 +128,14 @@ export function Sidebar() {
                 </span>
                 <span className="text-[10px] font-mono text-muted w-7 text-right">{pct}%</span>
               </span>
-            </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setEditingProject(p) }}
+                className="shrink-0 p-0.5 text-dim hover:text-fg opacity-0 group-hover:opacity-100 transition-opacity"
+                title="Edit project"
+              >
+                <Pencil size={12} />
+              </button>
+            </div>
           )
         })}
       </div>
@@ -159,6 +168,8 @@ export function Sidebar() {
           }}
         />
       </div>
+
+      {editingProject && <ProjectDialog project={editingProject} onClose={() => setEditingProject(null)} />}
     </aside>
   )
 }
