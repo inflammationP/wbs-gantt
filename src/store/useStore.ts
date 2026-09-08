@@ -3,7 +3,7 @@ import { create } from 'zustand'
 import { AppView, Project, Task, TaskPriority, TaskStatus, TaskType, ViewMode } from '../types'
 import { todayISO, addUnitISO, Unit } from '../lib/dates'
 import { shiftAnchor } from '../lib/timeline'
-import { buildRows, collectDescendants, hasChildren, Row } from '../lib/tree'
+import { buildRows, collectDescendants, hasChildren, syncParentEnds, Row } from '../lib/tree'
 import { loadData, saveData, PersistedData } from './storage'
 import { buildSeed } from '../lib/seed'
 
@@ -58,6 +58,8 @@ interface State {
   moveTask: (id: string, deltaUnits: number, unit: Unit) => void
   resizeTask: (id: string, startISO: string, endISO: string) => void
 
+  syncParentEnds: () => void
+
   importData: (data: PersistedData) => void
 }
 
@@ -77,7 +79,7 @@ export const useStore = create<State>()((set) => ({
   activeView: 'gantt',
   selectedTaskId: null,
   selectedProjectId: null,
-  viewMode: 'month',
+  viewMode: 'day',
   anchorISO: todayISO(),
   expanded: {},
   projectFilter: 'all',
@@ -212,6 +214,12 @@ export const useStore = create<State>()((set) => ({
           t.id === id ? { ...t, startDate: sDate, endDate: eDate, updatedAt: new Date().toISOString() } : t,
         ),
       }
+    }),
+
+  syncParentEnds: () =>
+    set((s) => {
+      const next = syncParentEnds(s.tasks)
+      return next === s.tasks ? {} : { tasks: next }
     }),
 
   importData: (data) =>

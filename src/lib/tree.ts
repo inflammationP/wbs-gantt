@@ -84,11 +84,15 @@ export function effectiveStates(tasks: Task[]): Map<string, EffState> {
         r = { start: t.startDate, end: null, progress, status }
       } else {
         const starts = es.map((e) => e.start).filter((s): s is string => s != null)
-        const ends = es.map((e) => e.end).filter((s): s is string => s != null)
         const start = starts.length ? starts.reduce((min, s) => (s < min ? s : min), starts[0]) : t.startDate
-        // If any child has an unresolved end, the parent's end is unresolved too
-        // (never converted into Infinity or a fake date).
-        const end = es.some((e) => e.end == null) ? null : (ends.length ? ends.reduce((max, s) => (s > max ? s : max), ends[0]) : t.endDate)
+        // End date is driven by non-completed children only: a late-scheduled
+        // child that was completed early shouldn't skew the parent's end date.
+        const active = es.filter((e) => e.status !== 'completed')
+        const source = active.length ? active : es
+        const ends = source.map((e) => e.end).filter((s): s is string => s != null)
+        // If any relevant child has an unresolved end, the parent's end is
+        // unresolved too (never converted into Infinity or a fake date).
+        const end = source.some((e) => e.end == null) ? null : (ends.length ? ends.reduce((max, s) => (s > max ? s : max), ends[0]) : t.endDate)
         r = { start, end, progress, status }
       }
     }
@@ -97,6 +101,22 @@ export function effectiveStates(tasks: Task[]): Map<string, EffState> {
   }
   for (const t of tasks) derive(t)
   return cache
+}
+
+// Auto-set each phase parent's endDate to its latest child's effective end date.
+export function syncParentEnds(tasks: Task[]): Task[] {
+  const eff = effectiveStates(tasks)
+  let changed = false
+  const next = tasks.map((t) => {
+    if (t.type === 'long-term' || !hasChildren(tasks, t.id)) return t
+    const e = eff.get(t.id)
+    if (e && e.end !== t.endDate) {
+      changed = true
+      return { ...t, endDate: e.end }
+    }
+    return t
+  })
+  return changed ? next : tasks
 }
 
 export interface Row {

@@ -52,6 +52,7 @@ export function TaskDialog({ onClose, existing, defaultParentId }: Props) {
   const parentOptions = tasks.filter((t) => t.projectId === form.projectId && !excluded.has(t.id))
 
   const isLT = form.type === 'long-term'
+  const hasKids = existing ? tasks.some((t) => t.parentId === existing.id) : false
 
   const submit = () => {
     const name = form.name.trim()
@@ -121,7 +122,11 @@ export function TaskDialog({ onClose, existing, defaultParentId }: Props) {
         ) : (
           <div className="grid grid-cols-2 gap-3">
             <Field label="Start date"><input type="date" className={inputCls} value={form.startDate ?? ''} onChange={(e) => set('startDate', e.target.value)} /></Field>
-            <Field label="End date"><input type="date" className={inputCls} value={form.endDate ?? ''} onChange={(e) => set('endDate', e.target.value)} /></Field>
+            <Field label="End date">
+              <span className={hasKids ? 'block cursor-help' : 'block'} title={hasKids ? '结束日期由最晚结束的子任务决定，请修改子任务的结束日期' : undefined}>
+                <input type="date" className={`${inputCls} ${hasKids ? 'opacity-50 cursor-not-allowed' : ''}`} value={form.endDate ?? ''} onChange={(e) => set('endDate', e.target.value)} disabled={hasKids} />
+              </span>
+            </Field>
           </div>
         )}
 
