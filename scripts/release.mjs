@@ -30,7 +30,8 @@ const conf = JSON.parse(readFileSync(confPath, 'utf8'))
 const oldVersion = conf.version
 
 // 1. version + notes
-const version = (await ask(`Version [current ${oldVersion}]: `)) || oldVersion
+// Strip a leading "v" if the user typed it (version must be pure semver).
+const version = ((await ask(`Version [current ${oldVersion}]: `)) || oldVersion).replace(/^v/, '')
 const notes = (await ask('Release notes (enter to skip): ')) || ''
 
 if (version !== oldVersion) {
