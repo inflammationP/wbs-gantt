@@ -2,3 +2,7 @@ node_modules
 dist
 *.local
 .DS_Store
+
+# release 脚本生成的产物 / 临时文件
+latest.json
+.release-notes.md
