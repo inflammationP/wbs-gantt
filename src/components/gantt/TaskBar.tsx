@@ -47,6 +47,10 @@ export function TaskBar({ row, timeline, rowH }: { row: Row; timeline: Timeline;
     return dateToX(addDays(toDate(row.eff.end), 1), timeline)
   }, [isGoal, row.eff.end, timeline])
 
+  // Clamped phase-bar bounds, clipped to the visible date range.
+  const barLeft = Math.max(0, startX)
+  const barRight = Math.min(timeline.totalWidth, endX)
+
   const onClickBar = (e: MouseEvent<HTMLDivElement>) => {
     e.stopPropagation()
     if (suppressClickRef.current) {
@@ -67,8 +71,8 @@ export function TaskBar({ row, timeline, rowH }: { row: Row; timeline: Timeline;
     dragRef.current = {
       mode,
       startX: e.clientX,
-      origLeft: isGoal ? Math.max(0, startX) : startX,
-      origWidth: isGoal ? timeline.totalWidth - Math.max(0, startX) : endX - startX,
+      origLeft: barLeft,
+      origWidth: barRight - barLeft,
       origStart: toDate(row.eff.start ?? toISO(new Date())),
       origEnd: toDate(row.eff.end ?? toISO(new Date())),
       unit: timeline.unit,
@@ -162,13 +166,11 @@ export function TaskBar({ row, timeline, rowH }: { row: Row; timeline: Timeline;
     )
   }
 
-  // Hide phase bars that extend beyond the right edge of the date range.
-  if (endX > timeline.totalWidth) return null
-
   const barH = BAR_H[Math.min(row.depth, 2)]
   const top = (rowH - barH) / 2
-  const left = startX
-  const width = endX - startX
+  const left = barLeft
+  const width = barRight - barLeft
+  if (width <= 0) return null
 
   return (
     <div

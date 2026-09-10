@@ -29,8 +29,6 @@ export function TaskDialog({ onClose, existing, defaultParentId }: Props) {
     progress: existing?.progress ?? 0,
     status: (existing?.status ?? 'not-started') as TaskStatus,
     priority: (existing?.priority ?? 'medium') as TaskPriority,
-    estimatedHours: existing?.estimatedHours ?? 0,
-    actualHours: existing?.actualHours ?? 0,
     tags: existing?.tags?.join(', ') ?? '',
   }))
 
@@ -78,8 +76,6 @@ export function TaskDialog({ onClose, existing, defaultParentId }: Props) {
       progress: Math.max(0, Math.min(100, form.progress)),
       status: form.status,
       priority: form.priority,
-      estimatedHours: Math.max(0, form.estimatedHours),
-      actualHours: Math.max(0, form.actualHours),
       tags,
     }
     if (existing) updateTask(existing.id, payload)
@@ -145,11 +141,6 @@ export function TaskDialog({ onClose, existing, defaultParentId }: Props) {
               {PRIORITY_ORDER.map((p) => <option key={p} value={p}>{PRIORITY_META[p].label}</option>)}
             </select>
           </Field>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Estimated hours"><input type="number" min={0} className={inputCls} value={form.estimatedHours} onChange={(e) => set('estimatedHours', Number(e.target.value) || 0)} /></Field>
-          <Field label="Actual hours"><input type="number" min={0} className={inputCls} value={form.actualHours} onChange={(e) => set('actualHours', Number(e.target.value) || 0)} /></Field>
         </div>
 
         <Field label="Tags (comma separated)">

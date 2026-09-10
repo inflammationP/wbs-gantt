@@ -93,12 +93,6 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
           </div>
         </div>
 
-        {/* hours */}
-        <div className="grid grid-cols-2 gap-3">
-          <ReadOnlyField label="Est. hours">{task.estimatedHours}</ReadOnlyField>
-          <ReadOnlyField label="Actual hours">{task.actualHours}</ReadOnlyField>
-        </div>
-
         {/* tags */}
         <div>
           <div className="text-[10px] uppercase tracking-wider text-dim mb-1">Tags</div>

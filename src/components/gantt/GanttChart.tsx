@@ -10,7 +10,11 @@ import { RowLeft, LeftHeader, LEFT_WIDTH } from './RowLeft'
 import { TaskBar } from './TaskBar'
 
 const HEADER_H = 52
-const ROW_H = 48
+
+// Row height by hierarchy depth (0 = top, 1 = child, 2 = grandchild+).
+// Secondary rows shrink so the three levels read clearly at a glance.
+const ROW_HEIGHT = [48, 36, 32]
+const rowHeight = (depth: number) => ROW_HEIGHT[Math.min(depth, 2)]
 
 // Splitter between the left task table and the right timeline.
 const SPLITTER_W = 6
@@ -108,7 +112,7 @@ export function GanttChart({ rows, onContext, onAddChild, onEdit }: Props) {
           </div>
           {/* left rows */}
           {rows.map((row, i) => (
-            <div key={row.id} className={`${rowBgLeft(i)} border-b border-line`} style={{ height: ROW_H }}>
+            <div key={row.id} className={`${rowBgLeft(i)} border-b border-line`} style={{ height: rowHeight(row.depth) }}>
               <RowLeft row={row} onAddChild={onAddChild} onEdit={onEdit} onContext={onContext} />
             </div>
           ))}
@@ -149,8 +153,8 @@ export function GanttChart({ rows, onContext, onAddChild, onEdit }: Props) {
 
           {/* timeline rows */}
           {rows.map((row, i) => (
-            <div key={row.id} className={`relative ${rowBg(i)} border-b border-line`} style={{ height: ROW_H }} onClick={() => setSelected(row.id)}>
-              <TaskBar row={row} timeline={timeline} rowH={ROW_H} />
+            <div key={row.id} className={`relative ${rowBg(i)} border-b border-line`} style={{ height: rowHeight(row.depth) }} onClick={() => setSelected(row.id)}>
+              <TaskBar row={row} timeline={timeline} rowH={rowHeight(row.depth)} />
             </div>
           ))}
         </div>

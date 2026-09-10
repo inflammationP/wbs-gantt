@@ -18,8 +18,6 @@ export interface NewTaskInput {
   progress?: number
   status?: TaskStatus
   priority?: TaskPriority
-  estimatedHours?: number
-  actualHours?: number
   tags?: string[]
   dependencies?: string[]
 }
@@ -138,8 +136,6 @@ export const useStore = create<State>()((set) => ({
         progress: Math.max(0, Math.min(100, input.progress ?? 0)),
         status: input.status ?? 'not-started',
         priority: input.priority ?? 'medium',
-        estimatedHours: input.estimatedHours ?? 0,
-        actualHours: input.actualHours ?? 0,
         tags: input.tags ?? [],
         dependencies: input.dependencies ?? [],
         createdAt: now,

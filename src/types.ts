@@ -23,8 +23,6 @@ export interface Task {
   progress: number // 0..100
   status: TaskStatus
   priority: TaskPriority
-  estimatedHours: number
-  actualHours: number
   tags: string[]
   dependencies: string[] // task ids
   createdAt: string

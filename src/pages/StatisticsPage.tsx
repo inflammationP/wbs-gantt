@@ -25,7 +25,6 @@ export function StatisticsPage() {
   }, [projects, leaves, tasks])
 
   const maxStatus = Math.max(1, ...Array.from(byStatus.values()))
-  const totalHours = leaves.reduce((s, t) => s + (t.estimatedHours || 0), 0)
   const completion = leaves.length ? Math.round((leaves.filter((t) => t.status === 'completed').length / leaves.length) * 100) : 0
 
   return (
@@ -69,16 +68,11 @@ export function StatisticsPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 gap-4">
           <div className="bg-panel border border-border rounded-[3px] p-4">
             <div className="text-[10px] uppercase tracking-wider text-dim">Total tasks</div>
             <div className="text-[26px] font-mono font-semibold mt-1">{tasks.length}</div>
             <div className="text-[11px] text-muted">{leaves.length} leaf tasks</div>
-          </div>
-          <div className="bg-panel border border-border rounded-[3px] p-4">
-            <div className="text-[10px] uppercase tracking-wider text-dim">Estimated hours</div>
-            <div className="text-[26px] font-mono font-semibold mt-1">{totalHours}</div>
-            <div className="text-[11px] text-muted">across {projects.length} projects</div>
           </div>
           <div className="bg-panel border border-border rounded-[3px] p-4">
             <div className="text-[10px] uppercase tracking-wider text-dim">Completion</div>
