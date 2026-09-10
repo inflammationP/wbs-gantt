@@ -1,86 +1,48 @@
 # WBS · Gantt
 
-一个带 **WBS（工作分解结构）+ 甘特图** 的项目进度管理工具。支持多层级任务、时间轴可视化、拖拽调整、长期目标、项目过滤，数据存在浏览器本地（localStorage）。
+![GitHub release](https://img.shields.io/github/v/release/inflammationP/wbs-gantt)
 
-## 功能特性
+A work breakdown structure (WBS) + Gantt chart task manager. Multi-level tasks, a draggable timeline, long-term goals, and local data storage. Available as a web app and a Windows desktop app.
 
-- 多层级任务树，自动 WBS 编号（`1` / `1.1` / `1.1.1`），支持展开/折叠
-- 甘特图时间轴：Day / Week / Month / Quarter / Year 五种粒度
-- 任务条拖拽移动、拖拽调整起止日期
-- 长期目标（无结束日期）用渐变色「向右淡出」表示
-- 项目过滤、任务详情面板、项目详情面板
-- 导入 / 导出 JSON
-- 数据持久化到 localStorage（Web 版）或本地（桌面版）
+## Features
 
-## 技术栈
+- Multi-level task tree with automatic WBS numbering (`1` / `1.1` / `1.1.1`)
+- Gantt timeline at five granularities: Day / Week / Month / Quarter / Year
+- Drag bars to move tasks or resize their start/end dates
+- Long-term goals without an end date
+- Project filtering, plus task and project detail panels
+- Import / export JSON
 
-- **前端**：React 18 + TypeScript + Vite 7 + Zustand + Tailwind CSS
-- **桌面端**：Tauri 2（Rust）
-- **部署**：Cloudflare（Workers 静态资源 / `wrangler`）
+## Install
 
-## 目录结构
+Pre-built Windows installer: [Releases](https://github.com/inflammationP/wbs-gantt/releases).
 
-```
-src/
-  components/        # UI 组件（Sidebar、TaskDialog、详情面板等）
-    gantt/           # 甘特图核心（GanttChart、TaskBar、RowLeft、TimelineHeader、GridBackground）
-  lib/               # 纯逻辑（dates、timeline、tree、seed、ui、updater）
-  pages/             # 页面（GanttPage、Dashboard、Tasks、Calendar、Projects、Statistics）
-  store/             # Zustand 状态 + localStorage 持久化（useStore、storage）
-  App.tsx / main.tsx
-src-tauri/           # Tauri 桌面端（Rust 配置、图标）
-scripts/release.mjs  # 一键发布（打包 + 生成 latest.json + gh 发布）
-```
+## Getting Started
 
-## 本地开发
+### Web
 
 ```bash
 npm install
-npm run dev          # 浏览器开发服务器（http://localhost:1420）
+npm run dev        # dev server
+npm run build      # production build (dist/)
+npm run deploy     # deploy to Cloudflare
 ```
 
-## 构建
+### Desktop (Windows)
+
+Requires the [Rust](https://rustup.rs) toolchain and the MSVC build tools.
 
 ```bash
-npm run build        # 类型检查 + 构建到 dist/（Web 用）
-npm run preview      # 本地预览构建结果
+npm run tauri dev      # desktop dev mode
+npm run tauri build    # build the NSIS installer
 ```
 
-## 部署到 Cloudflare（Web）
+`npm run release` builds, signs, and publishes a GitHub Release with auto-update.
 
-```bash
-npm install -g wrangler   # 或已作为 devDependency 安装
-npm run deploy            # 构建 + wrangler deploy
-```
+## Tech Stack
 
-需要 Node ≥ 22（见 `.nvmrc`）。配置见 `wrangler.jsonc`。
+React · TypeScript · Vite · Zustand · Tailwind CSS · Tauri 2
 
-## 桌面端（Tauri）打包
+## Data
 
-需要先安装 Rust 工具链和 MSVC 构建工具。
-
-```bash
-npm run tauri dev     # 桌面开发模式
-npm run tauri build   # 打包成 Windows 安装包（NSIS）
-```
-
-产物在 `src-tauri/target/release/bundle/nsis/`。
-
-### 自动更新
-
-桌面端已集成 `tauri-plugin-updater`，启动时自动检查更新。发布新版本：
-
-```bash
-npm run release
-```
-
-脚本会提示版本号和更新说明，然后自动：带签名打包 → 生成 `latest.json` → 用 `gh` 创建 GitHub Release。
-
-发布前需先 `gh auth login`（GitHub CLI），并把 `src-tauri/tauri.conf.json` 里的 `endpoints` 指向真实仓库地址（当前为 `inflammationP/wbs-gantt`）。
-
-## 数据存储
-
-- **Web 版**：`localStorage`（key：`wbs-gantt.v2`），刷新不丢。
-- **桌面版**：同样走 WebView 的 localStorage，存在应用本地数据目录。
-
-首次打开默认是空甘特图（演示数据已移除），可在 Projects 页新建项目、甘特图里新建任务。
+Data is stored locally (localStorage on web, WebView localStorage on desktop), with JSON import/export.
