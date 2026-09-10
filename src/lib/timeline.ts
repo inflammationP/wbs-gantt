@@ -40,15 +40,18 @@ const CONFIG: Record<ViewMode, { unit: Unit; colWidth: number; groupUnit: Unit |
   year: { unit: 'year', colWidth: 200, groupUnit: null },
 }
 
-// Range start: center the anchor's current period and span `count` columns.
-function rangeStart(mode: ViewMode, anchor: Date, count: number): Date {
-  const half = Math.floor(count / 2)
+// Fixed horizontal offset (px) from the left task panel's right edge to the
+// anchored date (today on first load). The timeline extends mostly to the right.
+const ANCHOR_OFFSET_PX = 160
+
+// Range start: place the anchor's current period `lead` columns after the start.
+function rangeStart(mode: ViewMode, anchor: Date, lead: number): Date {
   switch (mode) {
-    case 'day': return addDays(startOfDay(anchor), -half)
-    case 'week': return addDays(startOfWeek(anchor), -half * 7)
-    case 'month': return addMonths(startOfMonth(anchor), -half)
-    case 'quarter': return addMonths(startOfQuarter(anchor), -half * 3)
-    case 'year': return addMonths(startOfYear(anchor), -half * 12)
+    case 'day': return addDays(startOfDay(anchor), -lead)
+    case 'week': return addDays(startOfWeek(anchor), -lead * 7)
+    case 'month': return addMonths(startOfMonth(anchor), -lead)
+    case 'quarter': return addMonths(startOfQuarter(anchor), -lead * 3)
+    case 'year': return addMonths(startOfYear(anchor), -lead * 12)
   }
 }
 
@@ -95,7 +98,9 @@ export function buildTimeline(mode: ViewMode, anchorISO: string, canvasWidth: nu
   const { unit, colWidth, groupUnit } = CONFIG[mode]
   // Integer number of columns that fills the visible canvas.
   const count = Math.max(1, Math.ceil(canvasWidth / colWidth))
-  const start = rangeStart(mode, anchor, count)
+  // Columns before the anchor, from a fixed pixel offset (clamped to the range).
+  const lead = Math.min(count - 1, Math.max(0, Math.round(ANCHOR_OFFSET_PX / colWidth)))
+  const start = rangeStart(mode, anchor, lead)
   const end = addUnit(start, unit, count)
 
   const cells: TimelineCell[] = []
