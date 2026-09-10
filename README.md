@@ -7,7 +7,7 @@
 <img width="1280" height="764" alt="屏幕截图 2026-09-10 152338" src="https://github.com/user-attachments/assets/15f4638e-b552-428e-80c9-8df3c454c73b" />
 <img width="1280" height="764" alt="屏幕截图 2026-09-10 152439" src="https://github.com/user-attachments/assets/af7bbda6-0921-430a-af4d-adbc7d75ef66" />
 
-工具绝大部分功能都是换着花样为用户提供统计信息。后续更新会加入任务日志等功能，期待我，以及几乎不存在的其它用户们在未来使用中提出的意见。
+工具绝大部分功能都是换着花样为用户提供统计信息。后续更新会加入任务日志等功能，期待我，以及几乎不存在的其他用户们在未来使用中提出的意见。
 
 ## 安装
 
