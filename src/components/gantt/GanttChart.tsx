@@ -21,6 +21,12 @@ const SPLITTER_W = 6
 const MIN_LEFT = 480
 const MAX_LEFT = 960
 
+// Fixed left sidebar width (Sidebar.tsx renders w-[190px]). The timeline is
+// sized off the window minus this, so opening the task/project detail panel
+// (which shrinks this container by 320px) doesn't reflow the timeline and
+// make task bars jump.
+const SIDEBAR_W = 190
+
 // Alternating row background so each task row reads as one continuous stripe
 // across the full Gantt width (left labels + timeline).
 const rowBg = (i: number) => (i % 2 === 1 ? 'bg-stripe' : 'bg-panel')
@@ -46,16 +52,12 @@ export function GanttChart({ rows, onContext, onAddChild, onEdit }: Props) {
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const splitterRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const [viewportW, setViewportW] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1200))
+  const [viewportW, setViewportW] = useState(() => window.innerWidth - SIDEBAR_W)
 
   useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    const update = () => setViewportW(el.clientWidth)
-    update()
-    const ro = new ResizeObserver(update)
-    ro.observe(el)
-    return () => ro.disconnect()
+    const update = () => setViewportW(window.innerWidth - SIDEBAR_W)
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
   }, [])
 
   const timeline = useMemo(
