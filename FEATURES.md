@@ -172,6 +172,7 @@ TaskLog { id, taskId, date, content, targetProgress?, createdAt, updatedAt }
 - 桌面：`npm run tauri build` 打包 NSIS 安装包；`npm run release` 一键打包+签名+发布 GitHub Release（含自动更新）。
 - 版本号写在 `src-tauri/tauri.conf.json`，由 `release.mjs` 交互式询问后写入；`latest.json` 与 `.release-notes.md` 是构建产物，已 gitignore。
 - 用户看到的「更新」由 GitHub Release 上的版本号驱动，**与提交次数、push 次数无关**——只有跑 `release.mjs` 那一刻才产生一次更新。
+- **「待发布」占位由脚本自动替换。** `CHANGELOG.md` 与 `FEATURES.md` 里同时含「待发布」和本次版本号的行，会被 `release.mjs` 的第 5 步换成本地日期。**只改工作区，替换后仍需手工提交**；版本号对不上（比如改了号却没写变更记录）只提示、不中断发布。此前这是手工步骤，连续两个版本忘记过。
 
 ---
 
@@ -289,7 +290,6 @@ TaskLog { id, taskId, date, content, targetProgress?, createdAt, updatedAt }
 - **日志与详情面板的选中态不一致**（刻意搁置）：点任务条选中的是任务，点日期选中的是天，于是任务详情面板与日期详情面板可能同时挂在右侧（各 320px）。日详情面板本身已能在只有甘特图的情况下独立工作。
 - **`ProjectDetailPanel` 与 Manage 页的项目卡片信息重叠**（都展示进度与计数），但它是目前唯一能读到项目描述的地方，暂留。
 - **Logs 页左栏的项目→任务筛选树**与甘特图左栏的树结构重复。
-- **CHANGELOG 的版本标题需要手工把「待发布」改成日期**，已经连续两个版本忘记。可考虑在 `release.mjs` 里加一步自动替换（失败不中断发布）。
 - **改了 `tailwind.config.js` 之后必须重启 dev server。** Vite 的 HMR 会把 `src/**` 的改动应用上去（包括 `index.css` 里手写的 `[data-theme]` 变量块），但**不会重新生成 Tailwind 的工具类**。结果是变量是新的、而 `.bg-bg` / `.bg-panel` / `.text-fg` 这些还是旧配色写死的 hex，表现为「切主题只有滚轮条变色，其它一概不动」。运行时切主题本身**永远不需要重启**——只有改配色定义（这次是把 hex 换成 `var()`）才需要。排查方法：devtools 里看 `.bg-bg` 编译成了 `rgb(var(--c-bg) / …)` 还是 `rgb(10 13 16 / …)`。
 - **原生日期选择器的显示格式跟随系统 / 浏览器语言，不跟随应用语言。** `<input type="date">` 的输入格式由浏览器决定，改页面 `lang` 影响不了它。值为 `yyyy-MM-dd`，无歧义。
 - **自动写入的日志正文用的是写入当时的界面语言。** 目前只有一处：把已逾期的严格任务标记为已完成时写入的「已标记为完成 / Marquée comme terminée」。之后切换语言，历史里会留下另一种语言的条目——这是**刻意**的，它和用户自己敲的日志正文同类（都是用户内容），改语言时不该被追溯重译。

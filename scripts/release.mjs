@@ -79,3 +79,45 @@ try {
   console.log('  2. latest.json')
   console.log('  或在安装并登录 gh 后重新运行本脚本。\n')
 }
+
+// 5. stamp the release date into the docs
+// The CHANGELOG heading and FEATURES' version line carry a 待发布 placeholder that
+// has to become the real date. Done here because it was forgotten two releases
+// running. Editing a doc must never block a release, so every failure is reported
+// and skipped rather than thrown.
+{
+  const d = new Date()
+  const pad = (n) => String(n).padStart(2, '0')
+  const today = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  const stamped = []
+  const missing = []
+
+  for (const file of ['CHANGELOG.md', 'FEATURES.md']) {
+    try {
+      const lines = readFileSync(file, 'utf8').split('\n')
+      // Only lines naming the version being released, so an unrelated 待发布
+      // elsewhere in the file is left alone.
+      if (!lines.some((line) => line.includes(`v${version}`))) {
+        missing.push(file)
+        continue
+      }
+      const next = lines
+        .map((line) => (line.includes(`v${version}`) ? line.replace(/待发布/g, today) : line))
+        .join('\n')
+      if (next !== lines.join('\n')) {
+        writeFileSync(file, next)
+        stamped.push(file)
+      }
+    } catch (err) {
+      console.log(`⚠️  ${file} 未能更新（${err.message}）——不影响发布。`)
+    }
+  }
+
+  if (stamped.length) {
+    console.log(`📝 已把 ${stamped.join('、')} 里 v${version} 的「待发布」写成 ${today}，记得连同本次改动一起提交。\n`)
+  }
+  if (missing.length) {
+    console.log(`⚠️  ${missing.join('、')} 里没有任何提到 v${version} 的行。`)
+    console.log(`   要么版本号填错了，要么这次的变更记录还没写——请手工核对。\n`)
+  }
+}
