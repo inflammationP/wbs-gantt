@@ -2,23 +2,23 @@ import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import type { ReactNode } from 'react'
 import { CornerUpLeft, NotebookPen, Pencil, Plus, Trash2 } from 'lucide-react'
-import { Row } from '../../lib/tree'
+import { RowTask } from '../../lib/tree'
 
 export interface MenuState {
   x: number
   y: number
-  row: Row
+  row: RowTask
 }
 
 interface Props {
   menu: MenuState
   onClose: () => void
-  onAddChild: (row: Row) => void
-  onAddSibling: (row: Row) => void
-  onEdit: (row: Row) => void
-  onWriteLog: (row: Row) => void
-  onOutdent: (row: Row) => void
-  onDelete: (row: Row) => void
+  onAddChild: (row: RowTask) => void
+  onAddSibling: (row: RowTask) => void
+  onEdit: (row: RowTask) => void
+  onWriteLog: (row: RowTask) => void
+  onOutdent: (row: RowTask) => void
+  onDelete: (row: RowTask) => void
 }
 
 function Item({ icon, label, onClick, danger }: { icon: ReactNode; label: string; onClick: () => void; danger?: boolean }) {

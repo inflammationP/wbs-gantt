@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useStore } from '../store/useStore'
 import { computeWbs, effectiveStates } from '../lib/tree'
-import { STATUS_META, PRIORITY_META, STATUS_ORDER } from '../lib/ui'
+import { STATUS_META, STATUS_ORDER, priorityMeta } from '../lib/ui'
 import { formatShort } from '../lib/dates'
 import { TaskStatus } from '../types'
 
@@ -20,7 +20,14 @@ export function TasksPage() {
 
   const filtered = tasks
     .filter((t) => statusFilter === 'all' || eff.get(t.id)?.status === statusFilter)
-    .sort((a, b) => a.projectId.localeCompare(b.projectId) || (a.startDate ?? '').localeCompare(b.startDate ?? '') || a.name.localeCompare(b.name))
+    // To-dos last within each project, matching the Gantt's sibling order.
+    .sort(
+      (a, b) =>
+        a.projectId.localeCompare(b.projectId) ||
+        (a.isTodo ? 1 : 0) - (b.isTodo ? 1 : 0) ||
+        (a.startDate ?? '').localeCompare(b.startDate ?? '') ||
+        a.name.localeCompare(b.name),
+    )
 
   return (
     <div className="flex-1 overflow-auto">
@@ -38,7 +45,7 @@ export function TasksPage() {
           </div>
           {filtered.map((t) => {
             const meta = STATUS_META[eff.get(t.id)?.status ?? 'not-started']
-            const prio = PRIORITY_META[t.priority]
+            const prio = priorityMeta(t.priority)
             return (
               <button key={t.id} onClick={() => setSelected(t.id)} className="grid grid-cols-[70px_1fr_120px_120px_90px_90px_130px_100px] px-3 h-9 items-center text-[12px] border-b border-line last:border-0 hover:bg-panel2 text-left w-full">
                 <span className="font-mono text-[11px] text-dim">{wbs.get(t.id) ?? ''}</span>

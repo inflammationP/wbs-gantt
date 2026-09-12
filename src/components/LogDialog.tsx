@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
+import type { KeyboardEvent } from 'react'
 import { Modal, Field, inputCls } from './ui'
 import { useStore } from '../store/useStore'
 import { TaskLog } from '../types'
@@ -20,7 +21,41 @@ export function LogDialog({ taskId, existing, onClose }: Props) {
   const [targetProgress, setTargetProgress] = useState<number | null>(existing?.targetProgress ?? null)
   const [showTarget, setShowTarget] = useState(existing?.targetProgress != null)
 
+  const taRef = useRef<HTMLTextAreaElement>(null)
+  // Caret position to restore after the controlled re-render; setting
+  // `.value` on a textarea resets the selection to the end.
+  const pendingSel = useRef<[number, number] | null>(null)
+
+  useLayoutEffect(() => {
+    const sel = pendingSel.current
+    if (!sel || !taRef.current) return
+    pendingSel.current = null
+    taRef.current.setSelectionRange(sel[0], sel[1])
+  }, [content])
+
   const isStrict = task?.strictProgress === true && task.type === 'phase'
+
+  // Tab must indent (the log format treats a leading tab as "sub-item"); the
+  // browser default would move focus to the next control instead.
+  const onLogKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key !== 'Tab') return
+    const el = taRef.current
+    if (!el) return
+    e.preventDefault()
+    const { selectionStart: s, selectionEnd: en, value } = el
+
+    if (e.shiftKey) {
+      // Outdent: drop one leading tab from the caret's line.
+      const lineStart = value.lastIndexOf('\n', s - 1) + 1
+      if (value[lineStart] !== '\t') return
+      pendingSel.current = [Math.max(lineStart, s - 1), Math.max(lineStart, en - 1)]
+      setContent(value.slice(0, lineStart) + value.slice(lineStart + 1))
+      return
+    }
+
+    pendingSel.current = [s + 1, en + 1]
+    setContent(value.slice(0, s) + '\t' + value.slice(en))
+  }
 
   const submit = () => {
     if (!content.trim()) return
@@ -43,13 +78,15 @@ export function LogDialog({ taskId, existing, onClose }: Props) {
 
         <Field label="Log">
           <textarea
+            ref={taRef}
             className={`${inputCls} h-32 py-2 resize-none`}
             value={content}
             onChange={(e) => setContent(e.target.value)}
+            onKeyDown={onLogKeyDown}
             placeholder="What did you work on?"
             autoFocus
           />
-          <div className="text-[11px] text-dim mt-1">Each line is an item; indent with Tab for sub-items.</div>
+          <div className="text-[11px] text-dim mt-1">Each line is an item; Tab indents a sub-item, Shift+Tab outdents.</div>
         </Field>
 
         {isStrict && (

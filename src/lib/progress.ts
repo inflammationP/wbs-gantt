@@ -16,6 +16,9 @@ export function autoProgress(task: Task, onDate: Date): number {
 // Effective progress for a single task, or null for long-term goals (no progress).
 export function taskProgress(task: Task, logs: TaskLog[], onDate: Date): number | null {
   if (task.type === 'long-term') return null
+  // A to-do has no schedule, so it has no progress. Its historical logs are
+  // deliberately kept (they stay readable) — they just no longer feed this.
+  if (task.isTodo) return null
   // Not started yet → no progress (renders as "—").
   if (task.startDate != null && diffDays(toDate(task.startDate), onDate) < 0) return null
   // While paused, freeze the calendar-based progress at the pause date.

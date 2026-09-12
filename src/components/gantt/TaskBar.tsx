@@ -1,6 +1,6 @@
 import { useMemo, useRef } from 'react'
 import type { MouseEvent, PointerEvent } from 'react'
-import { Row } from '../../lib/tree'
+import { RowTask } from '../../lib/tree'
 import { Timeline, dateToX } from '../../lib/timeline'
 import { addDays, addUnit, toDate, toISO } from '../../lib/dates'
 import { STATUS_META, hexToRgba } from '../../lib/ui'
@@ -24,7 +24,7 @@ interface DragState {
 // Differences shrink with depth (0→1 gap > 1→2 gap).
 const BAR_H = [40, 20, 12]
 
-export function TaskBar({ row, timeline, rowH }: { row: Row; timeline: Timeline; rowH: number }) {
+export function TaskBar({ row, timeline, rowH }: { row: RowTask; timeline: Timeline; rowH: number }) {
   const barRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<DragState | null>(null)
   const suppressClickRef = useRef(false)
@@ -46,6 +46,12 @@ export function TaskBar({ row, timeline, rowH }: { row: Row; timeline: Timeline;
     if (isGoal || row.eff.end == null) return timeline.totalWidth
     return dateToX(addDays(toDate(row.eff.end), 1), timeline)
   }, [isGoal, row.eff.end, timeline])
+
+  // A to-do has no schedule, so it has no position on the timeline. The
+  // timeline area is deliberately left empty for it rather than pinning a
+  // placeholder at x=0, which would imply a date it doesn't have. (After all
+  // hooks, so the hook order stays stable across rows.)
+  if (row.task.isTodo) return null
 
   // Clamped phase-bar bounds, clipped to the visible date range.
   const barLeft = Math.max(0, startX)

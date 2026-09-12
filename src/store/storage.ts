@@ -9,21 +9,26 @@ export interface PersistedData {
 const KEY = 'wbs-gantt.v2'
 
 // Normalize data loaded from disk or import: backfill `type`/`strictProgress`,
-// coerce missing dates to null, and default missing collections.
+// coerce missing dates to null, and default missing collections. This is also
+// the invariant repair point for to-dos — a task marked `isTodo` always comes
+// back unscheduled, however it was written.
 function normalize(data: PersistedData): PersistedData {
   return {
     projects: data.projects,
     tasks: data.tasks.map((t) => {
       const isLT = t.type === 'long-term'
+      const isTodo = t.isTodo === true
       return {
         ...t,
-        type: isLT ? 'long-term' : 'phase',
-        startDate: t.startDate ?? null,
-        endDate: isLT ? null : (t.endDate ?? null),
-        strictProgress: t.strictProgress ?? false,
-        paused: t.paused ?? false,
-        pauseDate: t.pauseDate ?? null,
+        type: isLT && !isTodo ? 'long-term' : 'phase',
+        isTodo,
+        startDate: isTodo ? null : (t.startDate ?? null),
+        endDate: isTodo || isLT ? null : (t.endDate ?? null),
+        strictProgress: isTodo ? false : (t.strictProgress ?? false),
+        paused: isTodo ? false : (t.paused ?? false),
+        pauseDate: isTodo ? null : (t.pauseDate ?? null),
         pauses: Array.isArray(t.pauses) ? t.pauses : [],
+        priority: isTodo ? null : (t.priority ?? 'medium'),
       }
     }),
     logs: (data.logs ?? []).map((l) => ({

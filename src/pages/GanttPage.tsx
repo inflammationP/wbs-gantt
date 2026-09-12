@@ -6,9 +6,11 @@ import { Task, TaskLog, ViewMode } from '../types'
 import { periodLabel } from '../lib/timeline'
 import { Segmented } from '../components/ui'
 import { GanttChart } from '../components/gantt/GanttChart'
-import { Row } from '../lib/tree'
+import { RowTask } from '../lib/tree'
+import { TodoActions } from '../components/gantt/RowLeft'
 import { TaskDialog } from '../components/TaskDialog'
 import { LogDialog } from '../components/LogDialog'
+import { StartTodoDialog } from '../components/StartTodoDialog'
 import { ContextMenu, MenuState } from '../components/gantt/ContextMenu'
 
 const VIEW_OPTIONS: { value: ViewMode; label: string }[] = [
@@ -32,23 +34,67 @@ export function GanttPage() {
   const projects = useStore((s) => s.projects)
   const deleteTask = useStore((s) => s.deleteTask)
   const setTaskParent = useStore((s) => s.setTaskParent)
+  const tasks = useStore((s) => s.tasks)
 
   const [dialog, setDialog] = useState<{ mode: 'create' | 'edit'; task?: Task; parentId?: string | null } | null>(null)
   const [menu, setMenu] = useState<MenuState | null>(null)
   const [logDialog, setLogDialog] = useState<{ taskId: string; existing?: TaskLog | null } | null>(null)
+  const [todoSel, setTodoSel] = useState<Set<string>>(new Set())
+  const [startTodo, setStartTodo] = useState<string[] | null>(null)
 
   const openCreate = (parentId?: string | null) => setDialog({ mode: 'create', parentId })
-  const openEdit = (row: Row) => setDialog({ mode: 'edit', task: row.task })
-  const openLog = (row: Row) => setLogDialog({ taskId: row.id })
+  const openEdit = (row: RowTask) => setDialog({ mode: 'edit', task: row.task })
+  const openLog = (row: RowTask) => setLogDialog({ taskId: row.id })
 
-  const handleContext = (e: MouseEvent<HTMLDivElement>, row: Row) => {
+  const handleContext = (e: MouseEvent<HTMLDivElement>, row: RowTask) => {
     e.preventDefault()
     setMenu({ x: e.clientX, y: e.clientY, row })
   }
 
-  const handleDelete = (row: Row) => {
+  const handleDelete = (row: RowTask) => {
     const msg = row.hasKids ? `Delete "${row.task.name}" and all its subtasks?` : `Delete "${row.task.name}"?`
     if (confirm(msg)) deleteTask(row.id)
+  }
+
+  const dropFromSelection = (ids: string[]) =>
+    setTodoSel((s) => {
+      const n = new Set(s)
+      for (const id of ids) n.delete(id)
+      return n
+    })
+
+  // Selection for the to-do folders' bulk actions. Kept here rather than in the
+  // store: it's transient view state, and the folders themselves are synthesized
+  // per render.
+  const todo: TodoActions = {
+    selected: todoSel,
+    toggle: (id) =>
+      setTodoSel((s) => {
+        const n = new Set(s)
+        if (n.has(id)) n.delete(id)
+        else n.add(id)
+        return n
+      }),
+    setMany: (ids, on) =>
+      setTodoSel((s) => {
+        const n = new Set(s)
+        for (const id of ids) {
+          if (on) n.add(id)
+          else n.delete(id)
+        }
+        return n
+      }),
+    restore: (ids) => {
+      if (ids.length) setStartTodo(ids)
+    },
+    remove: (ids) => {
+      if (ids.length === 0) return
+      const kids = ids.some((id) => tasks.some((t) => t.parentId === id))
+      const msg = `Delete ${ids.length} to-do task${ids.length === 1 ? '' : 's'}${kids ? ' and their subtasks' : ''}?`
+      if (!confirm(msg)) return
+      for (const id of ids) deleteTask(id)
+      dropFromSelection(ids)
+    },
   }
 
   return (
@@ -77,7 +123,7 @@ export function GanttPage() {
         </button>
       </div>
 
-      <GanttChart rows={rows} onContext={handleContext} onAddChild={(r) => openCreate(r.id)} onEdit={openEdit} />
+      <GanttChart rows={rows} todo={todo} onContext={handleContext} onAddChild={(r) => openCreate(r.id)} onEdit={openEdit} />
 
       {menu && (
         <ContextMenu
@@ -95,6 +141,17 @@ export function GanttPage() {
       {dialog && <TaskDialog onClose={() => setDialog(null)} existing={dialog.task} defaultParentId={dialog.parentId} />}
 
       {logDialog && <LogDialog taskId={logDialog.taskId} existing={logDialog.existing} onClose={() => setLogDialog(null)} />}
+
+      {startTodo && (
+        <StartTodoDialog
+          taskIds={startTodo}
+          onClose={() => {
+            setStartTodo(null)
+            // Restored tasks leave their folder, so their ticks are stale.
+            dropFromSelection(startTodo)
+          }}
+        />
+      )}
     </div>
   )
 }

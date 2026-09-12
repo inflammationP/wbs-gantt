@@ -7,7 +7,10 @@ export interface StatusMeta {
   text: string
 }
 
+export const TODO_COLOR = '#a371f7'
+
 export const STATUS_META: Record<TaskStatus, StatusMeta> = {
+  todo: { label: 'To-do', color: TODO_COLOR, dim: 'rgba(163,113,247,0.16)', text: TODO_COLOR },
   'not-started': { label: 'Not started', color: '#6e7681', dim: 'rgba(110,118,129,0.16)', text: '#9aa4ad' },
   'in-progress': { label: 'In progress', color: '#e3b341', dim: 'rgba(227,179,65,0.16)', text: '#e3b341' },
   completed: { label: 'Completed', color: '#3fb950', dim: 'rgba(63,185,80,0.18)', text: '#3fb950' },
@@ -15,14 +18,27 @@ export const STATUS_META: Record<TaskStatus, StatusMeta> = {
   delayed: { label: 'Delayed', color: '#f85149', dim: 'rgba(248,81,73,0.18)', text: '#f85149' },
 }
 
-export const PRIORITY_META: Record<TaskPriority, { label: string; color: string }> = {
+export interface PriorityMeta {
+  label: string
+  color: string
+}
+
+export const PRIORITY_META: Record<TaskPriority, PriorityMeta> = {
   low: { label: 'Low', color: '#6e7681' },
   medium: { label: 'Medium', color: '#58a6ff' },
   high: { label: 'High', color: '#e3b341' },
   urgent: { label: 'Urgent', color: '#f85149' },
 }
 
-export const STATUS_ORDER: TaskStatus[] = ['not-started', 'in-progress', 'completed', 'paused', 'delayed']
+// To-dos have no priority. Everything that renders one goes through here so a
+// null can never reach `PRIORITY_META[...]` and blank the app.
+const NO_PRIORITY: PriorityMeta = { label: '—', color: '#6e7681' }
+
+export function priorityMeta(p: TaskPriority | null): PriorityMeta {
+  return p ? PRIORITY_META[p] : NO_PRIORITY
+}
+
+export const STATUS_ORDER: TaskStatus[] = ['todo', 'not-started', 'in-progress', 'completed', 'paused', 'delayed']
 export const PRIORITY_ORDER: TaskPriority[] = ['low', 'medium', 'high', 'urgent']
 
 export const PROJECT_COLORS = [

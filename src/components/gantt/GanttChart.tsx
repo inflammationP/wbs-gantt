@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent, PointerEvent } from 'react'
-import { Row } from '../../lib/tree'
+import { Row, RowTask } from '../../lib/tree'
 import { buildTimeline, dateToX } from '../../lib/timeline'
 import { startOfDay } from '../../lib/dates'
 import { useStore } from '../../store/useStore'
 import { TimelineHeader } from './TimelineHeader'
 import { GridBackground } from './GridBackground'
-import { RowLeft, LeftHeader, LEFT_WIDTH } from './RowLeft'
+import { RowLeft, LeftHeader, LEFT_WIDTH, TodoActions } from './RowLeft'
 import { TaskBar } from './TaskBar'
 
 const HEADER_H = 52
@@ -36,12 +36,13 @@ const rowBgLeft = (i: number) => (i % 2 === 1 ? 'bg-stripe/30' : 'bg-panel/30')
 
 interface Props {
   rows: Row[]
-  onContext: (e: MouseEvent<HTMLDivElement>, row: Row) => void
-  onAddChild: (row: Row) => void
-  onEdit: (row: Row) => void
+  todo: TodoActions
+  onContext: (e: MouseEvent<HTMLDivElement>, row: RowTask) => void
+  onAddChild: (row: RowTask) => void
+  onEdit: (row: RowTask) => void
 }
 
-export function GanttChart({ rows, onContext, onAddChild, onEdit }: Props) {
+export function GanttChart({ rows, todo, onContext, onAddChild, onEdit }: Props) {
   const viewMode = useStore((s) => s.viewMode)
   const anchorISO = useStore((s) => s.anchorISO)
   const setSelected = useStore((s) => s.setSelected)
@@ -115,7 +116,7 @@ export function GanttChart({ rows, onContext, onAddChild, onEdit }: Props) {
           {/* left rows */}
           {rows.map((row, i) => (
             <div key={row.id} className={`${rowBgLeft(i)} border-b border-line`} style={{ height: rowHeight(row.depth) }}>
-              <RowLeft row={row} onAddChild={onAddChild} onEdit={onEdit} onContext={onContext} />
+              <RowLeft row={row} todo={todo} onAddChild={onAddChild} onEdit={onEdit} onContext={onContext} />
             </div>
           ))}
 
@@ -155,8 +156,15 @@ export function GanttChart({ rows, onContext, onAddChild, onEdit }: Props) {
 
           {/* timeline rows */}
           {rows.map((row, i) => (
-            <div key={row.id} className={`relative ${rowBg(i)} border-b border-line`} style={{ height: rowHeight(row.depth) }} onClick={() => setSelected(row.id)}>
-              <TaskBar row={row} timeline={timeline} rowH={rowHeight(row.depth)} />
+            <div
+              key={row.id}
+              className={`relative ${rowBg(i)} border-b border-line`}
+              style={{ height: rowHeight(row.depth) }}
+              // A to-do folder has no task behind it, so clicking its empty
+              // timeline strip must not select a non-existent task.
+              onClick={row.kind === 'task' ? () => setSelected(row.id) : undefined}
+            >
+              {row.kind === 'task' && <TaskBar row={row} timeline={timeline} rowH={rowHeight(row.depth)} />}
             </div>
           ))}
         </div>

@@ -3,11 +3,12 @@ import type { ReactNode } from 'react'
 import { NotebookPen, Pencil, Trash2, X } from 'lucide-react'
 import { Task, TaskLog } from '../types'
 import { useStore } from '../store/useStore'
-import { computeWbs, effectiveStates } from '../lib/tree'
+import { computeWbs, effectiveStates, todoCascadeIds } from '../lib/tree'
 import { logsForTask, parseLogContent } from '../lib/logs'
-import { STATUS_META, PRIORITY_META, TASK_TYPE_LABEL } from '../lib/ui'
+import { STATUS_META, TASK_TYPE_LABEL, priorityMeta } from '../lib/ui'
 import { toDate, MONTHS_SHORT, diffDays } from '../lib/dates'
 import { LogDialog } from './LogDialog'
+import { StartTodoDialog } from './StartTodoDialog'
 
 function formatDate(iso: string | null): string {
   if (!iso) return 'TBD'
@@ -36,8 +37,10 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
   const deleteLog = useStore((s) => s.deleteLog)
   const pauseTask = useStore((s) => s.pauseTask)
   const resumeTask = useStore((s) => s.resumeTask)
+  const setTaskTodo = useStore((s) => s.setTaskTodo)
 
   const [logDialog, setLogDialog] = useState<{ existing?: TaskLog | null } | null>(null)
+  const [startTodo, setStartTodo] = useState<string[] | null>(null)
   const [showHistory, setShowHistory] = useState(true)
   const [showPauses, setShowPauses] = useState(false)
 
@@ -59,6 +62,17 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
   const taskStatus = eff?.status ?? 'not-started'
   const isLoggable = taskStatus === 'in-progress' || taskStatus === 'delayed'
   const pausedDays = task.paused && task.pauseDate ? Math.max(0, diffDays(toDate(task.pauseDate), new Date())) : 0
+
+  // Parking a task as a to-do wipes the schedule of its whole unfinished
+  // branch, so say how much is about to go before doing it.
+  const handleSetTodo = () => {
+    const extra = todoCascadeIds(tasks, logs, task.id).length - 1
+    const msg = extra > 0
+      ? `Mark "${task.name}" and its ${extra} unfinished subtask${extra === 1 ? '' : 's'} as to-do?\n\n` +
+        'Their dates, priorities and progress are cleared. Completed subtasks are left untouched.'
+      : `Mark "${task.name}" as to-do?\n\nIts dates, priority and progress are cleared.`
+    if (confirm(msg)) setTaskTodo(task.id)
+  }
 
   return (
     <>
@@ -125,24 +139,38 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
         {/* type */}
         <ReadOnlyField label="Type">{TASK_TYPE_LABEL[task.type]}</ReadOnlyField>
 
-        {task.type !== 'long-term' && (
+        {task.type !== 'long-term' && !task.isTodo && (
           <ReadOnlyField label="Progress mode">{task.strictProgress ? 'Strict (log-based)' : 'Auto (date-based)'}</ReadOnlyField>
         )}
 
-        {/* status + priority */}
-        <div className="grid grid-cols-2 gap-3">
+        {/* status + priority — a to-do has no priority to show */}
+        <div className={`grid ${task.isTodo ? 'grid-cols-1' : 'grid-cols-2'} gap-3`}>
           <ReadOnlyField label="Status">
             <span className="w-2 h-2 rounded-[2px] shrink-0" style={{ background: STATUS_META[taskStatus].color }} />
             <span className="truncate">{STATUS_META[taskStatus].label}</span>
           </ReadOnlyField>
-          <ReadOnlyField label="Priority">
-            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: PRIORITY_META[task.priority].color }} />
-            <span>{PRIORITY_META[task.priority].label}</span>
-          </ReadOnlyField>
+          {!task.isTodo && (
+            <ReadOnlyField label="Priority">
+              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: priorityMeta(task.priority).color }} />
+              <span>{priorityMeta(task.priority).label}</span>
+            </ReadOnlyField>
+          )}
         </div>
 
-        {/* dates */}
-        {task.paused ? (
+        {/* schedule — replaced by the unscheduled note + Start task for to-dos */}
+        {task.isTodo ? (
+          <div>
+            <div className="text-[12px] text-muted leading-relaxed bg-panel2 border border-border rounded-[3px] p-2.5">
+              No schedule yet. Give it dates, a priority and a progress mode when you start it.
+            </div>
+            <button
+              onClick={() => setStartTodo([task.id])}
+              className="mt-2 w-full h-8 text-[12px] font-medium bg-accent text-black rounded-[3px] hover:brightness-110"
+            >
+              Start task
+            </button>
+          </div>
+        ) : task.paused ? (
           <div>
             <div className="text-[12px] text-muted leading-relaxed bg-panel2 border border-border rounded-[3px] p-2.5">
               Paused. Started {task.startDate ? formatDate(task.startDate) : '—'} · paused on {task.pauseDate ? formatDate(task.pauseDate) : '—'} · {pausedDays} day{pausedDays === 1 ? '' : 's'} elapsed.
@@ -160,15 +188,24 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
               </ReadOnlyField>
             </div>
             {task.type !== 'long-term' && taskStatus !== 'completed' && (
-              <button onClick={() => pauseTask(task.id)} className="w-full h-7 text-[12px] text-muted hover:text-fg border border-border rounded-[3px]">
-                Pause task
-              </button>
+              // "Not started" is the one state where parking the work is more
+              // useful than pausing it, so it takes the button's place.
+              taskStatus === 'not-started' ? (
+                <button onClick={handleSetTodo} className="w-full h-7 text-[12px] text-muted hover:text-fg border border-border rounded-[3px]">
+                  Set as to-do
+                </button>
+              ) : (
+                <button onClick={() => pauseTask(task.id)} className="w-full h-7 text-[12px] text-muted hover:text-fg border border-border rounded-[3px]">
+                  Pause task
+                </button>
+              )
             )}
           </>
         )}
 
-        {/* pause history */}
-        {!task.paused && task.pauses.length > 0 && (
+        {/* pause history — suppressed for to-dos: it is schedule history, and
+            they have no schedule */}
+        {!task.paused && !task.isTodo && task.pauses.length > 0 && (
           <div>
             <button onClick={() => setShowPauses(!showPauses)} className="text-[11px] text-accent hover:text-fg">
               {showPauses ? '▾' : '▸'} Pause history ({task.pauses.length})
@@ -254,6 +291,7 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
       </div>
     </aside>
     {logDialog && <LogDialog taskId={task.id} existing={logDialog.existing} onClose={() => setLogDialog(null)} />}
+    {startTodo && <StartTodoDialog taskIds={startTodo} onClose={() => setStartTodo(null)} />}
     </>
   )
 }

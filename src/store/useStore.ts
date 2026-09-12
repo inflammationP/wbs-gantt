@@ -3,7 +3,7 @@ import { create } from 'zustand'
 import { AppView, Project, Task, TaskLog, TaskPriority, TaskType, ViewMode } from '../types'
 import { todayISO, addUnitISO, Unit, addDays, diffDays, toDate, toISO } from '../lib/dates'
 import { shiftAnchor } from '../lib/timeline'
-import { buildRows, collectDescendants, hasChildren, syncParentEnds, Row } from '../lib/tree'
+import { buildRows, collectDescendants, hasChildren, syncParentEnds, todoCascadeIds, todoGroupIds, Row } from '../lib/tree'
 import { loadData, saveData, PersistedData } from './storage'
 import { buildSeed } from '../lib/seed'
 
@@ -13,12 +13,22 @@ export interface NewTaskInput {
   parentId?: string | null
   projectId: string
   type?: TaskType
+  isTodo?: boolean
   startDate: string | null
   endDate: string | null
   strictProgress?: boolean
   priority?: TaskPriority
   tags?: string[]
   dependencies?: string[]
+}
+
+// The schedule a to-do is given when it is started (or restored in bulk).
+export interface StartTodoInput {
+  id: string
+  startDate: string
+  endDate: string
+  strictProgress: boolean
+  priority: TaskPriority
 }
 
 interface State {
@@ -42,7 +52,7 @@ interface State {
   goNext: () => void
   goToday: () => void
   setProjectFilter: (id: string) => void
-  toggleExpanded: (id: string) => void
+  toggleExpanded: (id: string, defaultOpen?: boolean) => void
   expandAll: () => void
   collapseAll: () => void
 
@@ -63,6 +73,9 @@ interface State {
 
   pauseTask: (id: string) => void
   resumeTask: (id: string) => void
+
+  setTaskTodo: (id: string) => void
+  startTodoTasks: (entries: StartTodoInput[]) => void
 
   syncParentEnds: () => void
 
@@ -100,13 +113,24 @@ export const useStore = create<State>()((set) => ({
   goNext: () => set((s) => ({ anchorISO: shiftAnchor(s.viewMode, s.anchorISO, 1) })),
   goToday: () => set({ anchorISO: todayISO() }),
   setProjectFilter: (id) => set({ projectFilter: id }),
-  toggleExpanded: (id) =>
-    set((s) => ({ expanded: { ...s.expanded, [id]: s.expanded[id] === false ? true : false } })),
-  expandAll: () => set({ expanded: {} }),
+  // `defaultOpen` has to be passed in: tasks are expanded until told otherwise,
+  // but the synthesized to-do folders are collapsed until told otherwise, so
+  // "absent" means opposite things for the two.
+  toggleExpanded: (id, defaultOpen = true) =>
+    set((s) => ({ expanded: { ...s.expanded, [id]: !(s.expanded[id] ?? defaultOpen) } })),
+  // Tasks default to expanded when absent from the map, but the synthesized
+  // folders are collapsed by default, so "expand all" must name them explicitly.
+  expandAll: () =>
+    set((s) => {
+      const expanded: Record<string, boolean> = {}
+      for (const gid of todoGroupIds(s.tasks)) expanded[gid] = true
+      return { expanded }
+    }),
   collapseAll: () =>
     set((s) => {
       const expanded: Record<string, boolean> = {}
       for (const t of s.tasks) if (hasChildren(s.tasks, t.id)) expanded[t.id] = false
+      for (const gid of todoGroupIds(s.tasks)) expanded[gid] = false
       return { expanded }
     }),
 
@@ -137,7 +161,10 @@ export const useStore = create<State>()((set) => ({
       const projectId = input.parentId
         ? s.tasks.find((t) => t.id === input.parentId)?.projectId ?? input.projectId
         : input.projectId
-      const isLT = input.type === 'long-term'
+      // A to-do has no schedule, so every scheduling field is dropped rather
+      // than taken from the input.
+      const isTodo = input.isTodo === true
+      const isLT = !isTodo && input.type === 'long-term'
       const task: Task = {
         id,
         name: input.name,
@@ -145,13 +172,14 @@ export const useStore = create<State>()((set) => ({
         parentId: input.parentId ?? null,
         projectId,
         type: isLT ? 'long-term' : 'phase',
-        startDate: input.startDate,
-        endDate: isLT ? null : input.endDate,
-        strictProgress: isLT ? false : (input.strictProgress ?? false),
+        isTodo,
+        startDate: isTodo ? null : input.startDate,
+        endDate: isTodo || isLT ? null : input.endDate,
+        strictProgress: isTodo || isLT ? false : (input.strictProgress ?? false),
         paused: false,
         pauseDate: null,
         pauses: [],
-        priority: input.priority ?? 'medium',
+        priority: isTodo ? null : (input.priority ?? 'medium'),
         tags: input.tags ?? [],
         dependencies: input.dependencies ?? [],
         createdAt: now,
@@ -214,7 +242,7 @@ export const useStore = create<State>()((set) => ({
   resizeTask: (id, startISO, endISO) =>
     set((s) => {
       const task = s.tasks.find((t) => t.id === id)
-      if (!task || task.type === 'long-term') return {}
+      if (!task || task.type === 'long-term' || task.isTodo) return {}
       let sDate = startISO
       let eDate = endISO
       if (sDate > eDate) {
@@ -281,6 +309,65 @@ export const useStore = create<State>()((set) => ({
         }
       }),
     })),
+
+  // Park a task as unscheduled work. Cascades to every unfinished descendant
+  // (completed work is finished, and stays scheduled where it is). Written as a
+  // single atomic `set` because App re-runs syncParentEnds on every `tasks`
+  // identity change. Pause history and logs are deliberately kept.
+  setTaskTodo: (id) =>
+    set((s) => {
+      const target = s.tasks.find((t) => t.id === id)
+      if (!target || target.isTodo) return {}
+      const ids = new Set(todoCascadeIds(s.tasks, s.logs, id))
+      const now = new Date().toISOString()
+      return {
+        tasks: s.tasks.map((t) =>
+          ids.has(t.id)
+            ? {
+                ...t,
+                isTodo: true,
+                startDate: null,
+                endDate: null,
+                strictProgress: false,
+                priority: null,
+                paused: false,
+                pauseDate: null,
+                updatedAt: now,
+              }
+            : t,
+        ),
+      }
+    }),
+
+  // Give one or more to-dos a schedule again. Single "Start task" and the
+  // folder's bulk "Restore" both come through here.
+  startTodoTasks: (entries) =>
+    set((s) => {
+      const byId = new Map(entries.map((e) => [e.id, e]))
+      const now = new Date().toISOString()
+      return {
+        tasks: s.tasks.map((t) => {
+          const e = byId.get(t.id)
+          if (!e || !t.isTodo) return t
+          let start = e.startDate
+          let end = e.endDate
+          if (start > end) {
+            const tmp = start
+            start = end
+            end = tmp
+          }
+          return {
+            ...t,
+            isTodo: false,
+            startDate: start,
+            endDate: end,
+            strictProgress: e.strictProgress,
+            priority: e.priority,
+            updatedAt: now,
+          }
+        }),
+      }
+    }),
 
   syncParentEnds: () =>
     set((s) => {

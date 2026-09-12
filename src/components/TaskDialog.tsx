@@ -25,6 +25,7 @@ export function TaskDialog({ onClose, existing, defaultParentId }: Props) {
     projectId: existing?.projectId ?? projects[0]?.id ?? '',
     type: (existing?.type ?? 'phase') as TaskType,
     parentId: (existing?.parentId ?? defaultParentId ?? null) as string | null,
+    isTodo: existing?.isTodo ?? false,
     startDate: existing?.startDate ?? todayISO(),
     endDate: existing?.endDate ?? todayISO(),
     strictProgress: existing?.strictProgress ?? false,
@@ -48,15 +49,58 @@ export function TaskDialog({ onClose, existing, defaultParentId }: Props) {
     return new Set(collectDescendants(tasks, existing.id).concat(existing.id))
   }, [existing, tasks])
 
-  const parentOptions = tasks.filter((t) => t.projectId === form.projectId && !excluded.has(t.id))
+  // A to-do is a holding pen, not a container, so it can't be a parent.
+  const parentOptions = tasks.filter(
+    (t) => t.projectId === form.projectId && !excluded.has(t.id) && !t.isTodo,
+  )
 
+  const isTodo = form.isTodo
   const isLT = form.type === 'long-term'
   const hasKids = existing ? tasks.some((t) => t.parentId === existing.id) : false
-  const isOverdueStrict = !existing && !isLT && form.strictProgress && !!form.endDate && form.endDate < todayISO()
+  const isOverdueStrict = !existing && !isTodo && !isLT && form.strictProgress && !!form.endDate && form.endDate < todayISO()
+
+  // Turning the box on forces a phase (a to-do has no start, and long-term
+  // goals are anchored to one) and drops the strict flag with the rest of the
+  // schedule.
+  const setTodo = (on: boolean) =>
+    setForm((f) => (on ? { ...f, isTodo: on, type: 'phase', strictProgress: false } : { ...f, isTodo: on }))
 
   const submit = () => {
     const name = form.name.trim()
     if (!name) return
+    const tags = form.tags.split(',').map((t) => t.trim()).filter(Boolean)
+
+    // Editing an existing to-do must not resurrect the schedule it doesn't have:
+    // updateTask shallow-merges, so the scheduling keys are omitted entirely.
+    // The to-do flag can only be cleared through the "Start task" flow.
+    if (existing?.isTodo) {
+      updateTask(existing.id, {
+        name,
+        description: form.description,
+        projectId: form.projectId,
+        parentId: form.parentId,
+        tags,
+      })
+      onClose()
+      return
+    }
+
+    if (isTodo) {
+      // No dates, no strict flag, no priority — addTask forces the phase type.
+      addTask({
+        name,
+        description: form.description,
+        projectId: form.projectId,
+        parentId: form.parentId,
+        isTodo: true,
+        startDate: null,
+        endDate: null,
+        tags,
+      })
+      onClose()
+      return
+    }
+
     let s: string | null = form.startDate || todayISO()
     let e: string | null = form.endDate || s
     if (isLT) {
@@ -66,7 +110,6 @@ export function TaskDialog({ onClose, existing, defaultParentId }: Props) {
       s = e
       e = tmp
     }
-    const tags = form.tags.split(',').map((t) => t.trim()).filter(Boolean)
     const payload = {
       name,
       description: form.description,
@@ -99,7 +142,7 @@ export function TaskDialog({ onClose, existing, defaultParentId }: Props) {
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="Type">
-            <select className={inputCls} value={form.type} onChange={(e) => setType(e.target.value as TaskType)}>
+            <select className={inputCls} value={form.type} disabled={isTodo} onChange={(e) => setType(e.target.value as TaskType)}>
               <option value="phase">{TASK_TYPE_LABEL.phase}</option>
               <option value="long-term">{TASK_TYPE_LABEL['long-term']}</option>
             </select>
@@ -118,40 +161,69 @@ export function TaskDialog({ onClose, existing, defaultParentId }: Props) {
           </select>
         </Field>
 
-        {isLT ? (
-          <Field label="Start date">
-            <input type="date" className={inputCls} value={form.startDate ?? ''} onChange={(e) => set('startDate', e.target.value)} />
-          </Field>
-        ) : (
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Start date"><input type="date" className={inputCls} value={form.startDate ?? ''} onChange={(e) => set('startDate', e.target.value)} /></Field>
-            <Field label="End date">
-              <span className={hasKids ? 'block cursor-help' : 'block'} title={hasKids ? '结束日期由最晚结束的子任务决定，请修改子任务的结束日期' : undefined}>
-                <input type="date" className={`${inputCls} ${hasKids ? 'opacity-50 cursor-not-allowed' : ''}`} value={form.endDate ?? ''} onChange={(e) => set('endDate', e.target.value)} disabled={hasKids} />
-              </span>
-            </Field>
+        {/* Sits above the date fields: ticking it is what removes them. */}
+        {!existing && (
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="create-todo"
+              checked={form.isTodo}
+              onChange={(e) => setTodo(e.target.checked)}
+              className="accent-[#a371f7]"
+            />
+            <label htmlFor="create-todo" className="text-[12px] text-fg cursor-pointer">
+              Create as to-do — no dates, priority or progress mode needed
+            </label>
           </div>
         )}
 
-        <div className={`flex items-center gap-2 ${isLT ? 'opacity-50' : ''}`}>
-          <input
-            type="checkbox"
-            id="strict-progress"
-            checked={form.strictProgress}
-            disabled={isLT}
-            onChange={(e) => set('strictProgress', e.target.checked)}
-            className="accent-[#46b8e6]"
-          />
-          <label htmlFor="strict-progress" className={`text-[12px] ${isLT ? 'text-dim cursor-not-allowed' : 'text-fg cursor-pointer'}`}>
-            Strict progress (progress only advances via daily logs)
-          </label>
-        </div>
+        {isTodo && (
+          <div className="text-[12px] text-muted leading-relaxed bg-panel2 border border-border rounded-[3px] p-2.5">
+            This is a to-do: unscheduled work. It sits last among its siblings inside a{' '}
+            <span style={{ color: '#a371f7' }}>To-dos</span> folder until you give it a schedule with{' '}
+            <span className="text-fg">Start task</span> in the detail panel.
+          </div>
+        )}
 
-        <Field label="Priority">
-          <select className={inputCls} value={form.priority} onChange={(e) => set('priority', e.target.value as TaskPriority)}>
-            {PRIORITY_ORDER.map((p) => <option key={p} value={p}>{PRIORITY_META[p].label}</option>)}
-          </select>
-        </Field>
+        {/* Everything a to-do doesn't have: dates, strict flag, priority. */}
+        {!isTodo && (
+          <>
+            {isLT ? (
+              <Field label="Start date">
+                <input type="date" className={inputCls} value={form.startDate ?? ''} onChange={(e) => set('startDate', e.target.value)} />
+              </Field>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Start date"><input type="date" className={inputCls} value={form.startDate ?? ''} onChange={(e) => set('startDate', e.target.value)} /></Field>
+                <Field label="End date">
+                  <span className={hasKids ? 'block cursor-help' : 'block'} title={hasKids ? '结束日期由最晚结束的子任务决定，请修改子任务的结束日期' : undefined}>
+                    <input type="date" className={`${inputCls} ${hasKids ? 'opacity-50 cursor-not-allowed' : ''}`} value={form.endDate ?? ''} onChange={(e) => set('endDate', e.target.value)} disabled={hasKids} />
+                  </span>
+                </Field>
+              </div>
+            )}
+
+            <div className={`flex items-center gap-2 ${isLT ? 'opacity-50' : ''}`}>
+              <input
+                type="checkbox"
+                id="strict-progress"
+                checked={form.strictProgress}
+                disabled={isLT}
+                onChange={(e) => set('strictProgress', e.target.checked)}
+                className="accent-[#46b8e6]"
+              />
+              <label htmlFor="strict-progress" className={`text-[12px] ${isLT ? 'text-dim cursor-not-allowed' : 'text-fg cursor-pointer'}`}>
+                Strict progress (progress only advances via daily logs)
+              </label>
+            </div>
+
+            <Field label="Priority">
+              <select className={inputCls} value={form.priority} onChange={(e) => set('priority', e.target.value as TaskPriority)}>
+                {PRIORITY_ORDER.map((p) => <option key={p} value={p}>{PRIORITY_META[p].label}</option>)}
+              </select>
+            </Field>
+          </>
+        )}
 
         {isOverdueStrict && (
           <Field label="This task is already overdue — mark as">
