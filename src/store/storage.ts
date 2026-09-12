@@ -1,5 +1,5 @@
 import { Project, Task, TaskLog } from '../types'
-import { isLang, Lang } from '../lib/i18n'
+import { DEFAULT_LANG, isLang, Lang } from '../lib/i18n'
 import { DEFAULT_THEME, isThemeId, ThemeId } from '../lib/theme'
 
 export interface PersistedData {
@@ -22,16 +22,48 @@ const KEY = 'wbs-gantt.v2'
 export interface Prefs {
   lang: Lang
   theme: ThemeId
+  /**
+   * The getting-started card has been dismissed.
+   *
+   * A preference rather than work data, and the split is what makes it work:
+   * `importData` replaces everything under `KEY` wholesale, so a flag filed
+   * there would come back the moment someone opened a file a friend sent them.
+   * Where it counts is the guide's *progress*: importing a board must not make
+   * the card reappear over work the user has already been through.
+   */
+  guideDismissed: boolean
+  /**
+   * Milestones the guide has recorded, in two kinds.
+   *
+   * `language` / `endDate` are explanation dialogs that have been opened — the
+   * two steps whose instruction is only "read this", which the board cannot
+   * witness, since the rule they describe holds equally before and after it is
+   * understood. `strict` is recorded too, for a faithful log of what has been
+   * seen, though nothing gates on it.
+   *
+   * `tour.<page>` (see `guide.ts`) records a page the user has been taken to.
+   * That one is not a read: the last step completes on having looked around, so
+   * that its first "take me there" does not finish it and collapse the card
+   * along with the other three places still to see.
+   */
+  guideDone: string[]
 }
 
 const PREF_KEY = 'wbs-gantt.prefs'
 
-export const DEFAULT_PREFS: Prefs = { lang: 'en', theme: DEFAULT_THEME }
+export const DEFAULT_PREFS: Prefs = {
+  lang: DEFAULT_LANG,
+  theme: DEFAULT_THEME,
+  guideDismissed: false,
+  guideDone: [],
+}
 
 // Anything unrecognised falls back to the default rather than propagating: a
 // theme id left over from an older build, or a hand-edited file, must not leave
 // the app painting a palette that no longer exists or looking up keys in a
-// dictionary that was never loaded.
+// dictionary that was never loaded. A blob written before the guide existed has
+// no `guideDismissed` at all, which is the same path — it lands on the default
+// and the card shows, which is what a first run after an upgrade should do.
 export function loadPrefs(): Prefs {
   try {
     const raw = localStorage.getItem(PREF_KEY)
@@ -40,6 +72,11 @@ export function loadPrefs(): Prefs {
     return {
       lang: typeof parsed.lang === 'string' && isLang(parsed.lang) ? parsed.lang : DEFAULT_PREFS.lang,
       theme: typeof parsed.theme === 'string' && isThemeId(parsed.theme) ? parsed.theme : DEFAULT_THEME,
+      guideDismissed:
+        typeof parsed.guideDismissed === 'boolean' ? parsed.guideDismissed : DEFAULT_PREFS.guideDismissed,
+      guideDone: Array.isArray(parsed.guideDone)
+        ? parsed.guideDone.filter((s): s is string => typeof s === 'string')
+        : DEFAULT_PREFS.guideDone,
     }
   } catch {
     return DEFAULT_PREFS

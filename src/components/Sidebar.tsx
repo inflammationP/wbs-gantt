@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import {
-  BarChart2, Calendar, ClipboardList, Download, LayoutDashboard, Minus, Pencil, Plus, Settings, Upload,
+  BarChart2, Calendar, ClipboardList, Download, HelpCircle, LayoutDashboard, Minus, Pencil, Plus,
+  Settings, Upload,
 } from 'lucide-react'
 import { AppView, Project } from '../types'
 import { useStore } from '../store/useStore'
@@ -37,6 +38,7 @@ export function Sidebar() {
   const expandAll = useStore((s) => s.expandAll)
   const collapseAll = useStore((s) => s.collapseAll)
   const importData = useStore((s) => s.importData)
+  const showGuide = useStore((s) => s.showGuide)
   const fileRef = useRef<HTMLInputElement>(null)
   const [editingProject, setEditingProject] = useState<Project | null>(null)
 
@@ -164,6 +166,17 @@ export function Sidebar() {
           title={t('sidebar.importTitle')}
         >
           <Upload size={13} /> {t('sidebar.import')}
+        </button>
+        {/* The way back to the getting-started card, which is otherwise only
+            dismissible. Sits with Export/Import because it is the same kind of
+            thing: a control over the whole board rather than over one project. */}
+        <button
+          onClick={showGuide}
+          className="shrink-0 flex items-center justify-center w-8 h-8 text-dim hover:text-fg hover:bg-panel2 rounded-[3px]"
+          title={t('guide.title')}
+          aria-label={t('guide.title')}
+        >
+          <HelpCircle size={13} />
         </button>
         <input
           ref={fileRef}

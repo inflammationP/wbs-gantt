@@ -39,6 +39,17 @@ export type Lang = 'en' | 'zh' | 'fr'
 export const LANGS: Lang[] = ['en', 'zh', 'fr']
 
 /**
+ * What the app opens in, before anyone has chosen.
+ *
+ * Lives here rather than in `store/storage.ts` so that `DEFAULT_PREFS` and any
+ * reader that needs to ask "is this still the default?" agree by construction.
+ * The getting-started guide is such a reader: its first step asks the user to
+ * pick a language, and someone who has already switched has answered it without
+ * ever opening the dialog.
+ */
+export const DEFAULT_LANG: Lang = 'en'
+
+/**
  * Each language names itself, so the picker needs no translation of its own —
  * a Chinese speaker looking for French should find « Français », not "French".
  */
@@ -351,6 +362,62 @@ const en = {
   'swatch.muted': 'Secondary text',
   'swatch.dim': 'Faint text',
   'swatch.accent': 'Accent',
+
+  // --- getting started ---
+  // The six-step card. Step labels are instructions rather than descriptions:
+  // they are read by someone looking at a nearly empty board.
+  'guide.title': 'Getting started',
+  'guide.dismiss': 'Hide this',
+  'guide.done': 'You are set up.',
+  'guide.read': 'Read this',
+  'guide.close': 'Got it',
+  'guide.goThere': 'Take me there',
+  // `{settings}` / `{manage}` are the sidebar's own words for those pages, passed
+  // in by the card — a step that says where to click must name the page the way
+  // the navigation names it, and this reprases itself in three languages.
+  'guide.step.language': 'Pick your language in {settings}',
+  'guide.step.project': 'Create a project in {manage}',
+  'guide.step.parentTask': 'Add a parent task inside it',
+  'guide.step.strictChild': 'Nest a strict subtask under that task',
+  'guide.step.endDate': 'How a parent’s end date is worked out',
+  'guide.step.log': 'Write a log on the strict subtask',
+  'guide.step.tour': 'Look around: Logs, Manage, Calendar, Settings',
+  // The explanation dialogs. The two about derivation have to stay true to
+  // src/lib/tree.ts (`syncParentEnds`) and src/lib/progress.ts (`autoProgress` /
+  // `taskProgress`) — a guide that describes the rules wrongly is worse than no
+  // guide, so change the copy when the rule changes.
+  // The language names ride in as a parameter rather than being written into each
+  // translation: someone who has landed in a language they do not read needs to
+  // recognise their own on sight, and English / 中文 / Français do that in any
+  // surrounding language.
+  'guide.explain.language.title': 'Interface language',
+  'guide.explain.language.p1':
+    'The interface comes in {langs}. It opens in English — if that is not your language, switch it in Settings, under Language. Everything follows at once, this card included.',
+  'guide.explain.language.skip': 'Not now',
+  'guide.explain.endDate.title': 'How a parent’s end date is worked out',
+  'guide.explain.endDate.p1':
+    'A parent task keeps no schedule of its own — its end date is decided by its subtasks, and it is always the latest of them. The subtask you just added ends after the parent did, so the parent has moved out to meet it.',
+  'guide.explain.endDate.p2':
+    'The interface says as much: open the parent for editing and the end-date field is greyed out, and hovering it reads “decided by the subtask that ends last”. Drag any subtask and the parent follows. Its progress works the same way — the average of its subtasks’ — which is why the parent will not let you type one in either.',
+  'guide.explain.strict.title': 'Strict and non-strict: where progress comes from',
+  'guide.explain.strict.p1': 'The difference is where the number comes from, not how it is drawn.',
+  'guide.explain.strict.p2':
+    'An ordinary task follows the calendar: the share of its window that has elapsed is its progress. A task that has not started reads 0%, and a window that has closed reads 100% of its own accord — you need do nothing for it to move.',
+  'guide.explain.strict.p3':
+    'A strict task counts only logs. With no log at all it stays at 0%, long after its window has closed. Once there are logs, one of two things decides the number: the latest log that carries a target progress is taken at its word; if none carries one, progress accrues as logged days ÷ the window’s days — so a day you skip is a day genuinely lost.',
+  'guide.explain.strict.p4':
+    'That is what a strict task is for: progress that reports what you actually did, instead of letting the calendar finish the work on your behalf.',
+  'guide.explain.tour.title': 'A look around',
+  'guide.explain.tour.intro':
+    'The sample board has been added alongside your own work, so Logs, Manage and Calendar all have something to show. One line on each:',
+  'guide.explain.tour.logs':
+    'Logs — everything written, collected by day; a strict task’s entries carry their target progress too.',
+  'guide.explain.tour.manage':
+    'Manage — the overview: what is on today, what is coming, what has slipped, then projects and tasks broken out below.',
+  'guide.explain.tour.calendar':
+    'Calendar — the month at a glance. A cell’s shade is how much of that day’s strict work was logged, and days carrying milestones or overdue work are marked.',
+  'guide.explain.tour.settings':
+    'Settings — three languages and four colour schemes, switchable whenever you like.',
 }
 
 export type Dict = typeof en
@@ -625,6 +692,46 @@ const zh: Dict = {
   'swatch.muted': '次要文字',
   'swatch.dim': '弱化文字',
   'swatch.accent': '强调色',
+
+  'guide.title': '开始使用',
+  'guide.dismiss': '收起',
+  'guide.done': '已经上手了。',
+  'guide.read': '看说明',
+  'guide.close': '知道了',
+  'guide.goThere': '带我去',
+  'guide.step.language': '在{settings}里选界面语言',
+  'guide.step.project': '在{manage}里新建一个项目',
+  'guide.step.parentTask': '在这个项目下新建一个父任务',
+  'guide.step.strictChild': '在父任务下挂一个严格子任务',
+  'guide.step.endDate': '父任务的结束日期是怎么来的',
+  'guide.step.log': '给严格子任务写一条任务日志',
+  'guide.step.tour': '逛一圈：日志 · 管理 · 日历 · 设置',
+  'guide.explain.language.title': '界面语言',
+  'guide.explain.language.p1':
+    '界面有 {langs} 三种。默认打开是 English —— 如果你不读英文，到设置里的「语言」换一下。换完立刻生效，这张卡片也会跟着变。',
+  'guide.explain.language.skip': '先不用',
+  'guide.explain.endDate.title': '父任务的结束日期是怎么来的',
+  'guide.explain.endDate.p1':
+    '父任务自己不排期 —— 它的结束日期由子任务决定，永远是所有子任务里最晚的那个。你刚挂上去的子任务结束得更晚，所以父任务刚刚挪出去跟上了它。',
+  'guide.explain.endDate.p2':
+    '这一点界面上就写着：打开父任务的编辑框，结束日期那一栏是灰的，鼠标停上去写着「由结束最晚的子任务决定」。你拖动任何一个子任务，父任务都会跟着走。进度同理 —— 父任务的进度是子任务进度的平均，所以它也不让你手填。',
+  'guide.explain.strict.title': '严格与非严格：进度从哪来',
+  'guide.explain.strict.p1': '差别在于这个数字从哪来，而不在于它怎么画。',
+  'guide.explain.strict.p2':
+    '普通任务看日历：窗口过去了多少比例，进度就是多少。还没开始的任务读 0%，窗口一结束就自己读满 100% —— 你什么都不用做，它也会动。',
+  'guide.explain.strict.p3':
+    '严格任务只认日志。一条日志都没有，它就一直是 0%，哪怕窗口早就过去了。有了日志之后，两种情况决定这个数字：最新一条日志填了目标进度，就以它为准；一条都没填，就按「写过日志的天数 ÷ 窗口总天数」累积 —— 所以漏掉一天，就是实打实地少一格。',
+  'guide.explain.strict.p4':
+    '这就是严格任务的意义：让进度如实反映你做了什么，而不是让日历替你干完。',
+  'guide.explain.tour.title': '逛一圈',
+  'guide.explain.tour.intro':
+    '示例数据已经追加到你的看板上（你自己建的东西都还在），所以日志、管理和日历页都有东西可看了。四个页面各一句：',
+  'guide.explain.tour.logs': '日志 —— 所有写过的内容按天汇总；严格任务的条目还带着目标进度。',
+  'guide.explain.tour.manage':
+    'Manage —— 整体概览：今天该做什么、接下来是什么、哪些逾期了，下面再按项目和任务分列。',
+  'guide.explain.tour.calendar':
+    '日历 —— 整月一屏。每格的深浅是当天严格任务的日志覆盖率，有里程碑或逾期任务的日子会标出来。',
+  'guide.explain.tour.settings': '设置 —— 三种语言、四套配色，随时可切。',
 }
 
 const fr: Dict = {
@@ -907,6 +1014,48 @@ const fr: Dict = {
   'swatch.muted': 'Texte secondaire',
   'swatch.dim': 'Texte estompé',
   'swatch.accent': 'Accent',
+
+  'guide.title': 'Premiers pas',
+  'guide.dismiss': 'Masquer',
+  'guide.done': 'Vous voilà paré.',
+  'guide.read': 'Lire l’explication',
+  'guide.close': 'Compris',
+  'guide.goThere': 'M’y emmener',
+  'guide.step.language': 'Choisir la langue dans {settings}',
+  'guide.step.project': 'Créer un projet dans {manage}',
+  'guide.step.parentTask': 'Ajouter une tâche parente dedans',
+  'guide.step.strictChild': 'Rattacher une sous-tâche stricte à cette tâche',
+  'guide.step.endDate': 'D’où vient la date de fin d’une tâche parente',
+  'guide.step.log': 'Écrire un journal sur la sous-tâche stricte',
+  'guide.step.tour': 'Un tour : Journaux · Gestion · Calendrier · Paramètres',
+  'guide.explain.language.title': 'Langue de l’interface',
+  'guide.explain.language.p1':
+    'L’interface existe en {langs}. Elle s’ouvre en anglais — si ce n’est pas votre langue, changez-la dans Paramètres, à la rubrique Langue. Tout suit aussitôt, cette carte comprise.',
+  'guide.explain.language.skip': 'Plus tard',
+  'guide.explain.endDate.title': 'D’où vient la date de fin d’une tâche parente',
+  'guide.explain.endDate.p1':
+    'Une tâche parente ne porte pas de planning à elle : sa date de fin est déterminée par ses sous-tâches, et c’est toujours la plus tardive d’entre elles. La sous-tâche que vous venez d’ajouter se termine après la fin du parent, qui vient donc de s’allonger pour la rejoindre.',
+  'guide.explain.endDate.p2':
+    'L’interface le dit elle-même : ouvrez le parent en édition et le champ de date de fin est grisé, avec « déterminée par la sous-tâche qui se termine le plus tard » au survol. Déplacez une sous-tâche et le parent suit. Son avancement fonctionne de même — la moyenne de celui de ses sous-tâches — et c’est pourquoi il ne vous laisse pas non plus le saisir.',
+  'guide.explain.strict.title': 'Stricte ou non : d’où vient l’avancement',
+  'guide.explain.strict.p1': 'La différence tient à l’origine du nombre, pas à sa représentation.',
+  'guide.explain.strict.p2':
+    'Une tâche ordinaire suit le calendrier : la part écoulée de sa fenêtre est son avancement. Une tâche qui n’a pas commencé affiche 0 %, et une fenêtre refermée affiche 100 % d’elle-même — vous n’avez rien à faire pour qu’elle bouge.',
+  'guide.explain.strict.p3':
+    'Une tâche stricte ne compte que les journaux. Sans aucun journal, elle reste à 0 %, longtemps après la fermeture de sa fenêtre. Dès qu’il y en a, deux choses décident du nombre : le dernier journal portant un avancement cible fait foi ; si aucun n’en porte, l’avancement s’accumule en jours journalisés ÷ jours de la fenêtre — un jour sauté est donc un jour réellement perdu.',
+  'guide.explain.strict.p4':
+    'C’est là l’objet d’une tâche stricte : un avancement qui dit ce que vous avez réellement fait, au lieu de laisser le calendrier terminer le travail à votre place.',
+  'guide.explain.tour.title': 'Un tour rapide',
+  'guide.explain.tour.intro':
+    'Le tableau d’exemple a été ajouté à côté de votre propre travail, si bien que Journaux, Gestion et Calendrier ont désormais de quoi montrer. Une ligne pour chacun :',
+  'guide.explain.tour.logs':
+    'Journaux — tout ce qui a été écrit, rassemblé par jour ; les entrées d’une tâche stricte portent aussi leur avancement cible.',
+  'guide.explain.tour.manage':
+    'Gestion — la vue d’ensemble : ce qui est au programme aujourd’hui, ce qui arrive, ce qui a glissé, puis les projets et les tâches détaillés en dessous.',
+  'guide.explain.tour.calendar':
+    'Calendrier — le mois d’un coup d’œil. La nuance d’une case indique la part du travail strict journalisée ce jour-là, et les jours portant un jalon ou du retard sont signalés.',
+  'guide.explain.tour.settings':
+    'Paramètres — trois langues et quatre jeux de couleurs, à changer quand vous voulez.',
 }
 
 const DICTS: Record<Lang, Dict> = { en, zh, fr }

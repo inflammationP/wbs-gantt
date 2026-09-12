@@ -8,6 +8,7 @@ import { loadData, saveData, loadPrefs, savePrefs, PersistedData } from './stora
 import { applyLang, Lang } from '../lib/i18n'
 import { applyTheme, ThemeId } from '../lib/theme'
 import { buildSeed } from '../lib/seed'
+import { buildSample, SAMPLE_PROJECT_IDS } from '../lib/sample'
 
 export interface NewTaskInput {
   name: string
@@ -54,6 +55,10 @@ interface State {
   projectFilter: string
   lang: Lang
   theme: ThemeId
+  // Persisted alongside lang/theme — see `Prefs` in store/storage.ts for why the
+  // guide's state lives with the preferences rather than with the work data.
+  guideDismissed: boolean
+  guideDone: string[]
 
   setLang: (l: Lang) => void
   setTheme: (t: ThemeId) => void
@@ -92,6 +97,12 @@ interface State {
   syncParentEnds: () => void
 
   importData: (data: PersistedData) => void
+
+  /** Append the sample board. Idempotent — see the implementation. */
+  addSample: () => void
+  dismissGuide: () => void
+  showGuide: () => void
+  markGuideDone: (stepId: string) => void
 }
 
 function uid(): string {
@@ -116,8 +127,8 @@ applyLang(prefs.lang)
 // off the identity of projects/tasks/logs and never fires for a preference, and
 // a second subscriber would run after React commits, a frame late.
 function persistPrefs(): void {
-  const { lang, theme } = useStore.getState()
-  savePrefs({ lang, theme })
+  const { lang, theme, guideDismissed, guideDone } = useStore.getState()
+  savePrefs({ lang, theme, guideDismissed, guideDone })
 }
 
 export const useStore = create<State>()((set) => ({
@@ -136,6 +147,8 @@ export const useStore = create<State>()((set) => ({
   projectFilter: 'all',
   lang: prefs.lang,
   theme: prefs.theme,
+  guideDismissed: prefs.guideDismissed,
+  guideDone: prefs.guideDone,
 
   setLang: (l) => {
     applyLang(l)
@@ -418,6 +431,45 @@ export const useStore = create<State>()((set) => ({
 
   importData: (data) =>
     set({ projects: data.projects, tasks: data.tasks, logs: data.logs ?? [], selectedTaskId: null, selectedProjectId: null, projectFilter: 'all' }),
+
+  /**
+   * Append the sample board to whatever is already there.
+   *
+   * Appended, not imported wholesale: the guide loads this as its last step,
+   * right after the user has built a project, a parent task and a strict
+   * subtask of their own. Replacing would delete all three with no undo — the
+   * subscriber at the bottom of this file writes to localStorage immediately.
+   *
+   * Idempotent by way of `SAMPLE_PROJECT_IDS`: the sample's ids are stable
+   * strings where everything a user makes carries a uuid, so one of them being
+   * present means the sample is already in. Without the guard, re-reading the
+   * last step would append a second copy.
+   */
+  addSample: () => {
+    if (useStore.getState().projects.some((p) => SAMPLE_PROJECT_IDS.includes(p.id))) return
+    const sample = buildSample()
+    set((s) => ({
+      projects: [...s.projects, ...sample.projects],
+      tasks: [...s.tasks, ...sample.tasks],
+      logs: [...s.logs, ...sample.logs],
+    }))
+  },
+
+  dismissGuide: () => {
+    set({ guideDismissed: true })
+    persistPrefs()
+  },
+  showGuide: () => {
+    set({ guideDismissed: false })
+    persistPrefs()
+  },
+  markGuideDone: (stepId) => {
+    // Guarded both ways: re-opened dialogs and revisited pages are the same
+    // milestone twice, and the list is what the guide counts.
+    if (useStore.getState().guideDone.includes(stepId)) return
+    set((s) => ({ guideDone: [...s.guideDone, stepId] }))
+    persistPrefs()
+  },
 }))
 
 // Persist data (only) to localStorage whenever projects/tasks change.
