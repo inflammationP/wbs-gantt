@@ -3,7 +3,9 @@ import type { ReactNode } from 'react'
 import { useStore } from '../store/useStore'
 import { buildChildrenMap } from '../lib/tree'
 import { groupLogsByDate, parseLogContent } from '../lib/logs'
-import { toDate, MONTHS_SHORT, WEEKDAYS } from '../lib/dates'
+import { toDate } from '../lib/dates'
+import { monthAbbr, weekdayName } from '../lib/i18n'
+import { useLang, useT } from '../lib/useT'
 import { LogDialog } from '../components/LogDialog'
 import { DayLogsModal } from '../components/DayLogsModal'
 import { ChevronDown, ChevronRight } from 'lucide-react'
@@ -12,6 +14,8 @@ import { Task, TaskLog } from '../types'
 type Filter = { kind: 'all' } | { kind: 'project'; id: string } | { kind: 'task'; id: string }
 
 export function LogsPage() {
+  const t = useT()
+  const lang = useLang()
   const tasks = useStore((s) => s.tasks)
   const projects = useStore((s) => s.projects)
   const logs = useStore((s) => s.logs)
@@ -26,7 +30,7 @@ export function LogsPage() {
 
   const visibleTaskIds = useMemo(() => {
     if (filter.kind === 'all') return null
-    if (filter.kind === 'project') return new Set(tasks.filter((t) => t.projectId === filter.id).map((t) => t.id))
+    if (filter.kind === 'project') return new Set(tasks.filter((task) => task.projectId === filter.id).map((task) => task.id))
     const ids = new Set<string>([filter.id])
     const walk = (pid: string) => {
       for (const c of children.get(pid) ?? []) {
@@ -43,27 +47,27 @@ export function LogsPage() {
     return groupLogsByDate(ls)
   }, [logs, visibleTaskIds])
 
-  const renderTask = (t: Task, depth: number): ReactNode => {
-    const active = filter.kind === 'task' && filter.id === t.id
-    const kids = children.get(t.id) ?? []
-    const isCollapsed = collapsed[t.id] === true
+  const renderTask = (task: Task, depth: number): ReactNode => {
+    const active = filter.kind === 'task' && filter.id === task.id
+    const kids = children.get(task.id) ?? []
+    const isCollapsed = collapsed[task.id] === true
     return (
-      <div key={t.id}>
+      <div key={task.id}>
         <div className="flex items-center" style={{ paddingLeft: 8 + depth * 14 }}>
           <button
-            onClick={() => { if (kids.length) setCollapsed((c) => ({ ...c, [t.id]: !isCollapsed })) }}
+            onClick={() => { if (kids.length) setCollapsed((c) => ({ ...c, [task.id]: !isCollapsed })) }}
             className="w-4 shrink-0 flex items-center justify-center text-dim hover:text-fg"
-            title={kids.length ? (isCollapsed ? 'Expand' : 'Collapse') : undefined}
+            title={kids.length ? (isCollapsed ? t('common.expand') : t('common.collapse')) : undefined}
           >
             {kids.length ? (isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />) : null}
           </button>
           <button
-            onClick={() => setFilter({ kind: 'task', id: t.id })}
+            onClick={() => setFilter({ kind: 'task', id: task.id })}
             className={`flex-1 min-w-0 flex items-center h-7 rounded-[3px] text-[12px] text-left pr-2 ${
               active ? 'bg-panel2 text-fg' : 'text-muted hover:text-fg hover:bg-panel2/50'
             }`}
           >
-            <span className="truncate">{t.name}</span>
+            <span className="truncate">{task.name}</span>
           </button>
         </div>
         {!isCollapsed && kids.map((c) => renderTask(c, depth + 1))}
@@ -86,7 +90,7 @@ export function LogsPage() {
             filter.kind === 'all' ? 'bg-panel2 text-fg' : 'text-muted hover:text-fg hover:bg-panel2/50'
           }`}
         >
-          All logs
+          {t('logs.all')}
         </button>
         {projects.map((p) => (
           <div key={p.id} className="mb-1">
@@ -99,16 +103,16 @@ export function LogsPage() {
               <span className="w-2 h-2 rounded-full shrink-0" style={{ background: p.color }} />
               <span className="flex-1 truncate">{p.name}</span>
             </button>
-            {tasks.filter((t) => t.projectId === p.id && t.parentId === null).map((t) => renderTask(t, 0))}
+            {tasks.filter((task) => task.projectId === p.id && task.parentId === null).map((task) => renderTask(task, 0))}
           </div>
         ))}
       </aside>
 
       {/* sticky-note grid */}
       <div className="flex-1 overflow-auto p-6">
-        <h1 className="text-[18px] font-semibold mb-4">Logs</h1>
+        <h1 className="text-[18px] font-semibold mb-4">{t('nav.logs')}</h1>
         {grouped.length === 0 ? (
-          <div className="text-[13px] text-dim">No logs yet.</div>
+          <div className="text-[13px] text-dim">{t('logs.empty')}</div>
         ) : (
           <div className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(200px,1fr))]" style={{ maxWidth: 1120 }}>
             {grouped.map(({ date, logs: dayLogs }) => {
@@ -123,13 +127,13 @@ export function LogsPage() {
               }
               const taskEntries = [...byTask.entries()]
               const preview = taskEntries.slice(0, 2).map(([taskId, tlogs]) => {
-                const t = tasks.find((x) => x.id === taskId)
-                const p = t ? projects.find((x) => x.id === t.projectId) : null
+                const task = tasks.find((x) => x.id === taskId)
+                const p = task ? projects.find((x) => x.id === task.projectId) : null
                 const items = tlogs
                   .flatMap((l) => parseLogContent(l.content))
                   .filter((it) => it.depth === 0)
                   .slice(0, 2)
-                return { taskId, name: t?.name ?? 'Unknown task', color: p?.color, items }
+                return { taskId, name: task?.name ?? t('common.unknownTask'), color: p?.color, items }
               })
               const moreTasks = taskEntries.length - preview.length
               return (
@@ -141,8 +145,8 @@ export function LogsPage() {
                   <div className="flex items-baseline gap-2 mb-2.5 pr-2">
                     <span className="text-[26px] font-bold leading-none text-fg">{d.getDate()}</span>
                     <div className="leading-tight">
-                      <div className="text-[11px] font-semibold text-muted">{WEEKDAYS[d.getDay()]}</div>
-                      <div className="text-[11px] text-dim">{MONTHS_SHORT[d.getMonth()]} {d.getFullYear()}</div>
+                      <div className="text-[11px] font-semibold text-muted">{weekdayName(lang, d.getDay())}</div>
+                      <div className="text-[11px] text-dim">{monthAbbr(lang, d.getMonth())} {d.getFullYear()}</div>
                     </div>
                   </div>
                   <div className="flex-1 overflow-hidden space-y-2 pr-1">
@@ -163,11 +167,14 @@ export function LogsPage() {
                       </div>
                     ))}
                     {moreTasks > 0 && (
-                      <div className="text-[11px] text-dim">+{moreTasks} more task{moreTasks > 1 ? 's' : ''}</div>
+                      <div className="text-[11px] text-dim">{t('logs.moreTasks', { count: moreTasks })}</div>
                     )}
                   </div>
                   <div className="text-[11px] mt-2 text-dim">
-                    {dayLogs.length} log{dayLogs.length > 1 ? 's' : ''} · {taskEntries.length} task{taskEntries.length > 1 ? 's' : ''}
+                    {t('logs.dayFooter', {
+                      logs: t('common.logCount', { count: dayLogs.length }),
+                      tasks: t('common.taskCount', { count: taskEntries.length }),
+                    })}
                   </div>
                 </button>
               )

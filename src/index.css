@@ -8,6 +8,183 @@ body,
   height: 100%;
 }
 
+/*
+ * Palettes
+ * ========
+ *
+ * Every colour the app paints is declared here, as space-separated RGB triplets
+ * so Tailwind can compose them with an alpha modifier (`rgb(var(--c-accent) / 0.1)`
+ * from `bg-accent/10`). Nothing in the app hardcodes a colour — one `--c-*`
+ * change moves the whole surface.
+ *
+ * A theme is a whole colour scheme, not a swapped accent. The single strongest
+ * lever is the **lightness of the base**, and it is the one that has to carry
+ * the difference: four palettes stacked inside a couple of L* points read as one
+ * theme no matter how far apart their accents are. Measured L* of `--c-bg`:
+ *
+ *   graphite   4.4   near-black, neutral
+ *   ember      6.9   warm, hazel-black
+ *   slate     15.1   mid grey-blue — over three times graphite's lightness
+ *   paper    100.0   light
+ *
+ * Temperature is the second lever: graphite and ember sit at almost the same
+ * lightness and are still unmistakably different, because every one of their
+ * surfaces is tinted — ember's neutrals are brown, not grey.
+ *
+ *   Chrome  — surfaces, borders, text, accent. This is what a theme *is*.
+ *   Signals — the status and priority colours. Green means done and red means
+ *             late in *every* theme, so the three dark palettes share one ramp
+ *             and only `paper` restates it. Paper needs its own because these
+ *             values are also set as text (see RowLeft's status column and
+ *             ManagePage's table), and the dark ramp fails contrast on a light
+ *             surface: `#e3b341` is ~1.9:1 on white and `#3fb950` ~2.5:1.
+ *
+ * Selectors are attribute-based rather than `:root`-scoped, because more than one
+ * palette can be on screen at once: the Settings page renders each theme as a
+ * swatch board under its own `data-theme`, and the same variables have to resolve
+ * inside that subtree. That also means the dark signal ramp is written against
+ * every dark attribute rather than left to inherit — a nested `[data-theme=…]`
+ * inside a paper document inherits from its *parent*, so it would otherwise pick
+ * up paper's signal colours.
+ *
+ * `:root` carries graphite so the correct look exists before any JavaScript runs,
+ * and that is load-bearing rather than a nicety: `body` reads
+ * `background-color: rgb(var(--c-bg) / 1)`, and a `var()` with no fallback that
+ * resolves to nothing invalidates the whole declaration at computed-value time.
+ * The app would show its bare canvas — permanently, if the injection ever failed.
+ *
+ * Adding or renaming a theme means changing `THEME_ORDER` in `src/lib/theme.ts`
+ * in step; the ids here are the ids there.
+ */
+
+/* graphite — near-black, neutral cast. The default, and unchanged from the
+   palette the app had before themes existed. */
+:root,
+[data-theme='graphite'] {
+  --c-bg: 10 13 16;
+  --c-panel: 17 21 27;
+  --c-panel2: 23 28 35;
+  --c-stripe: 21 27 34;
+  --c-border: 36 44 53;
+  --c-line: 27 34 42;
+  --c-fg: 230 237 243;
+  --c-muted: 148 161 173;
+  --c-dim: 91 102 114;
+  --c-accent: 70 184 230;
+  --c-on-accent: 0 0 0;
+  --c-scroll: 42 51 61;
+  --c-scroll-hover: 58 69 80;
+  /* Behind a task bar's label. Only meaningful where that label is light. */
+  --c-bar-shadow: rgba(0, 0, 0, 0.7);
+
+  color-scheme: dark;
+}
+
+/* slate — mid grey-blue, at roughly three times graphite's lightness. The
+   surfaces are cool and noticeably raised; borders are crisp rather than
+   whispered, which is what a mid-tone palette can afford. */
+[data-theme='slate'] {
+  --c-bg: 34 38 46;
+  --c-panel: 41 46 55;
+  --c-panel2: 50 56 68;
+  --c-stripe: 45 50 60;
+  --c-border: 65 72 85;
+  --c-line: 53 59 71;
+  --c-fg: 222 227 236;
+  --c-muted: 153 163 179;
+  --c-dim: 106 115 131;
+  --c-accent: 122 162 247;
+  --c-on-accent: 16 19 26;
+  --c-scroll: 61 68 80;
+  --c-scroll-hover: 78 87 102;
+  --c-bar-shadow: rgba(0, 0, 0, 0.7);
+
+  color-scheme: dark;
+}
+
+/* ember — hazel-black. Almost graphite's lightness, and legible as a different
+   scheme purely because the neutral axis is warm: every surface, border and
+   text tone carries the same brown cast, and the accent is the fire. */
+[data-theme='ember'] {
+  --c-bg: 26 18 11;
+  --c-panel: 35 24 16;
+  --c-panel2: 46 33 21;
+  --c-stripe: 40 29 18;
+  --c-border: 69 50 34;
+  --c-line: 52 38 24;
+  --c-fg: 243 231 217;
+  --c-muted: 194 170 142;
+  --c-dim: 139 116 91;
+  --c-accent: 240 136 62;
+  --c-on-accent: 26 15 6;
+  --c-scroll: 71 52 37;
+  --c-scroll-hover: 90 68 48;
+  --c-bar-shadow: rgba(0, 0, 0, 0.7);
+
+  color-scheme: dark;
+}
+
+/* paper — the light one. Cool near-white rather than warm cream: the page sits
+   at a faint grey so white panels read as raised, borders are dark enough to
+   actually divide, and body text is near-black instead of grey. The only palette
+   that restates the signals — these are the values GitHub's light theme uses,
+   which are tuned for legibility as text on white. */
+[data-theme='paper'] {
+  --c-bg: 238 241 245;
+  --c-panel: 255 255 255;
+  --c-panel2: 240 243 247;
+  --c-stripe: 246 248 251;
+  --c-border: 204 212 222;
+  --c-line: 226 231 238;
+  --c-fg: 16 21 27;
+  --c-muted: 87 96 106;
+  --c-dim: 139 148 158;
+  --c-accent: 31 111 235;
+  --c-on-accent: 255 255 255;
+  --c-scroll: 198 206 216;
+  --c-scroll-hover: 173 184 196;
+  /* A light theme sets bar labels in dark text, so a dark shadow only muddies it. */
+  --c-bar-shadow: transparent;
+
+  --c-todo: 130 80 223;
+  --c-todo-text: 102 57 186;
+  --c-not-started: 140 149 159;
+  --c-not-started-text: 87 96 106;
+  --c-in-progress: 154 103 0;
+  --c-in-progress-text: 154 103 0;
+  --c-completed: 26 127 55;
+  --c-completed-text: 26 127 55;
+  --c-paused: 9 105 218;
+  --c-paused-text: 9 105 218;
+  --c-delayed: 207 34 46;
+  --c-delayed-text: 207 34 46;
+
+  color-scheme: light;
+}
+
+/* The dark signal ramp, shared by all three dark palettes. Written out against
+   each of them rather than left to inherit, so a nested swatch board resolves it
+   locally.
+   `:where()` gives this rule zero specificity, so it can never outrank a theme's
+   own signals however the blocks are ordered — paper restates them, and must win
+   even though it appears above. These are the pre-theme values: nothing about a
+   status colour changed when themes arrived, which is the point — green still
+   means done. */
+:where(:root, [data-theme='graphite'], [data-theme='slate'], [data-theme='ember']) {
+  --c-todo: 163 113 247;
+  --c-todo-text: 163 113 247;
+  --c-not-started: 110 118 129;
+  --c-not-started-text: 154 164 173;
+  --c-in-progress: 227 179 65;
+  --c-in-progress-text: 227 179 65;
+  --c-completed: 63 185 80;
+  --c-completed-text: 63 185 80;
+  --c-paused: 88 166 255;
+  --c-paused-text: 88 166 255;
+  --c-delayed: 248 81 73;
+  --c-delayed-text: 248 81 73;
+}
+
 body {
   @apply bg-bg text-fg font-sans antialiased;
   font-size: 13px;
@@ -17,27 +194,27 @@ body {
 /* Industrial scrollbars */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #2a333d #0a0d10;
+  scrollbar-color: rgb(var(--c-scroll)) rgb(var(--c-bg));
 }
 *::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 *::-webkit-scrollbar-track {
-  background: #0a0d10;
+  background: rgb(var(--c-bg));
 }
 *::-webkit-scrollbar-thumb {
-  background: #2a333d;
-  border: 2px solid #0a0d10;
+  background: rgb(var(--c-scroll));
+  border: 2px solid rgb(var(--c-bg));
   border-radius: 6px;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background: #3a4550;
+  background: rgb(var(--c-scroll-hover));
 }
 *::-webkit-scrollbar-corner {
-  background: #0a0d10;
+  background: rgb(var(--c-bg));
 }
 
 ::selection {
-  background: rgba(70, 184, 230, 0.25);
+  background: rgb(var(--c-accent) / 0.25);
 }

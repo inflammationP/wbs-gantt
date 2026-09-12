@@ -4,7 +4,9 @@ import { AppView, Project, Task, TaskLog, TaskPriority, TaskType, ViewMode } fro
 import { todayISO, addUnitISO, Unit, addDays, diffDays, toDate, toISO } from '../lib/dates'
 import { timelineRange, DateRange } from '../lib/timeline'
 import { buildRows, collectDescendants, hasChildren, syncParentEnds, todoCascadeIds, todoGroupIds, Row } from '../lib/tree'
-import { loadData, saveData, PersistedData } from './storage'
+import { loadData, saveData, loadPrefs, savePrefs, PersistedData } from './storage'
+import { applyLang, Lang } from '../lib/i18n'
+import { applyTheme, ThemeId } from '../lib/theme'
 import { buildSeed } from '../lib/seed'
 
 export interface NewTaskInput {
@@ -50,7 +52,11 @@ interface State {
   today: string
   expanded: Record<string, boolean>
   projectFilter: string
+  lang: Lang
+  theme: ThemeId
 
+  setLang: (l: Lang) => void
+  setTheme: (t: ThemeId) => void
   setActiveView: (v: AppView) => void
   setSelected: (id: string | null) => void
   setSelectedProject: (id: string | null) => void
@@ -98,6 +104,22 @@ const loaded = loadData()
 const initial = loaded ?? buildSeed()
 if (!loaded) saveData({ projects: initial.projects, tasks: initial.tasks, logs: initial.logs })
 
+const prefs = loadPrefs()
+// Before the first render, not in an effect: the palette is applied by an
+// attribute on <html>, and an effect would let one frame paint in the wrong one.
+// The *default* palette does not depend on this at all — it lives in `:root` —
+// so this only ever has to catch up the three non-default themes.
+applyTheme(prefs.theme)
+applyLang(prefs.lang)
+
+// Written from the actions rather than a subscriber: the subscriber below keys
+// off the identity of projects/tasks/logs and never fires for a preference, and
+// a second subscriber would run after React commits, a frame late.
+function persistPrefs(): void {
+  const { lang, theme } = useStore.getState()
+  savePrefs({ lang, theme })
+}
+
 export const useStore = create<State>()((set) => ({
   projects: initial.projects,
   tasks: initial.tasks,
@@ -112,7 +134,19 @@ export const useStore = create<State>()((set) => ({
   today: todayISO(),
   expanded: {},
   projectFilter: 'all',
+  lang: prefs.lang,
+  theme: prefs.theme,
 
+  setLang: (l) => {
+    applyLang(l)
+    set({ lang: l })
+    persistPrefs()
+  },
+  setTheme: (t) => {
+    applyTheme(t)
+    set({ theme: t })
+    persistPrefs()
+  },
   setActiveView: (v) => set({ activeView: v }),
   setSelected: (id) => set({ selectedTaskId: id, selectedProjectId: null }),
   setSelectedProject: (id) => set({ selectedProjectId: id, selectedTaskId: null }),

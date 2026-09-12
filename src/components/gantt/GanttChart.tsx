@@ -4,6 +4,7 @@ import { Row, RowTask } from '../../lib/tree'
 import { buildTimeline, dateToX, DateRange, FOCUS_OFFSET_PX } from '../../lib/timeline'
 import { startOfDay, toDate } from '../../lib/dates'
 import { useStore } from '../../store/useStore'
+import { useLang } from '../../lib/useT'
 import { TimelineHeader } from './TimelineHeader'
 import { GridBackground } from './GridBackground'
 import { RowLeft, LeftHeader, LEFT_WIDTH, TodoActions } from './RowLeft'
@@ -38,6 +39,7 @@ interface Props {
 }
 
 export function GanttChart({ rows, range, todo, onContext, onAddChild, onEdit }: Props) {
+  const lang = useLang()
   const viewMode = useStore((s) => s.viewMode)
   const focusISO = useStore((s) => s.focusISO)
   const focusTick = useStore((s) => s.focusTick)
@@ -52,7 +54,9 @@ export function GanttChart({ rows, range, todo, onContext, onAddChild, onEdit }:
   const splitterRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const timeline = useMemo(() => buildTimeline(viewMode, range), [viewMode, range])
+  // `lang` belongs here: `buildTimeline` builds every cell and group label, so
+  // leaving it out would freeze the whole header in the language it loaded in.
+  const timeline = useMemo(() => buildTimeline(viewMode, range, lang), [viewMode, range, lang])
 
   // Scroll-to-today. Wanted on first render and whenever Today is pressed — but
   // deliberately not when the range changes, so switching the project filter
@@ -156,20 +160,33 @@ export function GanttChart({ rows, range, todo, onContext, onAddChild, onEdit }:
 
         {/* timeline region (scrolls horizontally under the left labels) */}
         <div className="absolute top-0 bottom-0" style={{ left: leftWidth, width: timeline.totalWidth }}>
-          {/* today line */}
+          {/* today line — the amber signal, and the only solid vertical line */}
           {todayX != null && (
             <div
               className="absolute pointer-events-none"
-              style={{ left: todayX, top: HEADER_H, bottom: 0, width: 1, background: '#e3b341', opacity: 0.75, zIndex: 15 }}
+              style={{ left: todayX, top: HEADER_H, bottom: 0, width: 1, background: 'rgb(var(--c-in-progress))', opacity: 0.75, zIndex: 15 }}
             />
           )}
 
           {/* selected day marker — above the header so it ties the picked date
-              label to the column it belongs to */}
+              label to the column it belongs to.
+              Dashed and neutral, deliberately not the accent. This and the today
+              line are both full-height 1px marks on the same canvas, and telling
+              them apart by hue alone fails as soon as an accent lands near amber
+              — and fails completely under red-green colour blindness. Different
+              form separates them however the palette moves. */}
           {selectedX != null && (
             <div
               className="absolute pointer-events-none"
-              style={{ left: selectedX, top: 0, bottom: 0, width: 1, background: '#46b8e6', opacity: 0.6, zIndex: 25 }}
+              style={{
+                left: selectedX,
+                top: 0,
+                bottom: 0,
+                width: 1,
+                backgroundImage:
+                  'repeating-linear-gradient(to bottom, rgb(var(--c-fg) / 0.5) 0 4px, transparent 4px 8px)',
+                zIndex: 25,
+              }}
             />
           )}
 

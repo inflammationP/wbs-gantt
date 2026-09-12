@@ -1,7 +1,9 @@
 import { Pencil, Trash2 } from 'lucide-react'
 import { Modal } from './ui'
 import { parseLogContent } from '../lib/logs'
-import { formatLong, toDate } from '../lib/dates'
+import { toDate } from '../lib/dates'
+import { formatLongDate } from '../lib/i18n'
+import { useLang, useT } from '../lib/useT'
 import { Project, Task, TaskLog } from '../types'
 
 /** Every log written on one day, grouped by task. */
@@ -22,22 +24,24 @@ export function DayLogsModal({
   onEdit: (log: TaskLog) => void
   onDelete: (id: string) => void
 }) {
+  const t = useT()
+  const lang = useLang()
   const byTask = new Map<string, TaskLog[]>()
   for (const l of logs) {
     if (!byTask.has(l.taskId)) byTask.set(l.taskId, [])
     byTask.get(l.taskId)!.push(l)
   }
   return (
-    <Modal title={formatLong(toDate(date))} onClose={onClose} width={620}>
+    <Modal title={formatLongDate(lang, toDate(date))} onClose={onClose} width={620}>
       <div className="space-y-5">
         {[...byTask.entries()].map(([taskId, tlogs]) => {
-          const t = tasks.find((x) => x.id === taskId)
-          const p = t ? projects.find((x) => x.id === t.projectId) : null
+          const task = tasks.find((x) => x.id === taskId)
+          const p = task ? projects.find((x) => x.id === task.projectId) : null
           return (
             <div key={taskId}>
               <div className="flex items-center gap-2 mb-2">
                 {p && <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: p.color }} />}
-                <span className="text-[13px] font-semibold text-fg">{t?.name ?? 'Unknown task'}</span>
+                <span className="text-[13px] font-semibold text-fg">{task?.name ?? t('common.unknownTask')}</span>
               </div>
               <div className="space-y-2">
                 {tlogs.map((log) => (
@@ -51,12 +55,12 @@ export function DayLogsModal({
                           </div>
                         ))}
                         {log.targetProgress != null && (
-                          <div className="text-[11px] text-dim mt-1.5">Target progress: {log.targetProgress}%</div>
+                          <div className="text-[11px] text-dim mt-1.5">{t('common.targetProgress', { percent: log.targetProgress })}</div>
                         )}
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
-                        <button onClick={() => onEdit(log)} title="Edit" className="p-1 text-dim hover:text-fg"><Pencil size={13} /></button>
-                        <button onClick={() => onDelete(log.id)} title="Delete" className="p-1 text-dim hover:text-[#f85149]"><Trash2 size={13} /></button>
+                        <button onClick={() => onEdit(log)} title={t('common.edit')} className="p-1 text-dim hover:text-fg"><Pencil size={13} /></button>
+                        <button onClick={() => onDelete(log.id)} title={t('common.delete')} className="p-1 text-dim hover:text-delayed"><Trash2 size={13} /></button>
                       </div>
                     </div>
                   </div>

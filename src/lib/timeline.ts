@@ -2,8 +2,11 @@ import { Task, ViewMode } from '../types'
 import {
   Unit, toDate, toISO, addUnit, addMonths, addDays, addHours, startOfDay, startOfWeek, startOfMonth,
   startOfQuarter, startOfYear, diffDays, diffMonths, daysInMonth, isWeekend, isoWeekNumber,
-  MONTHS, MONTHS_SHORT,
 } from './dates'
+import {
+  Lang, formatMonthGroup, formatQuarterGroup, formatQuarterLabel, formatWeekLabel,
+  formatWeekRange, monthAbbr, translate,
+} from './i18n'
 
 export interface TimelineCell {
   key: string
@@ -137,12 +140,12 @@ export function timelineRange(mode: ViewMode, tasks: Task[], todayISO: string, c
   return { start, end }
 }
 
-function cellLabel(unit: Unit, d: Date): string {
+function cellLabel(unit: Unit, d: Date, lang: Lang): string {
   switch (unit) {
     case 'day': return String(d.getDate())
-    case 'week': return `W${isoWeekNumber(d)}`
-    case 'month': return MONTHS_SHORT[d.getMonth()]
-    case 'quarter': return `Q${Math.floor(d.getMonth() / 3) + 1}`
+    case 'week': return formatWeekLabel(lang, isoWeekNumber(d))
+    case 'month': return monthAbbr(lang, d.getMonth())
+    case 'quarter': return formatQuarterLabel(lang, Math.floor(d.getMonth() / 3) + 1)
     case 'year': return String(d.getFullYear())
     case 'hour': return String(d.getHours())
   }
@@ -158,24 +161,20 @@ function groupKeyFor(unit: Unit, d: Date): string {
   }
 }
 
-function groupLabelFor(unit: Unit, d: Date): string {
+function groupLabelFor(unit: Unit, d: Date, lang: Lang): string {
   switch (unit) {
     case 'week': {
       const monday = startOfWeek(d)
-      const sunday = addDays(monday, 6)
-      if (monday.getFullYear() !== sunday.getFullYear()) {
-        return `${MONTHS_SHORT[monday.getMonth()]} ${monday.getDate()}, ${monday.getFullYear()} – ${MONTHS_SHORT[sunday.getMonth()]} ${sunday.getDate()}, ${sunday.getFullYear()}`
-      }
-      return `${MONTHS_SHORT[monday.getMonth()]} ${monday.getDate()} – ${MONTHS_SHORT[sunday.getMonth()]} ${sunday.getDate()}`
+      return formatWeekRange(lang, monday, addDays(monday, 6))
     }
-    case 'month': return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`
-    case 'quarter': return `Q${Math.floor(d.getMonth() / 3) + 1} ${d.getFullYear()}`
-    case 'year': return `${d.getFullYear()}`
+    case 'month': return formatMonthGroup(lang, d)
+    case 'quarter': return formatQuarterGroup(lang, d)
+    case 'year': return String(d.getFullYear())
     default: return ''
   }
 }
 
-export function buildTimeline(mode: ViewMode, range: DateRange): Timeline {
+export function buildTimeline(mode: ViewMode, range: DateRange, lang: Lang): Timeline {
   const { unit, colWidth, groupUnit } = CONFIG[mode]
   // `range` is already snapped out to whole units, so this counts exactly.
   const start = range.start
@@ -191,7 +190,7 @@ export function buildTimeline(mode: ViewMode, range: DateRange): Timeline {
       key: `${toISO(d)}#${i}`,
       start: d,
       end: next,
-      label: cellLabel(unit, d),
+      label: cellLabel(unit, d, lang),
       weekend: unit === 'day' && isWeekend(d),
       today: today >= d && today < next,
     })
@@ -201,7 +200,8 @@ export function buildTimeline(mode: ViewMode, range: DateRange): Timeline {
   if (groupUnit == null) {
     const startYear = start.getFullYear()
     const endYear = addDays(end, -1).getFullYear()
-    groups = [{ key: 'range', label: `${startYear} – ${endYear}`, cells: cells.length, today: true }]
+    const sep = translate(lang, 'time.rangeSeparator')
+    groups = [{ key: 'range', label: `${startYear}${sep}${endYear}`, cells: cells.length, today: true }]
   } else {
     groups = []
     for (const c of cells) {
@@ -211,7 +211,7 @@ export function buildTimeline(mode: ViewMode, range: DateRange): Timeline {
         last.cells++
         if (c.today) last.today = true
       } else {
-        groups.push({ key: k, label: groupLabelFor(groupUnit, c.start), cells: 1, today: c.today })
+        groups.push({ key: k, label: groupLabelFor(groupUnit, c.start, lang), cells: 1, today: c.today })
       }
     }
   }
@@ -270,13 +270,4 @@ export function xToDate(x: number, tl: Timeline): Date {
     case 'year': return monthAt(units * 12)
     case 'hour': return addHours(start, Math.floor(units))
   }
-}
-
-/** Short label for the stretch of time the axis covers, e.g. `Aug 13 – Dec 21`. */
-export function rangeLabel(range: DateRange): string {
-  const s = range.start
-  const e = addDays(range.end, -1) // `end` is exclusive
-  const left = `${MONTHS_SHORT[s.getMonth()]} ${s.getDate()}`
-  const right = `${MONTHS_SHORT[e.getMonth()]} ${e.getDate()}, ${e.getFullYear()}`
-  return s.getFullYear() === e.getFullYear() ? `${left} – ${right}` : `${left}, ${s.getFullYear()} – ${right}`
 }

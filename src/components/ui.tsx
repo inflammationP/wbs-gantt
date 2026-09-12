@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
+import { useT } from '../lib/useT'
 
 export const inputCls =
   'w-full h-8 px-2 bg-panel2 border border-border rounded-[3px] text-[12px] text-fg placeholder:text-dim focus:outline-none focus:border-accent'
@@ -16,6 +17,7 @@ export function Modal({
   children: ReactNode
   width?: number
 }) {
+  const t = useT()
   return createPortal(
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60"
@@ -29,7 +31,12 @@ export function Modal({
       >
         <div className="flex items-center justify-between px-4 h-11 shrink-0 border-b border-border">
           <div className="text-[13px] font-semibold tracking-wide text-fg">{title}</div>
-          <button onClick={onClose} className="text-dim hover:text-fg transition-colors">
+          <button
+            onClick={onClose}
+            aria-label={t('common.close')}
+            title={t('common.close')}
+            className="text-dim hover:text-fg transition-colors"
+          >
             <X size={16} />
           </button>
         </div>

@@ -3,13 +3,15 @@ import type { CSSProperties, KeyboardEvent } from 'react'
 import { Flag, Play } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { Task } from '../types'
-import { addMonths, startOfMonth, startOfWeek, addDays, toISO, MONTHS } from '../lib/dates'
+import { addMonths, startOfMonth, startOfWeek, addDays, toISO } from '../lib/dates'
+import { formatLongDate, monthName, weekdayLabels } from '../lib/i18n'
+import { TFunc, useLang, useT } from '../lib/useT'
 import { effectiveStates } from '../lib/tree'
 import { DayCellState, DayMilestones, StrictLogRate, dayCellState, milestonesOnDay, strictLogRate } from '../lib/dayTasks'
 
-const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-
 export function CalendarPage() {
+  const t = useT()
+  const lang = useLang()
   const tasks = useStore((s) => s.tasks)
   const logs = useStore((s) => s.logs)
   const today = useStore((s) => s.today)
@@ -70,22 +72,36 @@ export function CalendarPage() {
     <div className="flex-1 overflow-auto">
       <div className="max-w-6xl mx-auto p-6">
         <div className="flex items-center justify-between mb-4">
-          <h1 className="text-[18px] font-semibold">Calendar</h1>
+          <h1 className="text-[18px] font-semibold">{t('nav.calendar')}</h1>
           <div className="flex items-center gap-2">
-            <button onClick={() => setCursor((c) => addMonths(c, -1))} className="px-2.5 h-8 text-[13px] border border-border rounded-[3px] hover:bg-panel2">‹</button>
+            <button
+              onClick={() => setCursor((c) => addMonths(c, -1))}
+              title={t('calendar.prevMonth')}
+              aria-label={t('calendar.prevMonth')}
+              className="px-2.5 h-8 text-[13px] border border-border rounded-[3px] hover:bg-panel2"
+            >
+              ‹
+            </button>
             <button
               onClick={() => { setCursor(startOfMonth(new Date())); setSelectedDay(today) }}
               className="px-2.5 h-8 text-[12px] border border-border rounded-[3px] hover:bg-panel2"
             >
-              Today
+              {t('time.today')}
             </button>
-            <button onClick={() => setCursor((c) => addMonths(c, 1))} className="px-2.5 h-8 text-[13px] border border-border rounded-[3px] hover:bg-panel2">›</button>
-            <div className="w-44 text-center font-mono text-[13px]">{MONTHS[cursor.getMonth()]} {cursor.getFullYear()}</div>
+            <button
+              onClick={() => setCursor((c) => addMonths(c, 1))}
+              title={t('calendar.nextMonth')}
+              aria-label={t('calendar.nextMonth')}
+              className="px-2.5 h-8 text-[13px] border border-border rounded-[3px] hover:bg-panel2"
+            >
+              ›
+            </button>
+            <div className="w-44 text-center font-mono text-[13px]">{monthName(lang, cursor.getMonth())} {cursor.getFullYear()}</div>
           </div>
         </div>
         <div className="bg-panel border border-border rounded-[3px] overflow-hidden">
           <div className="grid grid-cols-7 border-b border-border">
-            {WEEKDAY_LABELS.map((d) => <div key={d} className="h-8 flex items-center justify-center text-[10px] uppercase tracking-wider text-dim border-r border-line last:border-0">{d}</div>)}
+            {weekdayLabels(lang).map((d) => <div key={d} className="h-8 flex items-center justify-center text-[10px] uppercase tracking-wider text-dim border-r border-line last:border-0">{d}</div>)}
           </div>
           <div className="grid grid-cols-7">
             {days.map((d) => {
@@ -98,11 +114,16 @@ export function CalendarPage() {
               const ms = milestones.get(iso) ?? { starts: [], due: [] }
               // Deadlines first: what a calendar can show that the Gantt cannot.
               const items: { task: Task; due: boolean }[] = [
-                ...ms.due.map((t) => ({ task: t, due: true })),
-                ...ms.starts.map((t) => ({ task: t, due: false })),
+                ...ms.due.map((task) => ({ task, due: true })),
+                ...ms.starts.map((task) => ({ task, due: false })),
               ]
               const deco = cellDeco(state)
-              const label = `${iso}: ${ms.due.length} due, ${ms.starts.length} starting; ${coverageLabel(state)}`
+              const label = t('calendar.cellLabel', {
+                date: formatLongDate(lang, d),
+                due: t('calendar.dueCount', { count: ms.due.length }),
+                starting: t('calendar.startingCount', { count: ms.starts.length }),
+                coverage: coverageLabel(state, t),
+              })
               // Every covered state carries the same pair; `clear` and `future`
               // have no obligation to draw.
               const owed = state.kind === 'owed' || state.kind === 'partial' || state.kind === 'full' ? state : null
@@ -140,7 +161,12 @@ export function CalendarPage() {
                           <button
                             key={task.id}
                             onClick={(e) => { e.stopPropagation(); setSelected(task.id) }}
-                            title={`${due ? 'Due' : 'Starts'}${strict ? ' · strict' : ''} — ${task.name}${logged ? ' · logged this day' : ''}`}
+                            title={t('calendar.milestoneTitle', {
+                              kind: due ? t('calendar.milestone.due') : t('calendar.milestone.starts'),
+                              strict: strict ? t('calendar.milestone.strict') : '',
+                              name: task.name,
+                              logged: logged ? t('calendar.milestone.logged') : '',
+                            })}
                             className={`w-full flex items-center gap-1 px-1 h-4 text-[10px] rounded-[2px] truncate text-left hover:bg-panel2 ${
                               strict ? 'text-today' : logged ? 'text-muted' : 'text-fg/80'
                             } ${logged ? 'line-through' : ''}`}
@@ -150,7 +176,7 @@ export function CalendarPage() {
                           </button>
                         )
                       })}
-                      {items.length > 4 && <div className="text-[10px] text-dim px-1">+{items.length - 4} more</div>}
+                      {items.length > 4 && <div className="text-[10px] text-dim px-1">{t('calendar.more', { count: items.length - 4 })}</div>}
                     </div>
                   </div>
                 </div>
@@ -166,31 +192,31 @@ export function CalendarPage() {
 // An inset ring rather than a border colour: cells only carry `border-r` /
 // `border-b` (the grid's own edges), so colouring a border would light up two
 // sides and move the layout.
-const CLEAR_RING = 'inset 0 0 0 1px rgba(63,185,80,0.30)'
+const CLEAR_RING = 'inset 0 0 0 1px rgb(var(--c-completed) / 0.30)'
 const GLOW = {
-  partial: 'inset 0 0 10px rgba(227,179,65,0.28)',
-  full: 'inset 0 0 10px rgba(63,185,80,0.28)',
+  partial: 'inset 0 0 10px rgb(var(--c-in-progress) / 0.28)',
+  full: 'inset 0 0 10px rgb(var(--c-completed) / 0.28)',
 }
 
 // Obligation squares. Logged ones fill in green; outstanding ones keep an
 // outline — amber while the day still has some progress on it, red once nothing
 // at all has been written.
-const PIP_DONE = '#3fb950'
-const PIP_OUTSTANDING = 'rgba(227,179,65,0.85)'
-const PIP_MISSED = 'rgba(248,81,73,0.85)'
+const PIP_DONE = 'rgb(var(--c-completed))'
+const PIP_OUTSTANDING = 'rgb(var(--c-in-progress) / 0.85)'
+const PIP_MISSED = 'rgb(var(--c-delayed) / 0.85)'
 
 // Past this many, the squares would be wider than the date beside them, so the
 // row falls back to the plain count instead.
 const MAX_PIPS = 6
 
 /** The same thing in words, for the tooltip and the screen reader. */
-function coverageLabel(state: DayCellState): string {
+function coverageLabel(state: DayCellState, t: TFunc): string {
   switch (state.kind) {
-    case 'future': return 'not yet due'
-    case 'clear': return 'no strict work scheduled'
-    case 'owed': return `${state.done} of ${state.total} strict tasks logged`
-    case 'partial': return `${state.done} of ${state.total} strict tasks logged`
-    case 'full': return `all ${state.total} strict tasks logged`
+    case 'future': return t('calendar.coverage.future')
+    case 'clear': return t('calendar.coverage.clear')
+    case 'owed':
+    case 'partial': return t('calendar.coverage.partial', { count: state.done, total: state.total })
+    case 'full': return t('calendar.coverage.full', { count: state.total })
   }
 }
 
@@ -205,7 +231,7 @@ function coverageLabel(state: DayCellState): string {
  */
 function ObligationPips({ done, total }: { done: number; total: number }) {
   if (total > MAX_PIPS) {
-    const tone = done === total ? 'text-[#3fb950]' : done === 0 ? 'text-[#f85149]' : 'text-today'
+    const tone = done === total ? 'text-completed' : done === 0 ? 'text-delayed' : 'text-today'
     return <span className={`font-mono text-[9px] ${tone}`}>{done}/{total}</span>
   }
   // Which particular logs are missing is not known — only how many — so the

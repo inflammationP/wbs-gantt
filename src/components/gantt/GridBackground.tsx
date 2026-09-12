@@ -22,7 +22,14 @@ export function GridBackground({ timeline, leftWidth = 0 }: { timeline: Timeline
           style={{
             left: leftWidth + i * colWidth,
             width: colWidth,
-            background: c.today ? 'rgba(227,179,65,0.03)' : c.weekend ? 'rgba(255,255,255,0.02)' : undefined,
+            // Relative to the theme's own text colour rather than to white: a
+            // white wash turns muddy over a warm palette and invisible over the
+            // light one.
+            background: c.today
+              ? 'rgb(var(--c-in-progress) / 0.03)'
+              : c.weekend
+                ? 'rgb(var(--c-fg) / 0.02)'
+                : undefined,
           }}
         />
       ))}

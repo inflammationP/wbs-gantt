@@ -1,11 +1,12 @@
+/**
+ * Calendar arithmetic, and nothing else.
+ *
+ * Every name for a month or a weekday, and every function that turns a date into
+ * text, lives in `lib/i18n.ts` instead — they are language data, and a date's
+ * parts are sequenced differently in each language (`Aug 13` / `13 août` /
+ * `8月13日`), so they cannot be assembled from a shared template.
+ */
 export type Unit = 'hour' | 'day' | 'week' | 'month' | 'quarter' | 'year'
-
-export const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-]
-export const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-export const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 export function pad(n: number): string {
   return String(n).padStart(2, '0')
@@ -112,13 +113,4 @@ export function addUnit(d: Date, unit: Unit, n: number): Date {
 
 export function addUnitISO(iso: string, unit: Unit, n: number): string {
   return toISO(addUnit(toDate(iso), unit, n))
-}
-
-export function formatShort(iso: string): string {
-  const d = toDate(iso)
-  return `${MONTHS_SHORT[d.getMonth()]} ${d.getDate()}`
-}
-
-export function formatLong(d: Date): string {
-  return `${WEEKDAYS[d.getDay()]}, ${MONTHS_SHORT[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`
 }

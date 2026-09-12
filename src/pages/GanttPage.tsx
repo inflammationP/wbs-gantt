@@ -3,7 +3,10 @@ import type { MouseEvent } from 'react'
 import { Plus } from 'lucide-react'
 import { useStore, useRows, useTimelineRange } from '../store/useStore'
 import { Task, TaskLog, ViewMode } from '../types'
-import { rangeLabel } from '../lib/timeline'
+import { addDays } from '../lib/dates'
+import { formatDateRange } from '../lib/i18n'
+import { Dict } from '../lib/i18n'
+import { useLang, useT } from '../lib/useT'
 import { Segmented } from '../components/ui'
 import { GanttChart } from '../components/gantt/GanttChart'
 import { RowTask } from '../lib/tree'
@@ -12,6 +15,7 @@ import { TaskDialog } from '../components/TaskDialog'
 import { LogDialog } from '../components/LogDialog'
 import { StartTodoDialog } from '../components/StartTodoDialog'
 import { ContextMenu, MenuState } from '../components/gantt/ContextMenu'
+import { useDialogs } from '../components/dialogs'
 
 // Fixed left sidebar width (Sidebar.tsx renders w-[190px]). The timeline is
 // sized off the window minus this, so opening the task/project detail panel
@@ -19,15 +23,18 @@ import { ContextMenu, MenuState } from '../components/gantt/ContextMenu'
 // task bars jump.
 const SIDEBAR_W = 190
 
-const VIEW_OPTIONS: { value: ViewMode; label: string }[] = [
-  { value: 'day', label: 'Day' },
-  { value: 'week', label: 'Week' },
-  { value: 'month', label: 'Month' },
-  { value: 'quarter', label: 'Quarter' },
-  { value: 'year', label: 'Year' },
+const VIEWS: { value: ViewMode; labelKey: keyof Dict }[] = [
+  { value: 'day', labelKey: 'gantt.view.day' },
+  { value: 'week', labelKey: 'gantt.view.week' },
+  { value: 'month', labelKey: 'gantt.view.month' },
+  { value: 'quarter', labelKey: 'gantt.view.quarter' },
+  { value: 'year', labelKey: 'gantt.view.year' },
 ]
 
 export function GanttPage() {
+  const t = useT()
+  const lang = useLang()
+  const { ask, element: dialogs } = useDialogs()
   const rows = useRows()
   const viewMode = useStore((s) => s.viewMode)
   const setViewMode = useStore((s) => s.setViewMode)
@@ -67,8 +74,12 @@ export function GanttPage() {
   }
 
   const handleDelete = (row: RowTask) => {
-    const msg = row.hasKids ? `Delete "${row.task.name}" and all its subtasks?` : `Delete "${row.task.name}"?`
-    if (confirm(msg)) deleteTask(row.id)
+    ask(
+      row.hasKids
+        ? t('gantt.deleteTaskWithSubtasks', { name: row.task.name })
+        : t('gantt.deleteTask', { name: row.task.name }),
+      () => deleteTask(row.id),
+    )
   }
 
   const dropFromSelection = (ids: string[]) =>
@@ -105,10 +116,13 @@ export function GanttPage() {
     remove: (ids) => {
       if (ids.length === 0) return
       const kids = ids.some((id) => tasks.some((t) => t.parentId === id))
-      const msg = `Delete ${ids.length} to-do task${ids.length === 1 ? '' : 's'}${kids ? ' and their subtasks' : ''}?`
-      if (!confirm(msg)) return
-      for (const id of ids) deleteTask(id)
-      dropFromSelection(ids)
+      ask(
+        t(kids ? 'gantt.deleteTodosWithSubtasks' : 'gantt.deleteTodos', { count: ids.length }),
+        () => {
+          for (const id of ids) deleteTask(id)
+          dropFromSelection(ids)
+        },
+      )
     },
   }
 
@@ -116,21 +130,21 @@ export function GanttPage() {
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* toolbar */}
       <div className="shrink-0 h-12 flex items-center gap-3 px-3 border-b border-border bg-panel">
-        <Segmented value={viewMode} onChange={setViewMode} options={VIEW_OPTIONS} />
+        <Segmented value={viewMode} onChange={setViewMode} options={VIEWS.map((v) => ({ value: v.value, label: t(v.labelKey) }))} />
         <div className="w-px h-6 bg-border" />
-        <button onClick={goToday} className="px-2.5 h-7 text-[11px] font-medium text-muted hover:text-fg border border-border rounded-[3px] hover:bg-panel2">Back to Today</button>
-        <div className="font-mono text-[13px] text-fg whitespace-nowrap">{rangeLabel(range)}</div>
+        <button onClick={goToday} className="px-2.5 h-7 text-[11px] font-medium text-muted hover:text-fg border border-border rounded-[3px] hover:bg-panel2">{t('gantt.backToToday')}</button>
+        <div className="font-mono text-[13px] text-fg whitespace-nowrap">{formatDateRange(lang, range.start, addDays(range.end, -1))}</div>
         <div className="flex-1" />
         <select
           className="h-7 px-2 bg-panel2 border border-border rounded-[3px] text-[12px] text-fg focus:outline-none"
           value={projectFilter}
           onChange={(e) => setProjectFilter(e.target.value)}
         >
-          <option value="all">All projects</option>
+          <option value="all">{t('sidebar.allProjects')}</option>
           {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
-        <button onClick={() => openCreate(null)} className="h-7 px-3 inline-flex items-center gap-1.5 text-[12px] font-medium bg-accent text-black rounded-[3px] hover:brightness-110">
-          <Plus size={14} /> New task
+        <button onClick={() => openCreate(null)} className="h-7 px-3 inline-flex items-center gap-1.5 text-[12px] font-medium bg-accent text-on-accent rounded-[3px] hover:brightness-110">
+          <Plus size={14} /> {t('gantt.newTask')}
         </button>
       </div>
 
@@ -163,6 +177,8 @@ export function GanttPage() {
           }}
         />
       )}
+
+      {dialogs}
     </div>
   )
 }

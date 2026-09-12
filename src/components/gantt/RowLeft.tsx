@@ -12,8 +12,10 @@ import {
   Trash2,
 } from 'lucide-react'
 import { Row, RowTask, RowTodoGroup } from '../../lib/tree'
-import { STATUS_META, TODO_COLOR, hexToRgba, priorityMeta } from '../../lib/ui'
+import { STATUS_META, sig, sigAlpha, sigText, priorityMeta } from '../../lib/ui'
 import { useStore } from '../../store/useStore'
+import { useT } from '../../lib/useT'
+import { useDialogs } from '../dialogs'
 
 export const LEFT_WIDTH = 560
 
@@ -57,6 +59,8 @@ const stop = (fn: () => void) => (e: MouseEvent) => {
 }
 
 export function RowLeft({ row, todo, onAddChild, onEdit, onContext }: Props) {
+  const t = useT()
+  const { ask, element: dialogs } = useDialogs()
   const setSelected = useStore((s) => s.setSelected)
   const toggleExpanded = useStore((s) => s.toggleExpanded)
   const deleteTask = useStore((s) => s.deleteTask)
@@ -84,11 +88,16 @@ export function RowLeft({ row, todo, onAddChild, onEdit, onContext }: Props) {
 
   const handleDelete = (e: MouseEvent) => {
     e.stopPropagation()
-    const msg = row.hasKids ? `Delete "${row.task.name}" and all its subtasks?` : `Delete "${row.task.name}"?`
-    if (confirm(msg)) deleteTask(row.id)
+    ask(
+      row.hasKids
+        ? t('gantt.deleteTaskWithSubtasks', { name: row.task.name })
+        : t('gantt.deleteTask', { name: row.task.name }),
+      () => deleteTask(row.id),
+    )
   }
 
   return (
+    <>
     <div
       className={`h-full flex items-stretch text-[12px] group cursor-pointer ${
         selected ? 'bg-accent/10' : 'hover:bg-panel2/60'
@@ -120,9 +129,9 @@ export function RowLeft({ row, todo, onAddChild, onEdit, onContext }: Props) {
             them start at different x positions. */}
         <span className="shrink-0 flex items-center justify-center" style={{ width: GLYPH_W }}>
           {isTodo ? (
-            <CircleDashed size={12} style={{ color: TODO_COLOR }} />
+            <CircleDashed size={12} style={{ color: sig('todo') }} />
           ) : (
-            <span className="w-1.5 h-1.5 rounded-full" style={{ background: prio.color }} title={`${prio.label} priority`} />
+            <span className="w-1.5 h-1.5 rounded-full" style={{ background: sig(prio.token) }} title={t('priority.title', { level: t(prio.labelKey) })} />
           )}
         </span>
         <span
@@ -131,39 +140,42 @@ export function RowLeft({ row, todo, onAddChild, onEdit, onContext }: Props) {
             // to-do's text ~6px right of every other name in the column.
             isTodo ? 'rounded-[3px] outline outline-1 outline-dashed outline-offset-2' : ''
           }`}
-          style={isTodo ? { outlineColor: hexToRgba(TODO_COLOR, 0.55), color: TODO_COLOR } : undefined}
+          style={isTodo ? { outlineColor: sigAlpha('todo', 0.55), color: sig('todo') } : undefined}
         >
           {row.task.name}
         </span>
       </div>
       {/* progress */}
       <div className="shrink-0 flex items-center justify-end pr-2 font-mono text-[11px] text-fg" style={{ width: COLS.progress }}>
-        {row.eff.progress != null ? `${row.eff.progress}%` : '—'}
+        {row.eff.progress != null ? `${row.eff.progress}%` : t('common.none')}
       </div>
       {/* status */}
       <div className="shrink-0 flex items-center gap-1.5" style={{ width: COLS.status }}>
-        <span className="w-2 h-2 rounded-[2px] shrink-0" style={{ background: meta.color }} />
-        <span className="text-[11px] truncate" style={{ color: meta.text }}>{meta.label}</span>
+        <span className="w-2 h-2 rounded-[2px] shrink-0" style={{ background: sig(meta.token) }} />
+        <span className="text-[11px] truncate" style={{ color: sigText(meta.token) }}>{t(meta.labelKey)}</span>
       </div>
       {/* actions — the to-do checkbox stays visible; the rest is hover-only */}
       <div className="shrink-0 flex items-center justify-end pr-1 gap-0.5" style={{ width: COLS.actions }}>
         {isTodo && (
           <button
             onClick={stop(() => todo.toggle(row.id))}
-            title={checked ? 'Deselect' : 'Select'}
+            title={checked ? t('common.deselect') : t('common.select')}
+            aria-label={checked ? t('common.deselect') : t('common.select')}
             className="p-1 shrink-0 text-dim hover:text-fg"
-            style={checked ? { color: TODO_COLOR } : undefined}
+            style={checked ? { color: sig('todo') } : undefined}
           >
             {checked ? <CheckSquare size={13} /> : <Square size={13} />}
           </button>
         )}
         <div className={`flex items-center gap-0.5 transition-opacity ${selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-          <button onClick={(e) => { e.stopPropagation(); onAddChild(row) }} title="Add subtask" className="p-1 text-dim hover:text-fg"><Plus size={13} /></button>
-          <button onClick={(e) => { e.stopPropagation(); onEdit(row) }} title="Edit" className="p-1 text-dim hover:text-fg"><Pencil size={13} /></button>
-          <button onClick={handleDelete} title="Delete" className="p-1 text-dim hover:text-[#f85149]"><Trash2 size={13} /></button>
+          <button onClick={(e) => { e.stopPropagation(); onAddChild(row) }} title={t('task.addSubtask')} className="p-1 text-dim hover:text-fg"><Plus size={13} /></button>
+          <button onClick={(e) => { e.stopPropagation(); onEdit(row) }} title={t('common.edit')} className="p-1 text-dim hover:text-fg"><Pencil size={13} /></button>
+          <button onClick={handleDelete} title={t('common.delete')} className="p-1 text-dim hover:text-delayed"><Trash2 size={13} /></button>
         </div>
       </div>
     </div>
+    {dialogs}
+    </>
   )
 }
 
@@ -180,19 +192,20 @@ function TodoGroupRow({
   isExpanded: boolean
   onToggleExpanded: (id: string) => void
 }) {
+  const t = useT()
   const { todoIds } = row
   const selected = todoIds.filter((id) => todo.selected.has(id))
   const allSelected = todoIds.length > 0 && selected.length === todoIds.length
   // With nothing ticked, the bulk buttons act on the whole folder — the folders
   // are small and this saves a click each time.
   const target = selected.length > 0 ? selected : todoIds
-  const scope = selected.length > 0 ? `${selected.length} selected` : `all ${todoIds.length}`
+  const bySelection = selected.length > 0
 
   return (
     <div
-      className="h-full flex items-stretch text-[12px] cursor-pointer bg-accent/[0.07] hover:bg-accent/[0.12]"
+      className="h-full flex items-stretch text-[12px] cursor-pointer bg-todo/[0.07] hover:bg-todo/[0.12]"
       onClick={() => onToggleExpanded(row.id)}
-      title={isExpanded ? 'Collapse' : 'Expand'}
+      title={isExpanded ? t('common.collapse') : t('common.expand')}
     >
       <div className="shrink-0" style={{ width: row.depth * INDENT }} />
       <div className="shrink-0 flex items-center justify-center" style={{ width: COLS.chevron }}>
@@ -205,10 +218,10 @@ function TodoGroupRow({
       </div>
       <div className="flex-1 min-w-0 flex items-center gap-1.5">
         <span className="shrink-0 flex items-center justify-center" style={{ width: GLYPH_W }}>
-          <FolderOpen size={13} style={{ color: TODO_COLOR }} />
+          <FolderOpen size={13} style={{ color: sig('todo') }} />
         </span>
-        <span className="truncate text-[12px] font-medium" style={{ color: TODO_COLOR }}>
-          To-dos ({todoIds.length})
+        <span className="truncate text-[12px] font-medium" style={{ color: sig('todo') }}>
+          {t('todo.folder', { count: todoIds.length })}
         </span>
       </div>
       <div className="shrink-0" style={{ width: COLS.progress }} />
@@ -216,16 +229,29 @@ function TodoGroupRow({
       <div className="shrink-0 flex items-center justify-end pr-1 gap-0.5" style={{ width: COLS.actions }}>
         <button
           onClick={stop(() => todo.setMany(todoIds, !allSelected))}
-          title={allSelected ? 'Deselect all' : 'Select all'}
+          title={allSelected ? t('common.deselectAll') : t('common.selectAll')}
+          aria-label={allSelected ? t('common.deselectAll') : t('common.selectAll')}
           className="p-1 text-dim hover:text-fg"
-          style={allSelected ? { color: TODO_COLOR } : undefined}
+          style={allSelected ? { color: sig('todo') } : undefined}
         >
           {allSelected ? <CheckSquare size={13} /> : <Square size={13} />}
         </button>
-        <button onClick={stop(() => todo.restore(target))} title={`Restore ${scope}`} className="p-1 text-dim hover:text-fg">
+        <button
+          onClick={stop(() => todo.restore(target))}
+          title={bySelection
+            ? t('todo.restoreSelected', { count: selected.length })
+            : t('todo.restoreAll', { count: todoIds.length })}
+          className="p-1 text-dim hover:text-fg"
+        >
           <RotateCcw size={13} />
         </button>
-        <button onClick={stop(() => todo.remove(target))} title={`Delete ${scope}`} className="p-1 text-dim hover:text-[#f85149]">
+        <button
+          onClick={stop(() => todo.remove(target))}
+          title={bySelection
+            ? t('todo.deleteSelected', { count: selected.length })
+            : t('todo.deleteAll', { count: todoIds.length })}
+          className="p-1 text-dim hover:text-delayed"
+        >
           <Trash2 size={13} />
         </button>
       </div>
@@ -234,18 +260,19 @@ function TodoGroupRow({
 }
 
 export function LeftHeader() {
+  const t = useT()
   const expandAll = useStore((s) => s.expandAll)
   const collapseAll = useStore((s) => s.collapseAll)
   return (
     <div className="h-full flex items-stretch text-[10px] uppercase tracking-wider text-dim">
       <div className="shrink-0" style={{ width: COLS.chevron }} />
-      <div className="shrink-0 flex items-end justify-end pr-1.5 pb-1.5" style={{ width: COLS.wbs }}>WBS</div>
-      <div className="flex-1 min-w-0 flex items-end pb-1.5 pr-1">Task</div>
-      <div className="shrink-0 flex items-end justify-end pr-2 pb-1.5" style={{ width: COLS.progress }}>Prog</div>
-      <div className="shrink-0 flex items-end pb-1.5" style={{ width: COLS.status }}>Status</div>
+      <div className="shrink-0 flex items-end justify-end pr-1.5 pb-1.5" style={{ width: COLS.wbs }}>{t('common.wbs')}</div>
+      <div className="flex-1 min-w-0 flex items-end pb-1.5 pr-1">{t('common.task')}</div>
+      <div className="shrink-0 flex items-end justify-end pr-2 pb-1.5" style={{ width: COLS.progress }}>{t('common.prog')}</div>
+      <div className="shrink-0 flex items-end pb-1.5" style={{ width: COLS.status }}>{t('common.status')}</div>
       <div className="shrink-0 flex items-end justify-center pb-1.5 gap-1" style={{ width: COLS.actions }}>
-        <button onClick={expandAll} title="Expand all" className="hover:text-fg">+</button>
-        <button onClick={collapseAll} title="Collapse all" className="hover:text-fg">−</button>
+        <button onClick={expandAll} title={t('sidebar.expandAll')} className="hover:text-fg">+</button>
+        <button onClick={collapseAll} title={t('sidebar.collapseAll')} className="hover:text-fg">−</button>
       </div>
     </div>
   )

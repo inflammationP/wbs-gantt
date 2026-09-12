@@ -2,8 +2,9 @@ import { useMemo, useState } from 'react'
 import { Modal, Field, inputCls } from './ui'
 import { useStore } from '../store/useStore'
 import { Task, TaskPriority } from '../types'
-import { PRIORITY_META, PRIORITY_ORDER, TODO_COLOR } from '../lib/ui'
+import { PRIORITY_META, PRIORITY_ORDER, sig } from '../lib/ui'
 import { todayISO } from '../lib/dates'
+import { useT, useTRich } from '../lib/useT'
 
 interface Form {
   startDate: string
@@ -25,6 +26,8 @@ interface Props {
 // Each task gets its own tab and its own values, so restoring a whole folder
 // doesn't force every task onto the same dates.
 export function StartTodoDialog({ taskIds, onClose }: Props) {
+  const t = useT()
+  const tr = useTRich()
   const tasks = useStore((s) => s.tasks)
   const startTodoTasks = useStore((s) => s.startTodoTasks)
 
@@ -79,7 +82,7 @@ export function StartTodoDialog({ taskIds, onClose }: Props) {
 
   return (
     <Modal
-      title={targets.length === 1 ? 'Start task' : `Restore ${targets.length} to-dos`}
+      title={targets.length === 1 ? t('todo.startTask') : t('todo.restoreMany', { count: targets.length })}
       onClose={onClose}
       width={520}
     >
@@ -87,22 +90,22 @@ export function StartTodoDialog({ taskIds, onClose }: Props) {
         {/* one tab per task, so it's always clear which one is being edited */}
         {targets.length > 1 && (
           <div className="flex items-center gap-1 overflow-x-auto border-b border-border pb-1.5">
-            {targets.map((t) => (
+            {targets.map((target) => (
               <button
-                key={t.id}
-                onClick={() => setActiveId(t.id)}
-                title={t.name}
+                key={target.id}
+                onClick={() => setActiveId(target.id)}
+                title={target.name}
                 className={`shrink-0 max-w-[170px] h-7 px-2.5 text-[11px] truncate rounded-t-[3px] border-b-2 ${
-                  t.id === active.id
+                  target.id === active.id
                     ? 'text-fg bg-panel2'
                     : 'text-muted hover:text-fg border-transparent'
                 }`}
-                style={t.id === active.id ? { borderBottomColor: TODO_COLOR } : undefined}
+                style={target.id === active.id ? { borderBottomColor: sig('todo') } : undefined}
               >
-                {visited.has(t.id) && (
-                  <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle" style={{ background: TODO_COLOR }} />
+                {visited.has(target.id) && (
+                  <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle" style={{ background: sig('todo') }} />
                 )}
-                {t.name}
+                {target.name}
               </button>
             ))}
           </div>
@@ -112,16 +115,15 @@ export function StartTodoDialog({ taskIds, onClose }: Props) {
 
         {activeHasKids ? (
           <div className="text-[12px] text-muted leading-relaxed bg-panel2 border border-border rounded-[3px] p-2.5">
-            <span className="text-fg">{active.name}</span> has subtasks, so its dates are decided by them.
-            Restore those first, or set a priority here and let the dates follow.
+            {tr('todo.hasSubtasks', { name: <span className="text-fg">{active.name}</span> })}
           </div>
         ) : (
           <>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Start date">
+              <Field label={t('common.startDate')}>
                 <input type="date" className={inputCls} value={form.startDate} onChange={(e) => set({ startDate: e.target.value })} />
               </Field>
-              <Field label="End date">
+              <Field label={t('common.endDate')}>
                 <input type="date" className={inputCls} value={form.endDate} onChange={(e) => set({ endDate: e.target.value })} />
               </Field>
             </div>
@@ -132,18 +134,18 @@ export function StartTodoDialog({ taskIds, onClose }: Props) {
                 id="start-strict"
                 checked={form.strictProgress}
                 onChange={(e) => set({ strictProgress: e.target.checked })}
-                className="accent-[#46b8e6]"
+                className="accent-accent"
               />
               <label htmlFor="start-strict" className="text-[12px] text-fg cursor-pointer">
-                Strict progress (progress only advances via daily logs)
+                {t('task.strictProgress')}
               </label>
             </div>
           </>
         )}
 
-        <Field label="Priority">
+        <Field label={t('common.priority')}>
           <select className={inputCls} value={form.priority} onChange={(e) => set({ priority: e.target.value as TaskPriority })}>
-            {PRIORITY_ORDER.map((p) => <option key={p} value={p}>{PRIORITY_META[p].label}</option>)}
+            {PRIORITY_ORDER.map((p) => <option key={p} value={p}>{t(PRIORITY_META[p].labelKey)}</option>)}
           </select>
         </Field>
 
@@ -155,14 +157,14 @@ export function StartTodoDialog({ taskIds, onClose }: Props) {
               {idx + 1} / {targets.length}
             </span>
           )}
-          <button onClick={onClose} className="h-8 px-3 text-[12px] text-muted hover:text-fg border border-border rounded-[3px]">Cancel</button>
+          <button onClick={onClose} className="h-8 px-3 text-[12px] text-muted hover:text-fg border border-border rounded-[3px]">{t('common.cancel')}</button>
           {targets.length > 1 && !isLast ? (
             <button onClick={goNext} className="h-8 px-4 text-[12px] font-medium text-fg border border-border rounded-[3px] hover:bg-panel2">
-              Next →
+              {t('todo.next')}
             </button>
           ) : (
-            <button onClick={submit} className="h-8 px-4 text-[12px] font-medium bg-accent text-black rounded-[3px]">
-              {targets.length === 1 ? 'Start' : `Save all (${targets.length})`}
+            <button onClick={submit} className="h-8 px-4 text-[12px] font-medium bg-accent text-on-accent rounded-[3px]">
+              {targets.length === 1 ? t('todo.start') : t('todo.saveAll', { count: targets.length })}
             </button>
           )}
         </div>

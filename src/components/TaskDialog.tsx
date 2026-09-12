@@ -3,8 +3,9 @@ import { Modal, Field, inputCls } from './ui'
 import { Task, TaskPriority, TaskType } from '../types'
 import { useStore } from '../store/useStore'
 import { collectDescendants } from '../lib/tree'
-import { PRIORITY_META, PRIORITY_ORDER, TASK_TYPE_LABEL } from '../lib/ui'
+import { PRIORITY_META, PRIORITY_ORDER } from '../lib/ui'
 import { todayISO } from '../lib/dates'
+import { useT, useTRich } from '../lib/useT'
 
 interface Props {
   onClose: () => void
@@ -13,6 +14,8 @@ interface Props {
 }
 
 export function TaskDialog({ onClose, existing, defaultParentId }: Props) {
+  const t = useT()
+  const tr = useTRich()
   const tasks = useStore((s) => s.tasks)
   const projects = useStore((s) => s.projects)
   const addTask = useStore((s) => s.addTask)
@@ -127,36 +130,38 @@ export function TaskDialog({ onClose, existing, defaultParentId }: Props) {
     } else {
       const id = addTask(payload)
       if (isOverdueStrict && overdueChoice === 'completed') {
-        addLog({ taskId: id, date: todayISO(), content: 'Marked as completed', targetProgress: 100 })
+        // Written in the language on screen right now, and left that way: see
+        // the note on `task.markedCompleted` in lib/i18n.ts.
+        addLog({ taskId: id, date: todayISO(), content: t('task.markedCompleted'), targetProgress: 100 })
       }
     }
     onClose()
   }
 
   return (
-    <Modal title={existing ? 'Edit task' : 'New task'} onClose={onClose} width={560}>
+    <Modal title={existing ? t('task.edit') : t('task.new')} onClose={onClose} width={560}>
       <div className="space-y-3">
-        <Field label="Name">
-          <input className={inputCls} autoFocus value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="Task name" />
+        <Field label={t('common.name')}>
+          <input className={inputCls} autoFocus value={form.name} onChange={(e) => set('name', e.target.value)} placeholder={t('task.namePlaceholder')} />
         </Field>
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Type">
+          <Field label={t('common.type')}>
             <select className={inputCls} value={form.type} disabled={isTodo} onChange={(e) => setType(e.target.value as TaskType)}>
-              <option value="phase">{TASK_TYPE_LABEL.phase}</option>
-              <option value="long-term">{TASK_TYPE_LABEL['long-term']}</option>
+              <option value="phase">{t('type.phase')}</option>
+              <option value="long-term">{t('type.longTerm')}</option>
             </select>
           </Field>
-          <Field label="Project">
+          <Field label={t('common.project')}>
             <select className={inputCls} value={form.projectId} onChange={(e) => { set('projectId', e.target.value); set('parentId', null) }}>
               {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </Field>
         </div>
 
-        <Field label="Parent">
+        <Field label={t('task.parent')}>
           <select className={inputCls} value={form.parentId ?? ''} onChange={(e) => set('parentId', e.target.value || null)}>
-            <option value="">— Top level —</option>
+            <option value="">{t('task.topLevel')}</option>
             {parentOptions.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
         </Field>
@@ -169,19 +174,22 @@ export function TaskDialog({ onClose, existing, defaultParentId }: Props) {
               id="create-todo"
               checked={form.isTodo}
               onChange={(e) => setTodo(e.target.checked)}
-              className="accent-[#a371f7]"
+              className="accent-todo"
             />
             <label htmlFor="create-todo" className="text-[12px] text-fg cursor-pointer">
-              Create as to-do — no dates, priority or progress mode needed
+              {t('task.createAsTodo')}
             </label>
           </div>
         )}
 
         {isTodo && (
           <div className="text-[12px] text-muted leading-relaxed bg-panel2 border border-border rounded-[3px] p-2.5">
-            This is a to-do: unscheduled work. It sits last among its siblings inside a{' '}
-            <span style={{ color: '#a371f7' }}>To-dos</span> folder until you give it a schedule with{' '}
-            <span className="text-fg">Start task</span> in the detail panel.
+            {/* Emphasis sits in a different place in each language, so the parts
+                are placed by the translation rather than concatenated here. */}
+            {tr('task.todoNote', {
+              toDos: <span className="text-todo">{t('todo.folderName')}</span>,
+              startTask: <span className="text-fg">{t('todo.startTask')}</span>,
+            })}
           </div>
         )}
 
@@ -189,14 +197,14 @@ export function TaskDialog({ onClose, existing, defaultParentId }: Props) {
         {!isTodo && (
           <>
             {isLT ? (
-              <Field label="Start date">
+              <Field label={t('common.startDate')}>
                 <input type="date" className={inputCls} value={form.startDate ?? ''} onChange={(e) => set('startDate', e.target.value)} />
               </Field>
             ) : (
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Start date"><input type="date" className={inputCls} value={form.startDate ?? ''} onChange={(e) => set('startDate', e.target.value)} /></Field>
-                <Field label="End date">
-                  <span className={hasKids ? 'block cursor-help' : 'block'} title={hasKids ? '结束日期由最晚结束的子任务决定，请修改子任务的结束日期' : undefined}>
+                <Field label={t('common.startDate')}><input type="date" className={inputCls} value={form.startDate ?? ''} onChange={(e) => set('startDate', e.target.value)} /></Field>
+                <Field label={t('common.endDate')}>
+                  <span className={hasKids ? 'block cursor-help' : 'block'} title={hasKids ? t('task.endDateLocked') : undefined}>
                     <input type="date" className={`${inputCls} ${hasKids ? 'opacity-50 cursor-not-allowed' : ''}`} value={form.endDate ?? ''} onChange={(e) => set('endDate', e.target.value)} disabled={hasKids} />
                   </span>
                 </Field>
@@ -210,41 +218,41 @@ export function TaskDialog({ onClose, existing, defaultParentId }: Props) {
                 checked={form.strictProgress}
                 disabled={isLT}
                 onChange={(e) => set('strictProgress', e.target.checked)}
-                className="accent-[#46b8e6]"
+                className="accent-accent"
               />
               <label htmlFor="strict-progress" className={`text-[12px] ${isLT ? 'text-dim cursor-not-allowed' : 'text-fg cursor-pointer'}`}>
-                Strict progress (progress only advances via daily logs)
+                {t('task.strictProgress')}
               </label>
             </div>
 
-            <Field label="Priority">
+            <Field label={t('common.priority')}>
               <select className={inputCls} value={form.priority} onChange={(e) => set('priority', e.target.value as TaskPriority)}>
-                {PRIORITY_ORDER.map((p) => <option key={p} value={p}>{PRIORITY_META[p].label}</option>)}
+                {PRIORITY_ORDER.map((p) => <option key={p} value={p}>{t(PRIORITY_META[p].labelKey)}</option>)}
               </select>
             </Field>
           </>
         )}
 
         {isOverdueStrict && (
-          <Field label="This task is already overdue — mark as">
+          <Field label={t('task.overdueMark')}>
             <select className={inputCls} value={overdueChoice} onChange={(e) => setOverdueChoice(e.target.value as 'delayed' | 'completed')}>
-              <option value="delayed">Delayed</option>
-              <option value="completed">Completed</option>
+              <option value="delayed">{t('status.delayed')}</option>
+              <option value="completed">{t('status.completed')}</option>
             </select>
           </Field>
         )}
 
-        <Field label="Tags (comma separated)">
-          <input className={inputCls} value={form.tags} onChange={(e) => set('tags', e.target.value)} placeholder="anki, health" />
+        <Field label={t('task.tagsLabel')}>
+          <input className={inputCls} value={form.tags} onChange={(e) => set('tags', e.target.value)} placeholder={t('task.tagsPlaceholder')} />
         </Field>
 
-        <Field label="Description">
-          <textarea className={`${inputCls} h-20 py-1.5 resize-none`} value={form.description} onChange={(e) => set('description', e.target.value)} placeholder="Notes…" />
+        <Field label={t('common.description')}>
+          <textarea className={`${inputCls} h-20 py-1.5 resize-none`} value={form.description} onChange={(e) => set('description', e.target.value)} placeholder={t('common.notes')} />
         </Field>
 
         <div className="flex justify-end gap-2 pt-1">
-          <button onClick={onClose} className="h-8 px-3 text-[12px] text-muted hover:text-fg border border-border rounded-[3px]">Cancel</button>
-          <button onClick={submit} disabled={!form.name.trim()} className="h-8 px-4 text-[12px] font-medium bg-accent text-black disabled:opacity-40 rounded-[3px]">Save</button>
+          <button onClick={onClose} className="h-8 px-3 text-[12px] text-muted hover:text-fg border border-border rounded-[3px]">{t('common.cancel')}</button>
+          <button onClick={submit} disabled={!form.name.trim()} className="h-8 px-4 text-[12px] font-medium bg-accent text-on-accent disabled:opacity-40 rounded-[3px]">{t('common.save')}</button>
         </div>
       </div>
     </Modal>

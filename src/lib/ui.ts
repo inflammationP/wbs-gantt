@@ -1,42 +1,80 @@
-import { TaskPriority, TaskStatus, TaskType } from '../types'
+import { TaskPriority, TaskStatus } from '../types'
+import { Dict } from './i18n'
 
-export interface StatusMeta {
-  label: string
-  color: string
-  dim: string
-  text: string
+/**
+ * The signal palette: the colours that carry meaning rather than structure.
+ *
+ * Green means done and red means late in every theme, so these are named for
+ * what they say, not for what they look like, and the dark palettes in
+ * `src/index.css` spell all six out identically. Only the light palette restates
+ * them — those values are also used as text (see the status column in
+ * `gantt/RowLeft.tsx` and the table in `ManagePage.tsx`) and the dark ramp fails
+ * contrast on a light surface.
+ *
+ * Always reach a signal through one of the three helpers below rather than
+ * writing a colour out. A raw hex for one of these is what let `#f85149` end up
+ * copied across eight files, and what hid the green in `CalendarPage` inside an
+ * `rgba(63,185,80,…)` that no search for the hex would ever find.
+ */
+export type SignalToken =
+  | 'todo'
+  | 'not-started'
+  | 'in-progress'
+  | 'completed'
+  | 'paused'
+  | 'delayed'
+
+/** A signal at full strength: dots, bar borders and fills. */
+export function sig(token: SignalToken): string {
+  return `rgb(var(--c-${token}))`
 }
 
-export const TODO_COLOR = '#a371f7'
+/** A signal thinned out, for bar bodies and badge backgrounds. */
+export function sigAlpha(token: SignalToken, alpha: number): string {
+  return `rgb(var(--c-${token}) / ${alpha})`
+}
 
-// Mirrors the `accent` Tailwind token for the places that need it as a value
-// rather than a class (SVG strokes).
-export const ACCENT_COLOR = '#46b8e6'
+/**
+ * The readable form of a signal, where one is set as text on a panel rather than
+ * drawn as a mark. Identical to `sig` everywhere except `not-started`, whose dot
+ * and whose label are deliberately different weights of grey.
+ */
+export function sigText(token: SignalToken): string {
+  return `rgb(var(--c-${token}-text))`
+}
+
+export interface StatusMeta {
+  /** i18n key; the label itself lives in the dictionaries. */
+  labelKey: keyof Dict
+  token: SignalToken
+}
 
 export const STATUS_META: Record<TaskStatus, StatusMeta> = {
-  todo: { label: 'To-do', color: TODO_COLOR, dim: 'rgba(163,113,247,0.16)', text: TODO_COLOR },
-  'not-started': { label: 'Not started', color: '#6e7681', dim: 'rgba(110,118,129,0.16)', text: '#9aa4ad' },
-  'in-progress': { label: 'In progress', color: '#e3b341', dim: 'rgba(227,179,65,0.16)', text: '#e3b341' },
-  completed: { label: 'Completed', color: '#3fb950', dim: 'rgba(63,185,80,0.18)', text: '#3fb950' },
-  paused: { label: 'Paused', color: '#58a6ff', dim: 'rgba(88,166,255,0.15)', text: '#58a6ff' },
-  delayed: { label: 'Delayed', color: '#f85149', dim: 'rgba(248,81,73,0.18)', text: '#f85149' },
+  todo: { labelKey: 'status.todo', token: 'todo' },
+  'not-started': { labelKey: 'status.notStarted', token: 'not-started' },
+  'in-progress': { labelKey: 'status.inProgress', token: 'in-progress' },
+  completed: { labelKey: 'status.completed', token: 'completed' },
+  paused: { labelKey: 'status.paused', token: 'paused' },
+  delayed: { labelKey: 'status.delayed', token: 'delayed' },
 }
 
 export interface PriorityMeta {
-  label: string
-  color: string
+  labelKey: keyof Dict
+  token: SignalToken
 }
 
+// Priority rides the signal ramp: the four levels are the four signal colours,
+// so a "high" marker and an "in progress" dot agree by construction.
 export const PRIORITY_META: Record<TaskPriority, PriorityMeta> = {
-  low: { label: 'Low', color: '#6e7681' },
-  medium: { label: 'Medium', color: '#58a6ff' },
-  high: { label: 'High', color: '#e3b341' },
-  urgent: { label: 'Urgent', color: '#f85149' },
+  low: { labelKey: 'priority.low', token: 'not-started' },
+  medium: { labelKey: 'priority.medium', token: 'paused' },
+  high: { labelKey: 'priority.high', token: 'in-progress' },
+  urgent: { labelKey: 'priority.urgent', token: 'delayed' },
 }
 
 // To-dos have no priority. Everything that renders one goes through here so a
 // null can never reach `PRIORITY_META[...]` and blank the app.
-const NO_PRIORITY: PriorityMeta = { label: '—', color: '#6e7681' }
+const NO_PRIORITY: PriorityMeta = { labelKey: 'common.none', token: 'not-started' }
 
 export function priorityMeta(p: TaskPriority | null): PriorityMeta {
   return p ? PRIORITY_META[p] : NO_PRIORITY
@@ -45,20 +83,8 @@ export function priorityMeta(p: TaskPriority | null): PriorityMeta {
 export const STATUS_ORDER: TaskStatus[] = ['todo', 'not-started', 'in-progress', 'completed', 'paused', 'delayed']
 export const PRIORITY_ORDER: TaskPriority[] = ['low', 'medium', 'high', 'urgent']
 
+// Project identity colours, chosen by the user in the project dialog. Not part
+// of any theme: a project is the same project whichever palette is on.
 export const PROJECT_COLORS = [
   '#60a5fa', '#4ade80', '#fb923c', '#a78bfa', '#2dd4bf', '#f472b6', '#fbbf24', '#94a3b8',
 ]
-
-export const TASK_TYPE_LABEL: Record<TaskType, string> = {
-  phase: 'Phase',
-  'long-term': 'Long-Term',
-}
-
-/** Convert a `#rrggbb` color to `rgba(r, g, b, alpha)`. */
-export function hexToRgba(hex: string, alpha: number): string {
-  const h = hex.replace('#', '')
-  const r = parseInt(h.slice(0, 2), 16)
-  const g = parseInt(h.slice(2, 4), 16)
-  const b = parseInt(h.slice(4, 6), 16)
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`
-}

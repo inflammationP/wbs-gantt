@@ -1,22 +1,30 @@
 import { useRef, useState } from 'react'
 import {
-  BarChart2, Calendar, ClipboardList, Download, LayoutDashboard, Minus, Pencil, Plus, Upload,
+  BarChart2, Calendar, ClipboardList, Download, LayoutDashboard, Minus, Pencil, Plus, Settings, Upload,
 } from 'lucide-react'
 import { AppView, Project } from '../types'
 import { useStore } from '../store/useStore'
 import { exportJson, parseImport } from '../store/storage'
 import { todayISO } from '../lib/dates'
 import { averageProgress } from '../lib/progress'
+import { Dict } from '../lib/i18n'
+import { useT } from '../lib/useT'
 import { ProjectDialog } from './ProjectDialog'
+import { useDialogs } from './dialogs'
 
-const NAV: { id: AppView; label: string; icon: typeof BarChart2 }[] = [
-  { id: 'gantt', label: 'Gantt', icon: BarChart2 },
-  { id: 'logs', label: 'Logs', icon: ClipboardList },
-  { id: 'manage', label: 'Manage', icon: LayoutDashboard },
-  { id: 'calendar', label: 'Calendar', icon: Calendar },
+// Labels are keys rather than text: this table is built once at module scope, so
+// a string in it would be frozen in whichever language loaded first.
+const NAV: { id: AppView; labelKey: keyof Dict; icon: typeof BarChart2 }[] = [
+  { id: 'gantt', labelKey: 'nav.gantt', icon: BarChart2 },
+  { id: 'logs', labelKey: 'nav.logs', icon: ClipboardList },
+  { id: 'manage', labelKey: 'nav.manage', icon: LayoutDashboard },
+  { id: 'calendar', labelKey: 'nav.calendar', icon: Calendar },
+  { id: 'settings', labelKey: 'nav.settings', icon: Settings },
 ]
 
 export function Sidebar() {
+  const t = useT()
+  const { notice, element: dialogs } = useDialogs()
   const activeView = useStore((s) => s.activeView)
   const setActiveView = useStore((s) => s.setActiveView)
   const projects = useStore((s) => s.projects)
@@ -52,12 +60,13 @@ export function Sidebar() {
       try {
         importData(parseImport(text))
       } catch (e) {
-        alert('Import failed: ' + (e as Error).message)
+        notice(t('sidebar.importFailed', { message: (e as Error).message }))
       }
     })
   }
 
   return (
+    <>
     <aside className="w-[190px] shrink-0 bg-panel border-r border-border flex flex-col">
       {/* Brand */}
       <div className="h-12 flex items-center gap-2 px-4 border-b border-border">
@@ -83,7 +92,7 @@ export function Sidebar() {
               }`}
             >
               <Icon size={15} className={active ? 'text-accent' : ''} />
-              {item.label}
+              {t(item.labelKey)}
             </button>
           )
         })}
@@ -94,10 +103,10 @@ export function Sidebar() {
       {/* Projects */}
       <div className="flex-1 overflow-auto px-2 pb-2">
         <div className="flex items-center justify-between px-2 h-8">
-          <div className="text-[10px] uppercase tracking-wider text-dim">Projects</div>
+          <div className="text-[10px] uppercase tracking-wider text-dim">{t('sidebar.projects')}</div>
           <div className="flex items-center gap-0.5">
-            <button onClick={expandAll} title="Expand all" className="p-1 text-dim hover:text-fg"><Plus size={12} /></button>
-            <button onClick={collapseAll} title="Collapse all" className="p-1 text-dim hover:text-fg"><Minus size={12} /></button>
+            <button onClick={expandAll} title={t('sidebar.expandAll')} className="p-1 text-dim hover:text-fg"><Plus size={12} /></button>
+            <button onClick={collapseAll} title={t('sidebar.collapseAll')} className="p-1 text-dim hover:text-fg"><Minus size={12} /></button>
           </div>
         </div>
         <button
@@ -107,7 +116,7 @@ export function Sidebar() {
           }`}
         >
           <span className="w-2 h-2 rounded-full border border-muted" />
-          <span className="flex-1 text-left">All projects</span>
+          <span className="flex-1 text-left">{t('sidebar.allProjects')}</span>
           <span className="text-[10px] text-dim">{tasks.length}</span>
         </button>
         {projects.map((p) => {
@@ -131,7 +140,7 @@ export function Sidebar() {
               <button
                 onClick={(e) => { e.stopPropagation(); setEditingProject(p) }}
                 className="shrink-0 p-0.5 text-dim hover:text-fg opacity-0 group-hover:opacity-100 transition-opacity"
-                title="Edit project"
+                title={t('sidebar.editProject')}
               >
                 <Pencil size={12} />
               </button>
@@ -145,16 +154,16 @@ export function Sidebar() {
         <button
           onClick={handleExport}
           className="flex-1 flex items-center justify-center gap-1.5 h-8 text-[11px] text-muted hover:text-fg hover:bg-panel2 rounded-[3px]"
-          title="Export JSON"
+          title={t('sidebar.exportTitle')}
         >
-          <Download size={13} /> Export
+          <Download size={13} /> {t('sidebar.export')}
         </button>
         <button
           onClick={() => fileRef.current?.click()}
           className="flex-1 flex items-center justify-center gap-1.5 h-8 text-[11px] text-muted hover:text-fg hover:bg-panel2 rounded-[3px]"
-          title="Import JSON"
+          title={t('sidebar.importTitle')}
         >
-          <Upload size={13} /> Import
+          <Upload size={13} /> {t('sidebar.import')}
         </button>
         <input
           ref={fileRef}
@@ -171,5 +180,7 @@ export function Sidebar() {
 
       {editingProject && <ProjectDialog project={editingProject} onClose={() => setEditingProject(null)} />}
     </aside>
+    {dialogs}
+    </>
   )
 }

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import type { ReactNode } from 'react'
 import { CornerUpLeft, NotebookPen, Pencil, Plus, Trash2 } from 'lucide-react'
 import { RowTask } from '../../lib/tree'
+import { useT } from '../../lib/useT'
 
 export interface MenuState {
   x: number
@@ -26,7 +27,7 @@ function Item({ icon, label, onClick, danger }: { icon: ReactNode; label: string
     <button
       onClick={onClick}
       className={`w-full flex items-center gap-2 px-2.5 h-7 text-[12px] text-left ${
-        danger ? 'text-[#f85149] hover:bg-[#f85149]/10' : 'text-fg/90 hover:bg-panel2'
+        danger ? 'text-delayed hover:bg-delayed/10' : 'text-fg/90 hover:bg-panel2'
       }`}
     >
       {icon}
@@ -36,6 +37,7 @@ function Item({ icon, label, onClick, danger }: { icon: ReactNode; label: string
 }
 
 export function ContextMenu({ menu, onClose, onAddChild, onAddSibling, onEdit, onWriteLog, onOutdent, onDelete }: Props) {
+  const t = useT()
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -56,16 +58,16 @@ export function ContextMenu({ menu, onClose, onAddChild, onAddSibling, onEdit, o
         onContextMenu={(e) => { e.preventDefault(); onClose() }}
       />
       <div className="fixed z-[70] bg-panel border border-border rounded-[3px] shadow-2xl py-1" style={{ left, top, width: w }}>
-        <Item icon={<Plus size={13} />} label="Add child" onClick={() => { onAddChild(menu.row); onClose() }} />
-        <Item icon={<Plus size={13} />} label="Add sibling" onClick={() => { onAddSibling(menu.row); onClose() }} />
+        <Item icon={<Plus size={13} />} label={t('task.addSubtask')} onClick={() => { onAddChild(menu.row); onClose() }} />
+        <Item icon={<Plus size={13} />} label={t('task.addSibling')} onClick={() => { onAddSibling(menu.row); onClose() }} />
         <div className="my-1 border-t border-line" />
-        <Item icon={<Pencil size={13} />} label="Edit" onClick={() => { onEdit(menu.row); onClose() }} />
+        <Item icon={<Pencil size={13} />} label={t('common.edit')} onClick={() => { onEdit(menu.row); onClose() }} />
         {menu.row.eff.status === 'in-progress' || menu.row.eff.status === 'delayed' ? (
-          <Item icon={<NotebookPen size={13} />} label="Write log" onClick={() => { onWriteLog(menu.row); onClose() }} />
+          <Item icon={<NotebookPen size={13} />} label={t('log.write')} onClick={() => { onWriteLog(menu.row); onClose() }} />
         ) : null}
-        <Item icon={<CornerUpLeft size={13} />} label="Move to top level" onClick={() => { onOutdent(menu.row); onClose() }} />
+        <Item icon={<CornerUpLeft size={13} />} label={t('gantt.moveToTopLevel')} onClick={() => { onOutdent(menu.row); onClose() }} />
         <div className="my-1 border-t border-line" />
-        <Item icon={<Trash2 size={13} />} label="Delete" danger onClick={() => { onDelete(menu.row); onClose() }} />
+        <Item icon={<Trash2 size={13} />} label={t('common.delete')} danger onClick={() => { onDelete(menu.row); onClose() }} />
       </div>
     </>,
     document.body,

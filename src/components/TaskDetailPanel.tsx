@@ -5,16 +5,13 @@ import { Task, TaskLog } from '../types'
 import { useStore } from '../store/useStore'
 import { computeWbs, effectiveStates, todoCascadeIds } from '../lib/tree'
 import { logsForTask, parseLogContent } from '../lib/logs'
-import { STATUS_META, TASK_TYPE_LABEL, priorityMeta } from '../lib/ui'
-import { toDate, MONTHS_SHORT, diffDays } from '../lib/dates'
+import { STATUS_META, priorityMeta, sig, sigText } from '../lib/ui'
+import { diffDays, toDate } from '../lib/dates'
+import { formatDayMonthYear } from '../lib/i18n'
+import { useLang, useT } from '../lib/useT'
 import { LogDialog } from './LogDialog'
 import { StartTodoDialog } from './StartTodoDialog'
-
-function formatDate(iso: string | null): string {
-  if (!iso) return 'TBD'
-  const d = toDate(iso)
-  return `${MONTHS_SHORT[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`
-}
+import { useDialogs } from './dialogs'
 
 function ReadOnlyField({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -28,11 +25,13 @@ function ReadOnlyField({ label, children }: { label: string; children: ReactNode
 }
 
 export function TaskDetailPanel({ taskId }: { taskId: string }) {
+  const t = useT()
+  const lang = useLang()
+  const { ask, element: dialogs } = useDialogs()
   const task = useStore((s) => s.tasks.find((t) => t.id === taskId))
   const tasks = useStore((s) => s.tasks)
   const logs = useStore((s) => s.logs)
   const projects = useStore((s) => s.projects)
-  const today = useStore((s) => s.today)
   const setSelected = useStore((s) => s.setSelected)
   const deleteLog = useStore((s) => s.deleteLog)
   const pauseTask = useStore((s) => s.pauseTask)
@@ -48,6 +47,8 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
 
   if (!task || !project) return null
 
+  const formatDate = (iso: string | null) => (iso ? formatDayMonthYear(lang, toDate(iso)) : t('common.tbd'))
+
   const subtasks = tasks.filter((t) => t.parentId === task.id)
   const hasKids = subtasks.length > 0
   const projectTasks = tasks.filter((t) => t.projectId === task.projectId)
@@ -60,6 +61,8 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
     .filter(Boolean) as Task[]
   const taskLogs = logsForTask(logs, task.id)
   const taskStatus = eff?.status ?? 'not-started'
+  const meta = STATUS_META[taskStatus]
+  const prio = priorityMeta(task.priority)
   const isLoggable = taskStatus === 'in-progress' || taskStatus === 'delayed'
   const pausedDays = task.paused && task.pauseDate ? Math.max(0, diffDays(toDate(task.pauseDate), new Date())) : 0
 
@@ -67,11 +70,10 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
   // branch, so say how much is about to go before doing it.
   const handleSetTodo = () => {
     const extra = todoCascadeIds(tasks, logs, task.id).length - 1
-    const msg = extra > 0
-      ? `Mark "${task.name}" and its ${extra} unfinished subtask${extra === 1 ? '' : 's'} as to-do?\n\n` +
-        'Their dates, priorities and progress are cleared. Completed subtasks are left untouched.'
-      : `Mark "${task.name}" as to-do?\n\nIts dates, priority and progress are cleared.`
-    if (confirm(msg)) setTaskTodo(task.id)
+    const message = extra > 0
+      ? t('task.setAsTodoConfirmMany', { name: task.name, count: extra })
+      : t('task.setAsTodoConfirm', { name: task.name })
+    ask(message, () => setTaskTodo(task.id))
   }
 
   return (
@@ -80,31 +82,38 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
       {/* header */}
       <div className="shrink-0 px-4 py-3 border-b border-border">
         <div className="flex items-center justify-between mb-1">
-          <span className="font-mono text-[11px] text-dim">WBS {wbs || '—'}</span>
-          <button onClick={() => setSelected(null)} className="text-dim hover:text-fg"><X size={16} /></button>
+          <span className="font-mono text-[11px] text-dim">{`WBS ${wbs || t('common.none')}`}</span>
+          <button
+            onClick={() => setSelected(null)}
+            aria-label={t('common.close')}
+            title={t('common.close')}
+            className="text-dim hover:text-fg"
+          >
+            <X size={16} />
+          </button>
         </div>
         <div className="text-[15px] font-semibold text-fg">{task.name}</div>
         <div className="mt-1 flex items-center gap-2 text-[11px] text-muted">
           <span className="w-2 h-2 rounded-full" style={{ background: project.color }} />
           {project.name}
-          {hasKids && <span className="text-dim">· {subtasks.length} subtasks</span>}
+          {hasKids && <span className="text-dim">· {t('task.subtaskCount', { count: subtasks.length })}</span>}
         </div>
       </div>
 
       <div className="flex-1 overflow-auto p-4 space-y-4">
         {isLoggable && (
-          <button onClick={() => setLogDialog({ existing: null })} className="w-full h-8 inline-flex items-center justify-center gap-1.5 text-[12px] font-medium bg-accent text-black rounded-[3px] hover:brightness-110">
-            <NotebookPen size={14} /> Write log
+          <button onClick={() => setLogDialog({ existing: null })} className="w-full h-8 inline-flex items-center justify-center gap-1.5 text-[12px] font-medium bg-accent text-on-accent rounded-[3px] hover:brightness-110">
+            <NotebookPen size={14} /> {t('log.write')}
           </button>
         )}
 
         {/* history — right below Write log so it's easy to find */}
         <div>
           <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[10px] uppercase tracking-wider text-dim">History</span>
+            <span className="text-[10px] uppercase tracking-wider text-dim">{t('common.history')}</span>
             {taskLogs.length > 0 && (
               <button onClick={() => setShowHistory(!showHistory)} className="text-[11px] text-accent hover:text-fg">
-                {showHistory ? 'Hide' : `${taskLogs.length} log${taskLogs.length > 1 ? 's' : ''}`}
+                {showHistory ? t('task.hide') : t('common.logCount', { count: taskLogs.length })}
               </button>
             )}
           </div>
@@ -115,8 +124,8 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
                   <div className="flex items-center justify-between mb-1">
                     <span className="font-mono text-[11px] text-dim">{formatDate(log.date)}</span>
                     <div className="flex items-center gap-0.5">
-                      <button onClick={() => setLogDialog({ existing: log })} title="Edit" className="p-0.5 text-dim hover:text-fg"><Pencil size={12} /></button>
-                      <button onClick={() => deleteLog(log.id)} title="Delete" className="p-0.5 text-dim hover:text-[#f85149]"><Trash2 size={12} /></button>
+                      <button onClick={() => setLogDialog({ existing: log })} title={t('common.edit')} className="p-0.5 text-dim hover:text-fg"><Pencil size={12} /></button>
+                      <button onClick={() => deleteLog(log.id)} title={t('common.delete')} className="p-0.5 text-dim hover:text-delayed"><Trash2 size={12} /></button>
                     </div>
                   </div>
                   {parseLogContent(log.content).map((it, i) => (
@@ -126,33 +135,33 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
                     </div>
                   ))}
                   {log.targetProgress != null && (
-                    <div className="text-[11px] text-dim mt-1">Target progress: {log.targetProgress}%</div>
+                    <div className="text-[11px] text-dim mt-1">{t('common.targetProgress', { percent: log.targetProgress })}</div>
                   )}
                 </div>
               ))}
             </div>
           ) : (
-            <div className="text-[12px] text-dim">{taskLogs.length ? 'Hidden.' : 'No logs yet.'}</div>
+            <div className="text-[12px] text-dim">{taskLogs.length ? t('task.hidden') : t('logs.empty')}</div>
           )}
         </div>
 
         {/* type */}
-        <ReadOnlyField label="Type">{TASK_TYPE_LABEL[task.type]}</ReadOnlyField>
+        <ReadOnlyField label={t('common.type')}>{t(task.type === 'long-term' ? 'type.longTerm' : 'type.phase')}</ReadOnlyField>
 
         {task.type !== 'long-term' && !task.isTodo && (
-          <ReadOnlyField label="Progress mode">{task.strictProgress ? 'Strict (log-based)' : 'Auto (date-based)'}</ReadOnlyField>
+          <ReadOnlyField label={t('task.progressMode')}>{task.strictProgress ? t('task.modeStrict') : t('task.modeAuto')}</ReadOnlyField>
         )}
 
         {/* status + priority — a to-do has no priority to show */}
         <div className={`grid ${task.isTodo ? 'grid-cols-1' : 'grid-cols-2'} gap-3`}>
-          <ReadOnlyField label="Status">
-            <span className="w-2 h-2 rounded-[2px] shrink-0" style={{ background: STATUS_META[taskStatus].color }} />
-            <span className="truncate">{STATUS_META[taskStatus].label}</span>
+          <ReadOnlyField label={t('common.status')}>
+            <span className="w-2 h-2 rounded-[2px] shrink-0" style={{ background: sig(meta.token) }} />
+            <span className="truncate" style={{ color: sigText(meta.token) }}>{t(meta.labelKey)}</span>
           </ReadOnlyField>
           {!task.isTodo && (
-            <ReadOnlyField label="Priority">
-              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: priorityMeta(task.priority).color }} />
-              <span>{priorityMeta(task.priority).label}</span>
+            <ReadOnlyField label={t('common.priority')}>
+              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: sig(prio.token) }} />
+              <span>{t(prio.labelKey)}</span>
             </ReadOnlyField>
           )}
         </div>
@@ -161,30 +170,34 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
         {task.isTodo ? (
           <div>
             <div className="text-[12px] text-muted leading-relaxed bg-panel2 border border-border rounded-[3px] p-2.5">
-              No schedule yet. Give it dates, a priority and a progress mode when you start it.
+              {t('task.noSchedule')}
             </div>
             <button
               onClick={() => setStartTodo([task.id])}
-              className="mt-2 w-full h-8 text-[12px] font-medium bg-accent text-black rounded-[3px] hover:brightness-110"
+              className="mt-2 w-full h-8 text-[12px] font-medium bg-accent text-on-accent rounded-[3px] hover:brightness-110"
             >
-              Start task
+              {t('todo.startTask')}
             </button>
           </div>
         ) : task.paused ? (
           <div>
             <div className="text-[12px] text-muted leading-relaxed bg-panel2 border border-border rounded-[3px] p-2.5">
-              Paused. Started {task.startDate ? formatDate(task.startDate) : '—'} · paused on {task.pauseDate ? formatDate(task.pauseDate) : '—'} · {pausedDays} day{pausedDays === 1 ? '' : 's'} elapsed.
+              {t('task.pausedNote', {
+                start: task.startDate ? formatDate(task.startDate) : t('common.none'),
+                paused: task.pauseDate ? formatDate(task.pauseDate) : t('common.none'),
+                count: pausedDays,
+              })}
             </div>
-            <button onClick={() => resumeTask(task.id)} className="mt-2 w-full h-8 text-[12px] font-medium bg-accent text-black rounded-[3px] hover:brightness-110">
-              Resume
+            <button onClick={() => resumeTask(task.id)} className="mt-2 w-full h-8 text-[12px] font-medium bg-accent text-on-accent rounded-[3px] hover:brightness-110">
+              {t('task.resume')}
             </button>
           </div>
         ) : (
           <>
             <div className="grid grid-cols-2 gap-3">
-              <ReadOnlyField label="Start">{task.startDate ? formatDate(task.startDate) : '—'}</ReadOnlyField>
-              <ReadOnlyField label={task.pauses.length ? 'End (postponed)' : 'End'}>
-                {task.type === 'long-term' ? 'TBD' : formatDate(task.endDate)}
+              <ReadOnlyField label={t('common.start')}>{task.startDate ? formatDate(task.startDate) : t('common.none')}</ReadOnlyField>
+              <ReadOnlyField label={task.pauses.length ? t('task.endPostponed') : t('common.end')}>
+                {task.type === 'long-term' ? t('common.tbd') : formatDate(task.endDate)}
               </ReadOnlyField>
             </div>
             {task.type !== 'long-term' && taskStatus !== 'completed' && (
@@ -192,11 +205,11 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
               // useful than pausing it, so it takes the button's place.
               taskStatus === 'not-started' ? (
                 <button onClick={handleSetTodo} className="w-full h-7 text-[12px] text-muted hover:text-fg border border-border rounded-[3px]">
-                  Set as to-do
+                  {t('task.setAsTodo')}
                 </button>
               ) : (
                 <button onClick={() => pauseTask(task.id)} className="w-full h-7 text-[12px] text-muted hover:text-fg border border-border rounded-[3px]">
-                  Pause task
+                  {t('task.pause')}
                 </button>
               )
             )}
@@ -208,13 +221,13 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
         {!task.paused && !task.isTodo && task.pauses.length > 0 && (
           <div>
             <button onClick={() => setShowPauses(!showPauses)} className="text-[11px] text-accent hover:text-fg">
-              {showPauses ? '▾' : '▸'} Pause history ({task.pauses.length})
+              {showPauses ? '▾' : '▸'} {t('task.pauseHistory', { count: task.pauses.length })}
             </button>
             {showPauses && (
               <div className="mt-1.5 space-y-1">
                 {task.pauses.map((p, i) => (
                   <div key={i} className="text-[11px] text-muted">
-                    Paused {formatDate(p.pauseDate)} → resumed {formatDate(p.resumeDate)}
+                    {t('task.pauseEntry', { from: formatDate(p.pauseDate), to: formatDate(p.resumeDate) })}
                   </div>
                 ))}
               </div>
@@ -226,32 +239,32 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
         {effProgress != null && (
           <div>
             <div className="flex items-center justify-between mb-1">
-              <span className="text-[10px] uppercase tracking-wider text-dim">Progress</span>
+              <span className="text-[10px] uppercase tracking-wider text-dim">{t('common.progress')}</span>
               <span className="font-mono text-[11px] text-muted">{effProgress}%</span>
             </div>
             <div className="h-2 bg-panel2 rounded-full overflow-hidden">
-              <div className="h-full" style={{ width: `${effProgress}%`, background: STATUS_META[taskStatus].color, opacity: 0.7 }} />
+              <div className="h-full" style={{ width: `${effProgress}%`, background: sig(meta.token), opacity: 0.7 }} />
             </div>
           </div>
         )}
 
         {/* tags */}
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-dim mb-1">Tags</div>
+          <div className="text-[10px] uppercase tracking-wider text-dim mb-1">{t('common.tags')}</div>
           {task.tags.length ? (
             <div className="flex flex-wrap gap-1">
-              {task.tags.map((t) => (
-                <span key={t} className="inline-flex items-center px-1.5 h-5 text-[11px] bg-panel2 border border-border rounded-[3px] text-muted">{t}</span>
+              {task.tags.map((tag) => (
+                <span key={tag} className="inline-flex items-center px-1.5 h-5 text-[11px] bg-panel2 border border-border rounded-[3px] text-muted">{tag}</span>
               ))}
             </div>
           ) : (
-            <div className="text-[12px] text-dim">—</div>
+            <div className="text-[12px] text-dim">{t('common.none')}</div>
           )}
         </div>
 
         {/* dependencies */}
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-dim mb-1">Dependencies</div>
+          <div className="text-[10px] uppercase tracking-wider text-dim mb-1">{t('common.dependencies')}</div>
           {depTasks.length ? (
             <div className="space-y-1">
               {depTasks.map((d) => (
@@ -261,37 +274,38 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
               ))}
             </div>
           ) : (
-            <div className="text-[12px] text-dim">—</div>
+            <div className="text-[12px] text-dim">{t('common.none')}</div>
           )}
         </div>
 
         {/* subtasks */}
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-dim mb-1">Subtasks</div>
+          <div className="text-[10px] uppercase tracking-wider text-dim mb-1">{t('common.subtasks')}</div>
           {subtasks.length ? (
             <div className="space-y-1">
               {subtasks.map((st) => (
                 <div key={st.id} className="flex items-center gap-2 px-2 h-7 bg-panel2 border border-border rounded-[3px] text-[11px] text-muted">
-                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: STATUS_META[effMap.get(st.id)?.status ?? 'not-started'].color }} />
+                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: sig(STATUS_META[effMap.get(st.id)?.status ?? 'not-started'].token) }} />
                   <span className="truncate">{st.name}</span>
-                  <span className="ml-auto font-mono text-dim">{effMap.get(st.id)?.progress != null ? `${effMap.get(st.id)?.progress}%` : '—'}</span>
+                  <span className="ml-auto font-mono text-dim">{effMap.get(st.id)?.progress != null ? `${effMap.get(st.id)?.progress}%` : t('common.none')}</span>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="text-[12px] text-dim">No subtasks.</div>
+            <div className="text-[12px] text-dim">{t('task.noSubtasks')}</div>
           )}
         </div>
 
         {/* description */}
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-dim mb-1">Description</div>
-          <div className="text-[12px] text-muted leading-relaxed whitespace-pre-wrap">{task.description || 'No description.'}</div>
+          <div className="text-[10px] uppercase tracking-wider text-dim mb-1">{t('common.description')}</div>
+          <div className="text-[12px] text-muted leading-relaxed whitespace-pre-wrap">{task.description || t('common.noDescription')}</div>
         </div>
       </div>
     </aside>
     {logDialog && <LogDialog taskId={task.id} existing={logDialog.existing} onClose={() => setLogDialog(null)} />}
     {startTodo && <StartTodoDialog taskIds={startTodo} onClose={() => setStartTodo(null)} />}
+    {dialogs}
     </>
   )
 }

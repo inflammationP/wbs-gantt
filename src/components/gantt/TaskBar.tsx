@@ -3,8 +3,9 @@ import type { MouseEvent, PointerEvent } from 'react'
 import { RowTask } from '../../lib/tree'
 import { Timeline, dateToX } from '../../lib/timeline'
 import { addDays, addUnit, toDate, toISO } from '../../lib/dates'
-import { STATUS_META, hexToRgba } from '../../lib/ui'
+import { STATUS_META, SignalToken, sig, sigAlpha } from '../../lib/ui'
 import { useStore } from '../../store/useStore'
+import { useT } from '../../lib/useT'
 
 type DragMode = 'move' | 'start' | 'end'
 
@@ -25,6 +26,7 @@ interface DragState {
 const BAR_H = [40, 20, 12]
 
 export function TaskBar({ row, timeline, rowH }: { row: RowTask; timeline: Timeline; rowH: number }) {
+  const t = useT()
   const barRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<DragState | null>(null)
   const suppressClickRef = useRef(false)
@@ -138,7 +140,7 @@ export function TaskBar({ row, timeline, rowH }: { row: RowTask; timeline: Timel
     const gLeft = Math.max(0, startX)
     const gWidth = timeline.totalWidth - gLeft
     if (gWidth <= 0) return null
-    const fadeColor = hexToRgba(meta.color, 0.3)
+    const fadeColor = sigAlpha(meta.token, 0.3)
     return (
       <div
         ref={barRef}
@@ -148,21 +150,21 @@ export function TaskBar({ row, timeline, rowH }: { row: RowTask; timeline: Timel
           width: gWidth,
           top: 0,
           height: rowH,
-          background: `linear-gradient(to right, ${meta.color}, ${fadeColor})`,
+          background: `linear-gradient(to right, ${sig(meta.token)}, ${fadeColor})`,
           zIndex: 10,
         }}
         onPointerDown={begin('move')}
         onPointerMove={onMove}
         onPointerUp={onUp}
         onClick={onClickBar}
-        title={`${row.wbs} ${row.task.name} — ongoing`}
+        title={t('gantt.ongoingTitle', { wbs: row.wbs, name: row.task.name })}
       >
         {/* start marker */}
-        <div className="absolute inset-y-0 left-0 w-[2px]" style={{ background: meta.color }} />
+        <div className="absolute inset-y-0 left-0 w-[2px]" style={{ background: sig(meta.token) }} />
         {/* label */}
         <div
           className="absolute inset-0 flex items-center px-2 text-[10px] text-fg truncate pointer-events-none"
-          style={{ textShadow: '0 1px 2px rgba(0,0,0,0.7)' }}
+          style={{ textShadow: 'var(--c-bar-shadow)' }}
         >
           {row.task.name}
         </div>
@@ -175,7 +177,10 @@ export function TaskBar({ row, timeline, rowH }: { row: RowTask; timeline: Timel
   const isPaused = row.task.paused
   const barH = BAR_H[Math.min(row.depth, 2)]
   const top = (rowH - barH) / 2
-  const barMeta = isPaused ? { color: '#6e7681', dim: 'rgba(110,118,129,0.16)' } : meta
+  // A paused bar is drawn in the "not started" grey rather than its own status
+  // colour — the pause is the fact worth showing, and the status is still on the
+  // row's left-hand side.
+  const barToken: SignalToken = isPaused ? 'not-started' : meta.token
 
   // A pause/resume splits the bar into two (or more) segments: each active
   // (non-paused) interval becomes one segment, the paused gap is left empty.
@@ -201,7 +206,7 @@ export function TaskBar({ row, timeline, rowH }: { row: RowTask; timeline: Timel
   if (segs.length === 0) return null
 
   const fill = (w: number) => (
-    <div className="absolute inset-y-0 left-0" style={{ width: `${row.eff.progress ?? 0}%`, background: barMeta.color, opacity: isParent ? 0.5 : 0.85 }} />
+    <div className="absolute inset-y-0 left-0" style={{ width: `${row.eff.progress ?? 0}%`, background: sig(barToken), opacity: isParent ? 0.5 : 0.85 }} />
   )
 
   // Single uninterrupted segment: fully interactive (drag + resize).
@@ -211,7 +216,7 @@ export function TaskBar({ row, timeline, rowH }: { row: RowTask; timeline: Timel
       <div
         ref={barRef}
         className="absolute rounded-[2px] border cursor-grab active:cursor-grabbing overflow-hidden select-none"
-        style={{ left, width, top, height: barH, background: barMeta.dim, borderColor: barMeta.color, zIndex: 10 }}
+        style={{ left, width, top, height: barH, background: sigAlpha(barToken, 0.16), borderColor: sig(barToken), zIndex: 10 }}
         onPointerDown={begin('move')}
         onPointerMove={onMove}
         onPointerUp={onUp}
@@ -222,7 +227,7 @@ export function TaskBar({ row, timeline, rowH }: { row: RowTask; timeline: Timel
         {!isParent && width > 44 && (
           <div
             className="absolute inset-0 flex items-center px-1.5 text-[10px] text-fg truncate pointer-events-none"
-            style={{ textShadow: '0 1px 2px rgba(0,0,0,0.7)' }}
+            style={{ textShadow: 'var(--c-bar-shadow)' }}
           >
             {row.task.name}
           </div>
@@ -244,7 +249,7 @@ export function TaskBar({ row, timeline, rowH }: { row: RowTask; timeline: Timel
         <div
           key={i}
           className="absolute rounded-[2px] border overflow-hidden select-none"
-          style={{ left: seg.left, width: seg.width, top, height: barH, background: barMeta.dim, borderColor: barMeta.color, zIndex: 10 }}
+          style={{ left: seg.left, width: seg.width, top, height: barH, background: sigAlpha(barToken, 0.16), borderColor: sig(barToken), zIndex: 10 }}
           onClick={onClickBar}
           title={`${row.wbs} ${row.task.name}`}
         >

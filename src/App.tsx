@@ -4,6 +4,7 @@ import { GanttPage } from './pages/GanttPage'
 import { CalendarPage } from './pages/CalendarPage'
 import { LogsPage } from './pages/LogsPage'
 import { ManagePage } from './pages/ManagePage'
+import { SettingsPage } from './pages/SettingsPage'
 import { TaskDetailPanel } from './components/TaskDetailPanel'
 import { ProjectDetailPanel } from './components/ProjectDetailPanel'
 import { DayDetailPanel } from './components/DayDetailPanel'
@@ -31,6 +32,7 @@ export default function App() {
         {view === 'logs' && <LogsPage />}
         {view === 'manage' && <ManagePage />}
         {view === 'calendar' && <CalendarPage />}
+        {view === 'settings' && <SettingsPage />}
       </main>
       {/* Sits left of the task panel, so opening a task from a day keeps the
           day's list on screen. Opened from the timeline header in the Gantt and
