@@ -2,12 +2,13 @@ import { useState } from 'react'
 import type { MouseEvent } from 'react'
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { useStore, useRows } from '../store/useStore'
-import { Task, ViewMode } from '../types'
+import { Task, TaskLog, ViewMode } from '../types'
 import { periodLabel } from '../lib/timeline'
 import { Segmented } from '../components/ui'
 import { GanttChart } from '../components/gantt/GanttChart'
 import { Row } from '../lib/tree'
 import { TaskDialog } from '../components/TaskDialog'
+import { LogDialog } from '../components/LogDialog'
 import { ContextMenu, MenuState } from '../components/gantt/ContextMenu'
 
 const VIEW_OPTIONS: { value: ViewMode; label: string }[] = [
@@ -34,9 +35,11 @@ export function GanttPage() {
 
   const [dialog, setDialog] = useState<{ mode: 'create' | 'edit'; task?: Task; parentId?: string | null } | null>(null)
   const [menu, setMenu] = useState<MenuState | null>(null)
+  const [logDialog, setLogDialog] = useState<{ taskId: string; existing?: TaskLog | null } | null>(null)
 
   const openCreate = (parentId?: string | null) => setDialog({ mode: 'create', parentId })
   const openEdit = (row: Row) => setDialog({ mode: 'edit', task: row.task })
+  const openLog = (row: Row) => setLogDialog({ taskId: row.id })
 
   const handleContext = (e: MouseEvent<HTMLDivElement>, row: Row) => {
     e.preventDefault()
@@ -83,12 +86,15 @@ export function GanttPage() {
           onAddChild={(r) => openCreate(r.id)}
           onAddSibling={(r) => openCreate(r.task.parentId)}
           onEdit={(r) => openEdit(r)}
+          onWriteLog={openLog}
           onOutdent={(r) => setTaskParent(r.id, null)}
           onDelete={handleDelete}
         />
       )}
 
       {dialog && <TaskDialog onClose={() => setDialog(null)} existing={dialog.task} defaultParentId={dialog.parentId} />}
+
+      {logDialog && <LogDialog taskId={logDialog.taskId} existing={logDialog.existing} onClose={() => setLogDialog(null)} />}
     </div>
   )
 }

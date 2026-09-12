@@ -166,52 +166,85 @@ export function TaskBar({ row, timeline, rowH }: { row: Row; timeline: Timeline;
     )
   }
 
+  const isPaused = row.task.paused
   const barH = BAR_H[Math.min(row.depth, 2)]
   const top = (rowH - barH) / 2
-  const left = barLeft
-  const width = barRight - barLeft
-  if (width <= 0) return null
+  const barMeta = isPaused ? { color: '#6e7681', dim: 'rgba(110,118,129,0.16)' } : meta
 
-  return (
-    <div
-      ref={barRef}
-      className="absolute rounded-[2px] border cursor-grab active:cursor-grabbing overflow-hidden select-none"
-      style={{
-        left,
-        width,
-        top,
-        height: barH,
-        background: meta.dim,
-        borderColor: meta.color,
-        zIndex: 10,
-      }}
-      onPointerDown={begin('move')}
-      onPointerMove={onMove}
-      onPointerUp={onUp}
-      onClick={onClickBar}
-      title={`${row.wbs} ${row.task.name}`}
-    >
-      {/* progress fill */}
+  // A pause/resume splits the bar into two (or more) segments: each active
+  // (non-paused) interval becomes one segment, the paused gap is left empty.
+  const segs: { left: number; width: number }[] = []
+  const segX = (iso: string) => Math.max(0, dateToX(toDate(iso), timeline))
+  const segEnd = (iso: string) => Math.min(timeline.totalWidth, dateToX(addDays(toDate(iso), 1), timeline))
+  const pushSeg = (s: string | null, e: string) => {
+    if (!s || e < s) return
+    const l = segX(s)
+    const r = segEnd(e)
+    if (r > l) segs.push({ left: l, width: r - l })
+  }
+  {
+    let cur: string | null = row.task.startDate
+    for (const p of row.task.pauses) {
+      pushSeg(cur, p.pauseDate)
+      cur = p.resumeDate
+    }
+    if (row.task.paused && row.task.pauseDate) pushSeg(cur, row.task.pauseDate)
+    else if (row.task.endDate) pushSeg(cur, row.task.endDate)
+  }
+
+  if (segs.length === 0) return null
+
+  const fill = (w: number) => (
+    <div className="absolute inset-y-0 left-0" style={{ width: `${row.eff.progress ?? 0}%`, background: barMeta.color, opacity: isParent ? 0.5 : 0.85 }} />
+  )
+
+  // Single uninterrupted segment: fully interactive (drag + resize).
+  if (segs.length === 1 && !isPaused) {
+    const { left, width } = segs[0]
+    return (
       <div
-        className="absolute inset-y-0 left-0"
-        style={{ width: `${row.eff.progress}%`, background: meta.color, opacity: isParent ? 0.5 : 0.85 }}
-      />
-      {/* label */}
-      {!isParent && width > 44 && (
+        ref={barRef}
+        className="absolute rounded-[2px] border cursor-grab active:cursor-grabbing overflow-hidden select-none"
+        style={{ left, width, top, height: barH, background: barMeta.dim, borderColor: barMeta.color, zIndex: 10 }}
+        onPointerDown={begin('move')}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onClick={onClickBar}
+        title={`${row.wbs} ${row.task.name}`}
+      >
+        {fill(width)}
+        {!isParent && width > 44 && (
+          <div
+            className="absolute inset-0 flex items-center px-1.5 text-[10px] text-fg truncate pointer-events-none"
+            style={{ textShadow: '0 1px 2px rgba(0,0,0,0.7)' }}
+          >
+            {row.task.name}
+          </div>
+        )}
+        {!isParent && (
+          <>
+            <div onPointerDown={begin('start')} className="absolute inset-y-0 left-0 w-2 cursor-ew-resize" style={{ zIndex: 2 }} />
+            <div onPointerDown={begin('end')} className="absolute inset-y-0 right-0 w-2 cursor-ew-resize" style={{ zIndex: 2 }} />
+          </>
+        )}
+      </div>
+    )
+  }
+
+  // Paused (single gray segment) or resumed (multiple segments): static bars.
+  return (
+    <>
+      {segs.map((seg, i) => (
         <div
-          className="absolute inset-0 flex items-center px-1.5 text-[10px] text-fg truncate pointer-events-none"
-          style={{ textShadow: '0 1px 2px rgba(0,0,0,0.7)' }}
+          key={i}
+          className="absolute rounded-[2px] border overflow-hidden select-none"
+          style={{ left: seg.left, width: seg.width, top, height: barH, background: barMeta.dim, borderColor: barMeta.color, zIndex: 10 }}
+          onClick={onClickBar}
+          title={`${row.wbs} ${row.task.name}`}
         >
-          {row.task.name}
+          {fill(seg.width)}
         </div>
-      )}
-      {/* resize handles */}
-      {!isParent && (
-        <>
-          <div onPointerDown={begin('start')} className="absolute inset-y-0 left-0 w-2 cursor-ew-resize" style={{ zIndex: 2 }} />
-          <div onPointerDown={begin('end')} className="absolute inset-y-0 right-0 w-2 cursor-ew-resize" style={{ zIndex: 2 }} />
-        </>
-      )}
-    </div>
+      ))}
+    </>
   )
 }

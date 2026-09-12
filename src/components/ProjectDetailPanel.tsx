@@ -1,10 +1,14 @@
 import { useMemo } from 'react'
 import { X } from 'lucide-react'
 import { useStore } from '../store/useStore'
+import { averageProgress } from '../lib/progress'
+import { effectiveStates } from '../lib/tree'
 
 export function ProjectDetailPanel({ projectId }: { projectId: string }) {
   const project = useStore((s) => s.projects.find((p) => p.id === projectId))
   const tasks = useStore((s) => s.tasks)
+  const logs = useStore((s) => s.logs)
+  const today = useStore((s) => s.today)
   const setSelectedProject = useStore((s) => s.setSelectedProject)
   const setProjectFilter = useStore((s) => s.setProjectFilter)
   const setActiveView = useStore((s) => s.setActiveView)
@@ -12,10 +16,11 @@ export function ProjectDetailPanel({ projectId }: { projectId: string }) {
   const stats = useMemo(() => {
     const ptasks = tasks.filter((t) => t.projectId === projectId)
     const leaves = ptasks.filter((t) => !tasks.some((x) => x.parentId === t.id))
-    const pct = leaves.length ? Math.round(leaves.reduce((s, t) => s + t.progress, 0) / leaves.length) : 0
-    const done = leaves.filter((t) => t.status === 'completed').length
+    const pct = averageProgress(leaves, logs)
+    const eff = effectiveStates(ptasks, logs)
+    const done = leaves.filter((t) => eff.get(t.id)?.status === 'completed').length
     return { total: ptasks.length, leaves: leaves.length, pct, done }
-  }, [tasks, projectId])
+  }, [tasks, logs, today, projectId])
 
   if (!project) return null
 

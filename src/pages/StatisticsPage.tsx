@@ -6,26 +6,32 @@ import { effectiveStates } from '../lib/tree'
 export function StatisticsPage() {
   const tasks = useStore((s) => s.tasks)
   const projects = useStore((s) => s.projects)
+  const logs = useStore((s) => s.logs)
+  const today = useStore((s) => s.today)
 
   const leaves = useMemo(() => tasks.filter((t) => !tasks.some((x) => x.parentId === t.id)), [tasks])
+  const eff = useMemo(() => effectiveStates(tasks, logs), [tasks, logs, today])
 
   const byStatus = useMemo(() => {
     const m = new Map<string, number>()
-    for (const t of leaves) m.set(t.status, (m.get(t.status) ?? 0) + 1)
+    for (const t of leaves) {
+      const s = eff.get(t.id)?.status ?? 'not-started'
+      m.set(s, (m.get(s) ?? 0) + 1)
+    }
     return m
-  }, [leaves])
+  }, [leaves, eff])
 
   const byProject = useMemo(() => {
-    const eff = effectiveStates(tasks)
     return projects.map((p) => {
       const ptasks = leaves.filter((t) => t.projectId === p.id)
-      const pct = ptasks.length ? Math.round(ptasks.reduce((s, t) => s + (eff.get(t.id)?.progress ?? 0), 0) / ptasks.length) : 0
+      const ps = ptasks.map((t) => eff.get(t.id)?.progress).filter((x): x is number => x != null)
+      const pct = ps.length ? Math.round(ps.reduce((s, x) => s + x, 0) / ps.length) : 0
       return { p, count: ptasks.length, pct }
     })
-  }, [projects, leaves, tasks])
+  }, [projects, leaves, eff])
 
   const maxStatus = Math.max(1, ...Array.from(byStatus.values()))
-  const completion = leaves.length ? Math.round((leaves.filter((t) => t.status === 'completed').length / leaves.length) * 100) : 0
+  const completion = leaves.length ? Math.round((leaves.filter((t) => eff.get(t.id)?.status === 'completed').length / leaves.length) * 100) : 0
 
   return (
     <div className="flex-1 overflow-auto">

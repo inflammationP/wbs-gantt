@@ -1,9 +1,11 @@
-import { Project, Task, TaskStatus } from '../types'
+import { Project, Task, TaskLog, TaskStatus } from '../types'
+import { taskProgress } from './progress'
+import { todayISO } from './dates'
 
 export interface EffState {
   start: string | null
   end: string | null
-  progress: number
+  progress: number | null
   status: TaskStatus
 }
 
@@ -62,7 +64,16 @@ export function deriveStatus(statuses: TaskStatus[]): TaskStatus {
   return 'not-started'
 }
 
-export function effectiveStates(tasks: Task[]): Map<string, EffState> {
+// Derive a leaf task's status from its pause state, progress and dates.
+export function deriveTaskStatus(task: Task, progress: number | null, today: string): TaskStatus {
+  if (task.paused) return 'paused'
+  if (progress != null && progress >= 100) return 'completed'
+  if (task.startDate != null && today < task.startDate) return 'not-started'
+  if (task.type !== 'long-term' && task.strictProgress && task.endDate != null && today > task.endDate) return 'delayed'
+  return 'in-progress'
+}
+
+export function effectiveStates(tasks: Task[], logs: TaskLog[]): Map<string, EffState> {
   const children = buildChildrenMap(tasks)
   const cache = new Map<string, EffState>()
   const derive = (t: Task): EffState => {
@@ -72,16 +83,23 @@ export function effectiveStates(tasks: Task[]): Map<string, EffState> {
     let r: EffState
     if (kids.length === 0) {
       // Leaf: long-term goals always have a real start and an unresolved end.
-      r = t.type === 'long-term'
-        ? { start: t.startDate, end: null, progress: t.progress, status: t.status }
-        : { start: t.startDate, end: t.endDate, progress: t.progress, status: t.status }
+      const progress = taskProgress(t, logs, new Date())
+      r = {
+        start: t.startDate,
+        end: t.type === 'long-term' ? null : t.endDate,
+        progress,
+        status: deriveTaskStatus(t, progress, todayISO()),
+      }
     } else {
       const es = kids.map(derive)
-      const progress = Math.round(es.reduce((s, e) => s + e.progress, 0) / es.length)
+      const ps = es.map((e) => e.progress).filter((p): p is number => p != null)
+      const progress = ps.length ? Math.round(ps.reduce((s, p) => s + p, 0) / ps.length) : null
       const status = deriveStatus(es.map((e) => e.status))
       if (t.type === 'long-term') {
-        // Long-term goal: anchored to its own start, no resolved end.
-        r = { start: t.startDate, end: null, progress, status }
+        // Long-term goal: anchored to its own start, no resolved end, and no
+        // progress. Its status follows its own dates, not its children's, so an
+        // unstarted sub-goal can't mark the whole goal "not-started".
+        r = { start: t.startDate, end: null, progress: null, status: deriveTaskStatus(t, null, todayISO()) }
       } else {
         const starts = es.map((e) => e.start).filter((s): s is string => s != null)
         const start = starts.length ? starts.reduce((min, s) => (s < min ? s : min), starts[0]) : t.startDate
@@ -104,8 +122,8 @@ export function effectiveStates(tasks: Task[]): Map<string, EffState> {
 }
 
 // Auto-set each phase parent's endDate to its latest child's effective end date.
-export function syncParentEnds(tasks: Task[]): Task[] {
-  const eff = effectiveStates(tasks)
+export function syncParentEnds(tasks: Task[], logs: TaskLog[]): Task[] {
+  const eff = effectiveStates(tasks, logs)
   let changed = false
   const next = tasks.map((t) => {
     if (t.type === 'long-term' || !hasChildren(tasks, t.id)) return t
@@ -129,10 +147,10 @@ export interface Row {
   isLeaf: boolean
 }
 
-export function buildRows(tasks: Task[], expanded: Record<string, boolean>, projects: Project[]): Row[] {
+export function buildRows(tasks: Task[], expanded: Record<string, boolean>, projects: Project[], logs: TaskLog[]): Row[] {
   const order = new Map(projects.map((p, i) => [p.id, i]))
   const children = buildChildrenMap(tasks)
-  const eff = effectiveStates(tasks)
+  const eff = effectiveStates(tasks, logs)
 
   // WBS is computed per-project so numbering restarts cleanly in multi-project view.
   const wbs = new Map<string, string>()

@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react'
 import { Modal, Field, inputCls } from './ui'
-import { Task, TaskStatus, TaskPriority, TaskType } from '../types'
+import { Task, TaskPriority, TaskType } from '../types'
 import { useStore } from '../store/useStore'
 import { collectDescendants } from '../lib/tree'
-import { STATUS_META, PRIORITY_META, STATUS_ORDER, PRIORITY_ORDER, TASK_TYPE_LABEL } from '../lib/ui'
+import { PRIORITY_META, PRIORITY_ORDER, TASK_TYPE_LABEL } from '../lib/ui'
 import { todayISO } from '../lib/dates'
 
 interface Props {
@@ -17,6 +17,7 @@ export function TaskDialog({ onClose, existing, defaultParentId }: Props) {
   const projects = useStore((s) => s.projects)
   const addTask = useStore((s) => s.addTask)
   const updateTask = useStore((s) => s.updateTask)
+  const addLog = useStore((s) => s.addLog)
 
   const [form, setForm] = useState(() => ({
     name: existing?.name ?? '',
@@ -26,17 +27,17 @@ export function TaskDialog({ onClose, existing, defaultParentId }: Props) {
     parentId: (existing?.parentId ?? defaultParentId ?? null) as string | null,
     startDate: existing?.startDate ?? todayISO(),
     endDate: existing?.endDate ?? todayISO(),
-    progress: existing?.progress ?? 0,
-    status: (existing?.status ?? 'not-started') as TaskStatus,
+    strictProgress: existing?.strictProgress ?? false,
     priority: (existing?.priority ?? 'medium') as TaskPriority,
     tags: existing?.tags?.join(', ') ?? '',
   }))
+  const [overdueChoice, setOverdueChoice] = useState<'delayed' | 'completed'>('delayed')
 
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }))
 
   const setType = (type: TaskType) => {
     if (type === 'long-term') {
-      setForm((f) => ({ ...f, type, startDate: f.startDate || todayISO(), endDate: '' }))
+      setForm((f) => ({ ...f, type, strictProgress: false, startDate: f.startDate || todayISO(), endDate: '' }))
     } else {
       setForm((f) => ({ ...f, type, startDate: f.startDate || todayISO(), endDate: f.endDate || todayISO() }))
     }
@@ -51,6 +52,7 @@ export function TaskDialog({ onClose, existing, defaultParentId }: Props) {
 
   const isLT = form.type === 'long-term'
   const hasKids = existing ? tasks.some((t) => t.parentId === existing.id) : false
+  const isOverdueStrict = !existing && !isLT && form.strictProgress && !!form.endDate && form.endDate < todayISO()
 
   const submit = () => {
     const name = form.name.trim()
@@ -73,13 +75,18 @@ export function TaskDialog({ onClose, existing, defaultParentId }: Props) {
       parentId: form.parentId,
       startDate: s,
       endDate: e,
-      progress: Math.max(0, Math.min(100, form.progress)),
-      status: form.status,
+      strictProgress: isLT ? false : form.strictProgress,
       priority: form.priority,
       tags,
     }
-    if (existing) updateTask(existing.id, payload)
-    else addTask(payload)
+    if (existing) {
+      updateTask(existing.id, payload)
+    } else {
+      const id = addTask(payload)
+      if (isOverdueStrict && overdueChoice === 'completed') {
+        addLog({ taskId: id, date: todayISO(), content: 'Marked as completed', targetProgress: 100 })
+      }
+    }
     onClose()
   }
 
@@ -126,22 +133,34 @@ export function TaskDialog({ onClose, existing, defaultParentId }: Props) {
           </div>
         )}
 
-        <Field label={`Progress — ${form.progress}%`}>
-          <input type="range" min={0} max={100} value={form.progress} onChange={(e) => set('progress', Number(e.target.value))} className="w-full accent-[#46b8e6]" />
+        <div className={`flex items-center gap-2 ${isLT ? 'opacity-50' : ''}`}>
+          <input
+            type="checkbox"
+            id="strict-progress"
+            checked={form.strictProgress}
+            disabled={isLT}
+            onChange={(e) => set('strictProgress', e.target.checked)}
+            className="accent-[#46b8e6]"
+          />
+          <label htmlFor="strict-progress" className={`text-[12px] ${isLT ? 'text-dim cursor-not-allowed' : 'text-fg cursor-pointer'}`}>
+            Strict progress (progress only advances via daily logs)
+          </label>
+        </div>
+
+        <Field label="Priority">
+          <select className={inputCls} value={form.priority} onChange={(e) => set('priority', e.target.value as TaskPriority)}>
+            {PRIORITY_ORDER.map((p) => <option key={p} value={p}>{PRIORITY_META[p].label}</option>)}
+          </select>
         </Field>
 
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Status">
-            <select className={inputCls} value={form.status} onChange={(e) => set('status', e.target.value as TaskStatus)}>
-              {STATUS_ORDER.map((s) => <option key={s} value={s}>{STATUS_META[s].label}</option>)}
+        {isOverdueStrict && (
+          <Field label="This task is already overdue — mark as">
+            <select className={inputCls} value={overdueChoice} onChange={(e) => setOverdueChoice(e.target.value as 'delayed' | 'completed')}>
+              <option value="delayed">Delayed</option>
+              <option value="completed">Completed</option>
             </select>
           </Field>
-          <Field label="Priority">
-            <select className={inputCls} value={form.priority} onChange={(e) => set('priority', e.target.value as TaskPriority)}>
-              {PRIORITY_ORDER.map((p) => <option key={p} value={p}>{PRIORITY_META[p].label}</option>)}
-            </select>
-          </Field>
-        </div>
+        )}
 
         <Field label="Tags (comma separated)">
           <input className={inputCls} value={form.tags} onChange={(e) => set('tags', e.target.value)} placeholder="anki, health" />

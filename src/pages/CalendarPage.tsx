@@ -2,13 +2,18 @@ import { useMemo, useState } from 'react'
 import { useStore } from '../store/useStore'
 import { addMonths, startOfMonth, startOfWeek, addDays, toISO, todayISO, isToday, MONTHS } from '../lib/dates'
 import { STATUS_META } from '../lib/ui'
+import { effectiveStates } from '../lib/tree'
 
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 export function CalendarPage() {
   const tasks = useStore((s) => s.tasks)
+  const logs = useStore((s) => s.logs)
+  const today = useStore((s) => s.today)
   const setSelected = useStore((s) => s.setSelected)
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()))
+
+  const eff = useMemo(() => effectiveStates(tasks, logs), [tasks, logs, today])
 
   const byDay = useMemo(() => {
     const map = new Map<string, typeof tasks>()
@@ -51,7 +56,7 @@ export function CalendarPage() {
                   <div className={`text-[11px] font-mono mb-1 ${isTodayD ? 'text-today font-bold' : 'text-muted'}`}>{d.getDate()}</div>
                   <div className="space-y-0.5">
                     {dayTasks.slice(0, 4).map((t) => {
-                      const meta = STATUS_META[t.status]
+                      const meta = STATUS_META[eff.get(t.id)?.status ?? 'not-started']
                       return (
                         <button key={t.id} onClick={() => setSelected(t.id)} className="w-full flex items-center gap-1 px-1 h-4 text-[10px] rounded-[2px] truncate hover:brightness-125" style={{ background: meta.dim, color: meta.text }}>
                           <span className="w-1 h-1 rounded-full shrink-0" style={{ background: meta.color }} />

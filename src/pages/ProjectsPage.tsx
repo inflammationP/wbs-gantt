@@ -7,6 +7,8 @@ import { Plus, Trash2, Pencil } from 'lucide-react'
 export function ProjectsPage() {
   const projects = useStore((s) => s.projects)
   const tasks = useStore((s) => s.tasks)
+  const logs = useStore((s) => s.logs)
+  const today = useStore((s) => s.today)
   const addProject = useStore((s) => s.addProject)
   const updateProject = useStore((s) => s.updateProject)
   const deleteProject = useStore((s) => s.deleteProject)
@@ -18,9 +20,10 @@ export function ProjectsPage() {
   const statsFor = (pid: string) => {
     const ptasks = tasks.filter((t) => t.projectId === pid)
     const leaves = ptasks.filter((t) => !tasks.some((x) => x.parentId === t.id))
-    const eff = effectiveStates(ptasks)
-    const pct = leaves.length ? Math.round(leaves.reduce((s, t) => s + (eff.get(t.id)?.progress ?? 0), 0) / leaves.length) : 0
-    const done = leaves.filter((t) => t.status === 'completed').length
+    const eff = effectiveStates(ptasks, logs)
+    const ps = leaves.map((t) => eff.get(t.id)?.progress).filter((p): p is number => p != null)
+    const pct = ps.length ? Math.round(ps.reduce((s, p) => s + p, 0) / ps.length) : 0
+    const done = leaves.filter((t) => eff.get(t.id)?.status === 'completed').length
     return { total: ptasks.length, leaves: leaves.length, pct, done }
   }
 

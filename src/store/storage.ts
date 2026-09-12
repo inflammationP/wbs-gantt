@@ -1,15 +1,15 @@
-import { Project, Task } from '../types'
+import { Project, Task, TaskLog } from '../types'
 
 export interface PersistedData {
   projects: Project[]
   tasks: Task[]
+  logs: TaskLog[]
 }
 
 const KEY = 'wbs-gantt.v2'
 
-// Normalize data loaded from disk or import: backfill the `type` field and
-// coerce missing dates to null so older saved data keeps working. Long-term
-// goals always have an unresolved (null) end date.
+// Normalize data loaded from disk or import: backfill `type`/`strictProgress`,
+// coerce missing dates to null, and default missing collections.
 function normalize(data: PersistedData): PersistedData {
   return {
     projects: data.projects,
@@ -20,8 +20,18 @@ function normalize(data: PersistedData): PersistedData {
         type: isLT ? 'long-term' : 'phase',
         startDate: t.startDate ?? null,
         endDate: isLT ? null : (t.endDate ?? null),
+        strictProgress: t.strictProgress ?? false,
+        paused: t.paused ?? false,
+        pauseDate: t.pauseDate ?? null,
+        pauses: Array.isArray(t.pauses) ? t.pauses : [],
       }
     }),
+    logs: (data.logs ?? []).map((l) => ({
+      ...l,
+      date: l.date ?? '',
+      content: l.content ?? '',
+      targetProgress: l.targetProgress ?? null,
+    })),
   }
 }
 
@@ -47,7 +57,7 @@ export function saveData(data: PersistedData): void {
 
 export function exportJson(data: PersistedData): string {
   return JSON.stringify(
-    { version: 1, exportedAt: new Date().toISOString(), projects: data.projects, tasks: data.tasks },
+    { version: 1, exportedAt: new Date().toISOString(), projects: data.projects, tasks: data.tasks, logs: data.logs },
     null,
     2,
   )
@@ -58,5 +68,5 @@ export function parseImport(json: string): PersistedData {
   if (!Array.isArray(parsed.projects) || !Array.isArray(parsed.tasks)) {
     throw new Error('Invalid file: expected { projects, tasks } arrays')
   }
-  return normalize({ projects: parsed.projects, tasks: parsed.tasks })
+  return normalize({ projects: parsed.projects, tasks: parsed.tasks, logs: parsed.logs ?? [] })
 }

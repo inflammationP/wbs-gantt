@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useStore } from '../store/useStore'
-import { computeWbs } from '../lib/tree'
+import { computeWbs, effectiveStates } from '../lib/tree'
 import { STATUS_META, PRIORITY_META, STATUS_ORDER } from '../lib/ui'
 import { formatShort } from '../lib/dates'
 import { TaskStatus } from '../types'
@@ -8,15 +8,18 @@ import { TaskStatus } from '../types'
 export function TasksPage() {
   const tasks = useStore((s) => s.tasks)
   const projects = useStore((s) => s.projects)
+  const logs = useStore((s) => s.logs)
+  const today = useStore((s) => s.today)
   const setSelected = useStore((s) => s.setSelected)
   const setActiveView = useStore((s) => s.setActiveView)
   const [statusFilter, setStatusFilter] = useState<TaskStatus | 'all'>('all')
 
   const wbs = useMemo(() => computeWbs(tasks), [tasks])
+  const eff = useMemo(() => effectiveStates(tasks, logs), [tasks, logs, today])
   const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? ''
 
   const filtered = tasks
-    .filter((t) => statusFilter === 'all' || t.status === statusFilter)
+    .filter((t) => statusFilter === 'all' || eff.get(t.id)?.status === statusFilter)
     .sort((a, b) => a.projectId.localeCompare(b.projectId) || (a.startDate ?? '').localeCompare(b.startDate ?? '') || a.name.localeCompare(b.name))
 
   return (
@@ -34,7 +37,7 @@ export function TasksPage() {
             <span>WBS</span><span>Task</span><span>Project</span><span>Start</span><span>End</span><span>Progress</span><span>Status</span><span>Priority</span>
           </div>
           {filtered.map((t) => {
-            const meta = STATUS_META[t.status]
+            const meta = STATUS_META[eff.get(t.id)?.status ?? 'not-started']
             const prio = PRIORITY_META[t.priority]
             return (
               <button key={t.id} onClick={() => setSelected(t.id)} className="grid grid-cols-[70px_1fr_120px_120px_90px_90px_130px_100px] px-3 h-9 items-center text-[12px] border-b border-line last:border-0 hover:bg-panel2 text-left w-full">
@@ -43,7 +46,7 @@ export function TasksPage() {
                 <span className="text-muted truncate">{projectName(t.projectId)}</span>
                 <span className="font-mono text-[11px] text-muted">{t.startDate ? formatShort(t.startDate) : '—'}</span>
                 <span className="font-mono text-[11px] text-muted">{t.endDate ? formatShort(t.endDate) : 'TBD'}</span>
-                <span className="font-mono text-[11px] text-fg">{t.progress}%</span>
+                <span className="font-mono text-[11px] text-fg">{eff.get(t.id)?.progress != null ? `${eff.get(t.id)?.progress}%` : '—'}</span>
                 <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-[2px]" style={{ background: meta.color }} /><span style={{ color: meta.text }}>{meta.label}</span></span>
                 <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full" style={{ background: prio.color }} /><span className="text-muted">{prio.label}</span></span>
               </button>

@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import type { ReactNode } from 'react'
-import { CornerUpLeft, Pencil, Plus, Trash2 } from 'lucide-react'
+import { CornerUpLeft, NotebookPen, Pencil, Plus, Trash2 } from 'lucide-react'
 import { Row } from '../../lib/tree'
 
 export interface MenuState {
@@ -16,6 +16,7 @@ interface Props {
   onAddChild: (row: Row) => void
   onAddSibling: (row: Row) => void
   onEdit: (row: Row) => void
+  onWriteLog: (row: Row) => void
   onOutdent: (row: Row) => void
   onDelete: (row: Row) => void
 }
@@ -34,7 +35,7 @@ function Item({ icon, label, onClick, danger }: { icon: ReactNode; label: string
   )
 }
 
-export function ContextMenu({ menu, onClose, onAddChild, onAddSibling, onEdit, onOutdent, onDelete }: Props) {
+export function ContextMenu({ menu, onClose, onAddChild, onAddSibling, onEdit, onWriteLog, onOutdent, onDelete }: Props) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -59,6 +60,9 @@ export function ContextMenu({ menu, onClose, onAddChild, onAddSibling, onEdit, o
         <Item icon={<Plus size={13} />} label="Add sibling" onClick={() => { onAddSibling(menu.row); onClose() }} />
         <div className="my-1 border-t border-line" />
         <Item icon={<Pencil size={13} />} label="Edit" onClick={() => { onEdit(menu.row); onClose() }} />
+        {menu.row.eff.status === 'in-progress' || menu.row.eff.status === 'delayed' ? (
+          <Item icon={<NotebookPen size={13} />} label="Write log" onClick={() => { onWriteLog(menu.row); onClose() }} />
+        ) : null}
         <Item icon={<CornerUpLeft size={13} />} label="Move to top level" onClick={() => { onOutdent(menu.row); onClose() }} />
         <div className="my-1 border-t border-line" />
         <Item icon={<Trash2 size={13} />} label="Delete" danger onClick={() => { onDelete(menu.row); onClose() }} />

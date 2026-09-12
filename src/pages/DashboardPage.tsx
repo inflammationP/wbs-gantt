@@ -1,13 +1,17 @@
 import { useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { useStore } from '../store/useStore'
-import { Project, Task } from '../types'
+import { Project, Task, TaskStatus } from '../types'
 import { addDays, toISO, todayISO } from '../lib/dates'
 import { STATUS_META } from '../lib/ui'
+import { averageProgress } from '../lib/progress'
+import { effectiveStates } from '../lib/tree'
 
 export function DashboardPage() {
   const tasks = useStore((s) => s.tasks)
   const projects = useStore((s) => s.projects)
+  const logs = useStore((s) => s.logs)
+  const todayStamp = useStore((s) => s.today)
   const setSelected = useStore((s) => s.setSelected)
   const setActiveView = useStore((s) => s.setActiveView)
   const setProjectFilter = useStore((s) => s.setProjectFilter)
@@ -15,16 +19,18 @@ export function DashboardPage() {
   const today = todayISO()
   const weekISO = toISO(addDays(new Date(), 7))
 
+  const eff = useMemo(() => effectiveStates(tasks, logs), [tasks, logs, todayStamp])
+
   const stats = useMemo(() => {
     const leaves = tasks.filter((t) => !tasks.some((x) => x.parentId === t.id))
-    const overdue = leaves.filter((t) => t.endDate != null && t.endDate < today && t.status !== 'completed')
-    const inProgress = leaves.filter((t) => t.status === 'in-progress')
+    const overdue = leaves.filter((t) => eff.get(t.id)?.status === 'delayed')
+    const inProgress = leaves.filter((t) => eff.get(t.id)?.status === 'in-progress')
     const todayTasks = leaves.filter((t) => t.startDate != null && t.endDate != null && t.startDate <= today && t.endDate >= today)
     const upcoming = leaves.filter((t) => t.startDate != null && t.startDate > today && t.startDate <= weekISO)
-    const completed = leaves.filter((t) => t.status === 'completed')
-    const overall = leaves.length ? Math.round(leaves.reduce((s, t) => s + t.progress, 0) / leaves.length) : 0
+    const completed = leaves.filter((t) => eff.get(t.id)?.status === 'completed')
+    const overall = averageProgress(leaves, logs)
     return { overdue, inProgress, todayTasks, upcoming, completed, overall, leaves }
-  }, [tasks, today, weekISO])
+  }, [tasks, logs, eff, today, weekISO])
 
   const project = (id: string) => projects.find((p) => p.id === id)
 
@@ -47,15 +53,15 @@ export function DashboardPage() {
         <div className="grid grid-cols-3 gap-4">
           <Section title="Today">
             {stats.todayTasks.length === 0 && <Empty />}
-            {stats.todayTasks.map((t) => <TaskRow key={t.id} task={t} project={project(t.projectId)} onClick={() => setSelected(t.id)} />)}
+            {stats.todayTasks.map((t) => <TaskRow key={t.id} task={t} status={eff.get(t.id)?.status ?? 'not-started'} project={project(t.projectId)} onClick={() => setSelected(t.id)} />)}
           </Section>
           <Section title="Upcoming (7 days)">
             {stats.upcoming.length === 0 && <Empty />}
-            {stats.upcoming.map((t) => <TaskRow key={t.id} task={t} project={project(t.projectId)} onClick={() => setSelected(t.id)} />)}
+            {stats.upcoming.map((t) => <TaskRow key={t.id} task={t} status={eff.get(t.id)?.status ?? 'not-started'} project={project(t.projectId)} onClick={() => setSelected(t.id)} />)}
           </Section>
           <Section title="Overdue">
             {stats.overdue.length === 0 && <Empty />}
-            {stats.overdue.map((t) => <TaskRow key={t.id} task={t} project={project(t.projectId)} onClick={() => setSelected(t.id)} overdue />)}
+            {stats.overdue.map((t) => <TaskRow key={t.id} task={t} status={eff.get(t.id)?.status ?? 'not-started'} project={project(t.projectId)} onClick={() => setSelected(t.id)} overdue />)}
           </Section>
         </div>
 
@@ -63,7 +69,7 @@ export function DashboardPage() {
           <div className="space-y-2">
             {projects.map((p) => {
               const ptasks = tasks.filter((t) => t.projectId === p.id && !tasks.some((x) => x.parentId === t.id))
-              const pct = ptasks.length ? Math.round(ptasks.reduce((s, t) => s + t.progress, 0) / ptasks.length) : 0
+              const pct = averageProgress(ptasks, logs)
               return (
                 <button key={p.id} onClick={() => { setProjectFilter(p.id); setActiveView('gantt') }} className="w-full flex items-center gap-3 px-3 py-2 bg-panel border border-border rounded-[3px] hover:border-accent text-left">
                   <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: p.color }} />
@@ -106,8 +112,8 @@ function Empty() {
   return <div className="text-[12px] text-dim py-2">Nothing here.</div>
 }
 
-function TaskRow({ task, project, onClick, overdue }: { task: Task; project?: Project; onClick: () => void; overdue?: boolean }) {
-  const meta = STATUS_META[task.status]
+function TaskRow({ task, status, project, onClick, overdue }: { task: Task; status: TaskStatus; project?: Project; onClick: () => void; overdue?: boolean }) {
+  const meta = STATUS_META[status]
   return (
     <button onClick={onClick} className="w-full flex items-center gap-2 px-2 py-1.5 rounded-[3px] hover:bg-panel2 text-left">
       <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: meta.color }} />

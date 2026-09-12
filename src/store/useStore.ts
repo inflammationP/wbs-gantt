@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { create } from 'zustand'
-import { AppView, Project, Task, TaskPriority, TaskStatus, TaskType, ViewMode } from '../types'
-import { todayISO, addUnitISO, Unit } from '../lib/dates'
+import { AppView, Project, Task, TaskLog, TaskPriority, TaskType, ViewMode } from '../types'
+import { todayISO, addUnitISO, Unit, addDays, diffDays, toDate, toISO } from '../lib/dates'
 import { shiftAnchor } from '../lib/timeline'
 import { buildRows, collectDescendants, hasChildren, syncParentEnds, Row } from '../lib/tree'
 import { loadData, saveData, PersistedData } from './storage'
@@ -15,8 +15,7 @@ export interface NewTaskInput {
   type?: TaskType
   startDate: string | null
   endDate: string | null
-  progress?: number
-  status?: TaskStatus
+  strictProgress?: boolean
   priority?: TaskPriority
   tags?: string[]
   dependencies?: string[]
@@ -25,11 +24,13 @@ export interface NewTaskInput {
 interface State {
   projects: Project[]
   tasks: Task[]
+  logs: TaskLog[]
   activeView: AppView
   selectedTaskId: string | null
   selectedProjectId: string | null
   viewMode: ViewMode
   anchorISO: string
+  today: string
   expanded: Record<string, boolean>
   projectFilter: string
 
@@ -56,6 +57,13 @@ interface State {
   moveTask: (id: string, deltaUnits: number, unit: Unit) => void
   resizeTask: (id: string, startISO: string, endISO: string) => void
 
+  addLog: (input: { taskId: string; date: string; content: string; targetProgress?: number | null }) => string
+  updateLog: (id: string, patch: { date?: string; content?: string; targetProgress?: number | null }) => void
+  deleteLog: (id: string) => void
+
+  pauseTask: (id: string) => void
+  resumeTask: (id: string) => void
+
   syncParentEnds: () => void
 
   importData: (data: PersistedData) => void
@@ -69,16 +77,18 @@ function uid(): string {
 
 const loaded = loadData()
 const initial = loaded ?? buildSeed()
-if (!loaded) saveData({ projects: initial.projects, tasks: initial.tasks })
+if (!loaded) saveData({ projects: initial.projects, tasks: initial.tasks, logs: initial.logs })
 
 export const useStore = create<State>()((set) => ({
   projects: initial.projects,
   tasks: initial.tasks,
+  logs: initial.logs,
   activeView: 'gantt',
   selectedTaskId: null,
   selectedProjectId: null,
   viewMode: 'day',
   anchorISO: todayISO(),
+  today: todayISO(),
   expanded: {},
   projectFilter: 'all',
 
@@ -108,13 +118,17 @@ export const useStore = create<State>()((set) => ({
   updateProject: (id, patch) =>
     set((s) => ({ projects: s.projects.map((p) => (p.id === id ? { ...p, ...patch } : p)) })),
   deleteProject: (id) =>
-    set((s) => ({
-      projects: s.projects.filter((p) => p.id !== id),
-      tasks: s.tasks.filter((t) => t.projectId !== id),
-      projectFilter: s.projectFilter === id ? 'all' : s.projectFilter,
-      selectedTaskId: null,
-      selectedProjectId: null,
-    })),
+    set((s) => {
+      const taskIds = new Set(s.tasks.filter((t) => t.projectId === id).map((t) => t.id))
+      return {
+        projects: s.projects.filter((p) => p.id !== id),
+        tasks: s.tasks.filter((t) => t.projectId !== id),
+        logs: s.logs.filter((l) => !taskIds.has(l.taskId)),
+        projectFilter: s.projectFilter === id ? 'all' : s.projectFilter,
+        selectedTaskId: null,
+        selectedProjectId: null,
+      }
+    }),
 
   addTask: (input) => {
     const id = uid()
@@ -133,8 +147,10 @@ export const useStore = create<State>()((set) => ({
         type: isLT ? 'long-term' : 'phase',
         startDate: input.startDate,
         endDate: isLT ? null : input.endDate,
-        progress: Math.max(0, Math.min(100, input.progress ?? 0)),
-        status: input.status ?? 'not-started',
+        strictProgress: isLT ? false : (input.strictProgress ?? false),
+        paused: false,
+        pauseDate: null,
+        pauses: [],
         priority: input.priority ?? 'medium',
         tags: input.tags ?? [],
         dependencies: input.dependencies ?? [],
@@ -158,7 +174,8 @@ export const useStore = create<State>()((set) => ({
         .filter((t) => !ids.has(t.id))
         .map((t) => ({ ...t, dependencies: t.dependencies.filter((d) => !ids.has(d)) }))
       const selectedTaskId = s.selectedTaskId && ids.has(s.selectedTaskId) ? null : s.selectedTaskId
-      return { tasks, selectedTaskId }
+      const logs = s.logs.filter((l) => !ids.has(l.taskId))
+      return { tasks, logs, selectedTaskId }
     }),
   setTaskParent: (id, parentId) =>
     set((s) => {
@@ -212,30 +229,91 @@ export const useStore = create<State>()((set) => ({
       }
     }),
 
+  addLog: (input) => {
+    const id = uid()
+    const now = new Date().toISOString()
+    set((s) => ({
+      logs: [
+        ...s.logs,
+        {
+          id,
+          taskId: input.taskId,
+          date: input.date,
+          content: input.content,
+          targetProgress: input.targetProgress ?? null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+    }))
+    return id
+  },
+  updateLog: (id, patch) =>
+    set((s) => ({
+      logs: s.logs.map((l) => (l.id === id ? { ...l, ...patch, updatedAt: new Date().toISOString() } : l)),
+    })),
+  deleteLog: (id) =>
+    set((s) => ({ logs: s.logs.filter((l) => l.id !== id) })),
+
+  pauseTask: (id) =>
+    set((s) => ({
+      tasks: s.tasks.map((t) =>
+        t.id === id && !t.paused
+          ? { ...t, paused: true, pauseDate: todayISO(), updatedAt: new Date().toISOString() }
+          : t,
+      ),
+    })),
+  resumeTask: (id) =>
+    set((s) => ({
+      tasks: s.tasks.map((t) => {
+        if (t.id !== id || !t.paused) return t
+        const resumeDate = todayISO()
+        const pauseDate = t.pauseDate ?? resumeDate
+        const n = t.endDate != null ? Math.max(0, diffDays(toDate(pauseDate), toDate(t.endDate))) : 0
+        const endDate = t.endDate != null ? toISO(addDays(toDate(resumeDate), n)) : t.endDate
+        return {
+          ...t,
+          paused: false,
+          pauseDate: null,
+          endDate,
+          pauses: [...t.pauses, { pauseDate, resumeDate }],
+          updatedAt: new Date().toISOString(),
+        }
+      }),
+    })),
+
   syncParentEnds: () =>
     set((s) => {
-      const next = syncParentEnds(s.tasks)
+      const next = syncParentEnds(s.tasks, s.logs)
       return next === s.tasks ? {} : { tasks: next }
     }),
 
   importData: (data) =>
-    set({ projects: data.projects, tasks: data.tasks, selectedTaskId: null, selectedProjectId: null, projectFilter: 'all' }),
+    set({ projects: data.projects, tasks: data.tasks, logs: data.logs ?? [], selectedTaskId: null, selectedProjectId: null, projectFilter: 'all' }),
 }))
 
 // Persist data (only) to localStorage whenever projects/tasks change.
 useStore.subscribe((state, prev) => {
-  if (state.projects !== prev.projects || state.tasks !== prev.tasks) {
-    saveData({ projects: state.projects, tasks: state.tasks })
+  if (state.projects !== prev.projects || state.tasks !== prev.tasks || state.logs !== prev.logs) {
+    saveData({ projects: state.projects, tasks: state.tasks, logs: state.logs })
   }
 })
 
+// Keep `today` fresh across midnights so derived progress/status re-render.
+setInterval(() => {
+  const t = todayISO()
+  if (useStore.getState().today !== t) useStore.setState({ today: t })
+}, 60_000)
+
 export function useRows(): Row[] {
   const tasks = useStore((s) => s.tasks)
+  const logs = useStore((s) => s.logs)
+  const today = useStore((s) => s.today)
   const expanded = useStore((s) => s.expanded)
   const projectFilter = useStore((s) => s.projectFilter)
   const projects = useStore((s) => s.projects)
   return useMemo(() => {
     const visible = projectFilter === 'all' ? tasks : tasks.filter((t) => t.projectId === projectFilter)
-    return buildRows(visible, expanded, projects)
-  }, [tasks, expanded, projectFilter, projects])
+    return buildRows(visible, expanded, projects, logs)
+  }, [tasks, logs, today, expanded, projectFilter, projects])
 }

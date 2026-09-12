@@ -1,15 +1,17 @@
 import { useRef, useState } from 'react'
 import {
-  BarChart2, BarChart3, Calendar, Download, Folder, LayoutDashboard, ListTodo, Minus, Pencil, Plus, Upload,
+  BarChart2, BarChart3, Calendar, ClipboardList, Download, Folder, LayoutDashboard, ListTodo, Minus, Pencil, Plus, Upload,
 } from 'lucide-react'
 import { AppView, Project } from '../types'
 import { useStore } from '../store/useStore'
 import { exportJson, parseImport } from '../store/storage'
 import { todayISO } from '../lib/dates'
+import { averageProgress } from '../lib/progress'
 import { ProjectDialog } from './ProjectDialog'
 
 const NAV: { id: AppView; label: string; icon: typeof BarChart2 }[] = [
   { id: 'gantt', label: 'Gantt', icon: BarChart2 },
+  { id: 'logs', label: 'Logs', icon: ClipboardList },
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'tasks', label: 'Tasks', icon: ListTodo },
   { id: 'calendar', label: 'Calendar', icon: Calendar },
@@ -22,6 +24,7 @@ export function Sidebar() {
   const setActiveView = useStore((s) => s.setActiveView)
   const projects = useStore((s) => s.projects)
   const tasks = useStore((s) => s.tasks)
+  const logs = useStore((s) => s.logs)
   const projectFilter = useStore((s) => s.projectFilter)
   const setProjectFilter = useStore((s) => s.setProjectFilter)
   const setSelected = useStore((s) => s.setSelected)
@@ -34,11 +37,11 @@ export function Sidebar() {
 
   const projectProgress = (pid: string) => {
     const leaves = tasks.filter((t) => t.projectId === pid && !tasks.some((x) => x.parentId === t.id))
-    return leaves.length ? Math.round(leaves.reduce((s, t) => s + t.progress, 0) / leaves.length) : 0
+    return averageProgress(leaves, logs)
   }
 
   const handleExport = () => {
-    const blob = new Blob([exportJson({ projects, tasks })], { type: 'application/json' })
+    const blob = new Blob([exportJson({ projects, tasks, logs })], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url

@@ -6,6 +6,7 @@ import { TasksPage } from './pages/TasksPage'
 import { CalendarPage } from './pages/CalendarPage'
 import { ProjectsPage } from './pages/ProjectsPage'
 import { StatisticsPage } from './pages/StatisticsPage'
+import { LogsPage } from './pages/LogsPage'
 import { TaskDetailPanel } from './components/TaskDetailPanel'
 import { ProjectDetailPanel } from './components/ProjectDetailPanel'
 import { useStore } from './store/useStore'
@@ -28,6 +29,7 @@ export default function App() {
       <Sidebar />
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {view === 'gantt' && <GanttPage />}
+        {view === 'logs' && <LogsPage />}
         {view === 'dashboard' && <DashboardPage />}
         {view === 'tasks' && <TasksPage />}
         {view === 'calendar' && <CalendarPage />}

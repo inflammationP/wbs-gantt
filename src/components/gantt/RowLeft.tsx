@@ -74,7 +74,7 @@ export function RowLeft({ row, onAddChild, onEdit, onContext }: Props) {
       </div>
       {/* progress */}
       <div className="shrink-0 flex items-center justify-end pr-2 font-mono text-[11px] text-fg" style={{ width: COLS.progress }}>
-        {row.eff.progress}%
+        {row.eff.progress != null ? `${row.eff.progress}%` : '—'}
       </div>
       {/* status */}
       <div className="shrink-0 flex items-center gap-1.5" style={{ width: COLS.status }}>
