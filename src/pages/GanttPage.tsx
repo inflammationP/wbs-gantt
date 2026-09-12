@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { MouseEvent } from 'react'
-import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
-import { useStore, useRows } from '../store/useStore'
+import { Plus } from 'lucide-react'
+import { useStore, useRows, useTimelineRange } from '../store/useStore'
 import { Task, TaskLog, ViewMode } from '../types'
-import { periodLabel } from '../lib/timeline'
+import { rangeLabel } from '../lib/timeline'
 import { Segmented } from '../components/ui'
 import { GanttChart } from '../components/gantt/GanttChart'
 import { RowTask } from '../lib/tree'
@@ -12,6 +12,12 @@ import { TaskDialog } from '../components/TaskDialog'
 import { LogDialog } from '../components/LogDialog'
 import { StartTodoDialog } from '../components/StartTodoDialog'
 import { ContextMenu, MenuState } from '../components/gantt/ContextMenu'
+
+// Fixed left sidebar width (Sidebar.tsx renders w-[190px]). The timeline is
+// sized off the window minus this, so opening the task/project detail panel
+// (which shrinks the container by 320px) doesn't reflow the timeline and make
+// task bars jump.
+const SIDEBAR_W = 190
 
 const VIEW_OPTIONS: { value: ViewMode; label: string }[] = [
   { value: 'day', label: 'Day' },
@@ -25,9 +31,6 @@ export function GanttPage() {
   const rows = useRows()
   const viewMode = useStore((s) => s.viewMode)
   const setViewMode = useStore((s) => s.setViewMode)
-  const anchorISO = useStore((s) => s.anchorISO)
-  const goPrev = useStore((s) => s.goPrev)
-  const goNext = useStore((s) => s.goNext)
   const goToday = useStore((s) => s.goToday)
   const projectFilter = useStore((s) => s.projectFilter)
   const setProjectFilter = useStore((s) => s.setProjectFilter)
@@ -35,6 +38,18 @@ export function GanttPage() {
   const deleteTask = useStore((s) => s.deleteTask)
   const setTaskParent = useStore((s) => s.setTaskParent)
   const tasks = useStore((s) => s.tasks)
+
+  const [viewportW, setViewportW] = useState(() => window.innerWidth - SIDEBAR_W)
+
+  useEffect(() => {
+    const update = () => setViewportW(window.innerWidth - SIDEBAR_W)
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+
+  // Computed here rather than inside GanttChart: the toolbar's range label and
+  // the axis itself have to agree, and this is the one place both can reach.
+  const range = useTimelineRange(viewMode, Math.max(0, viewportW))
 
   const [dialog, setDialog] = useState<{ mode: 'create' | 'edit'; task?: Task; parentId?: string | null } | null>(null)
   const [menu, setMenu] = useState<MenuState | null>(null)
@@ -103,12 +118,8 @@ export function GanttPage() {
       <div className="shrink-0 h-12 flex items-center gap-3 px-3 border-b border-border bg-panel">
         <Segmented value={viewMode} onChange={setViewMode} options={VIEW_OPTIONS} />
         <div className="w-px h-6 bg-border" />
-        <div className="flex items-center gap-1">
-          <button onClick={goPrev} className="p-1.5 text-muted hover:text-fg hover:bg-panel2 rounded-[3px]" title="Previous"><ChevronLeft size={16} /></button>
-          <button onClick={goToday} className="px-2.5 h-7 text-[11px] font-medium text-muted hover:text-fg border border-border rounded-[3px] hover:bg-panel2">Today</button>
-          <button onClick={goNext} className="p-1.5 text-muted hover:text-fg hover:bg-panel2 rounded-[3px]" title="Next"><ChevronRight size={16} /></button>
-        </div>
-        <div className="font-mono text-[13px] text-fg whitespace-nowrap">{periodLabel(viewMode, anchorISO)}</div>
+        <button onClick={goToday} className="px-2.5 h-7 text-[11px] font-medium text-muted hover:text-fg border border-border rounded-[3px] hover:bg-panel2">Back to Today</button>
+        <div className="font-mono text-[13px] text-fg whitespace-nowrap">{rangeLabel(range)}</div>
         <div className="flex-1" />
         <select
           className="h-7 px-2 bg-panel2 border border-border rounded-[3px] text-[12px] text-fg focus:outline-none"
@@ -123,7 +134,7 @@ export function GanttPage() {
         </button>
       </div>
 
-      <GanttChart rows={rows} todo={todo} onContext={handleContext} onAddChild={(r) => openCreate(r.id)} onEdit={openEdit} />
+      <GanttChart rows={rows} range={range} todo={todo} onContext={handleContext} onAddChild={(r) => openCreate(r.id)} onEdit={openEdit} />
 
       {menu && (
         <ContextMenu

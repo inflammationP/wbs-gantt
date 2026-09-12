@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import {
-  BarChart2, BarChart3, Calendar, ClipboardList, Download, Folder, LayoutDashboard, ListTodo, Minus, Pencil, Plus, Upload,
+  BarChart2, Calendar, ClipboardList, Download, LayoutDashboard, Minus, Pencil, Plus, Upload,
 } from 'lucide-react'
 import { AppView, Project } from '../types'
 import { useStore } from '../store/useStore'
@@ -12,11 +12,8 @@ import { ProjectDialog } from './ProjectDialog'
 const NAV: { id: AppView; label: string; icon: typeof BarChart2 }[] = [
   { id: 'gantt', label: 'Gantt', icon: BarChart2 },
   { id: 'logs', label: 'Logs', icon: ClipboardList },
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'tasks', label: 'Tasks', icon: ListTodo },
+  { id: 'manage', label: 'Manage', icon: LayoutDashboard },
   { id: 'calendar', label: 'Calendar', icon: Calendar },
-  { id: 'projects', label: 'Projects', icon: Folder },
-  { id: 'statistics', label: 'Statistics', icon: BarChart3 },
 ]
 
 export function Sidebar() {

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent, PointerEvent } from 'react'
 import { Row, RowTask } from '../../lib/tree'
-import { buildTimeline, dateToX } from '../../lib/timeline'
-import { startOfDay } from '../../lib/dates'
+import { buildTimeline, dateToX, DateRange, FOCUS_OFFSET_PX } from '../../lib/timeline'
+import { startOfDay, toDate } from '../../lib/dates'
 import { useStore } from '../../store/useStore'
 import { TimelineHeader } from './TimelineHeader'
 import { GridBackground } from './GridBackground'
@@ -21,12 +21,6 @@ const SPLITTER_W = 6
 const MIN_LEFT = 480
 const MAX_LEFT = 960
 
-// Fixed left sidebar width (Sidebar.tsx renders w-[190px]). The timeline is
-// sized off the window minus this, so opening the task/project detail panel
-// (which shrinks this container by 320px) doesn't reflow the timeline and
-// make task bars jump.
-const SIDEBAR_W = 190
-
 // Alternating row background so each task row reads as one continuous stripe
 // across the full Gantt width (left labels + timeline).
 const rowBg = (i: number) => (i % 2 === 1 ? 'bg-stripe' : 'bg-panel')
@@ -36,16 +30,20 @@ const rowBgLeft = (i: number) => (i % 2 === 1 ? 'bg-stripe/30' : 'bg-panel/30')
 
 interface Props {
   rows: Row[]
+  range: DateRange
   todo: TodoActions
   onContext: (e: MouseEvent<HTMLDivElement>, row: RowTask) => void
   onAddChild: (row: RowTask) => void
   onEdit: (row: RowTask) => void
 }
 
-export function GanttChart({ rows, todo, onContext, onAddChild, onEdit }: Props) {
+export function GanttChart({ rows, range, todo, onContext, onAddChild, onEdit }: Props) {
   const viewMode = useStore((s) => s.viewMode)
-  const anchorISO = useStore((s) => s.anchorISO)
+  const focusISO = useStore((s) => s.focusISO)
+  const focusTick = useStore((s) => s.focusTick)
   const setSelected = useStore((s) => s.setSelected)
+  const selectedDay = useStore((s) => s.selectedDay)
+  const setSelectedDay = useStore((s) => s.setSelectedDay)
 
   // Single source of truth for the left/right boundary.
   const [leftWidth, setLeftWidth] = useState(LEFT_WIDTH)
@@ -53,23 +51,40 @@ export function GanttChart({ rows, todo, onContext, onAddChild, onEdit }: Props)
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const splitterRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const [viewportW, setViewportW] = useState(() => window.innerWidth - SIDEBAR_W)
+
+  const timeline = useMemo(() => buildTimeline(viewMode, range), [viewMode, range])
+
+  // Scroll-to-today. Wanted on first render and whenever Today is pressed — but
+  // deliberately not when the range changes, so switching the project filter
+  // leaves the scroll position to the browser, which clamps it into the shorter
+  // axis on its own rather than being yanked back to today.
+  const pendingFocus = useRef(true)
+  useEffect(() => {
+    pendingFocus.current = true
+  }, [focusTick])
 
   useEffect(() => {
-    const update = () => setViewportW(window.innerWidth - SIDEBAR_W)
-    window.addEventListener('resize', update)
-    return () => window.removeEventListener('resize', update)
-  }, [])
-
-  const timeline = useMemo(
-    () => buildTimeline(viewMode, anchorISO, Math.max(0, viewportW)),
-    [viewMode, anchorISO, viewportW],
-  )
+    const el = containerRef.current
+    if (!el || !pendingFocus.current) return
+    pendingFocus.current = false
+    // `FOCUS_OFFSET_PX` is measured from the left task panel's right edge, which
+    // is sticky — so `leftWidth` cancels out and the position holds however far
+    // the splitter has been dragged.
+    el.scrollLeft = Math.max(0, dateToX(toDate(focusISO), timeline) - FOCUS_OFFSET_PX)
+  }, [timeline, focusISO, focusTick])
 
   const todayX = useMemo(() => {
     const x = dateToX(startOfDay(new Date()), timeline)
     return x >= 0 && x <= timeline.totalWidth ? x : null
   }, [timeline])
+
+  // Marks which exact day the open detail panel belongs to. At coarse zooms a
+  // column covers many days, so without this the picked day is anyone's guess.
+  const selectedX = useMemo(() => {
+    if (!selectedDay) return null
+    const x = dateToX(toDate(selectedDay), timeline)
+    return x >= 0 && x <= timeline.totalWidth ? x : null
+  }, [selectedDay, timeline])
 
   const onSplitterDown = (e: PointerEvent<HTMLDivElement>) => {
     e.preventDefault()
@@ -149,9 +164,18 @@ export function GanttChart({ rows, todo, onContext, onAddChild, onEdit }: Props)
             />
           )}
 
+          {/* selected day marker — above the header so it ties the picked date
+              label to the column it belongs to */}
+          {selectedX != null && (
+            <div
+              className="absolute pointer-events-none"
+              style={{ left: selectedX, top: 0, bottom: 0, width: 1, background: '#46b8e6', opacity: 0.6, zIndex: 25 }}
+            />
+          )}
+
           {/* timeline header */}
           <div className="sticky top-0 z-20 bg-panel border-b border-border" style={{ height: HEADER_H }}>
-            <TimelineHeader timeline={timeline} />
+            <TimelineHeader timeline={timeline} onPickDate={setSelectedDay} />
           </div>
 
           {/* timeline rows */}

@@ -9,6 +9,10 @@ export interface StatusMeta {
 
 export const TODO_COLOR = '#a371f7'
 
+// Mirrors the `accent` Tailwind token for the places that need it as a value
+// rather than a class (SVG strokes).
+export const ACCENT_COLOR = '#46b8e6'
+
 export const STATUS_META: Record<TaskStatus, StatusMeta> = {
   todo: { label: 'To-do', color: TODO_COLOR, dim: 'rgba(163,113,247,0.16)', text: TODO_COLOR },
   'not-started': { label: 'Not started', color: '#6e7681', dim: 'rgba(110,118,129,0.16)', text: '#9aa4ad' },

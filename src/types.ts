@@ -2,7 +2,7 @@ export type TaskStatus = 'todo' | 'not-started' | 'in-progress' | 'completed' | 
 export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent'
 export type TaskType = 'phase' | 'long-term'
 export type ViewMode = 'day' | 'week' | 'month' | 'quarter' | 'year'
-export type AppView = 'gantt' | 'dashboard' | 'tasks' | 'calendar' | 'projects' | 'statistics' | 'logs'
+export type AppView = 'gantt' | 'calendar' | 'logs' | 'manage'
 
 export interface Project {
   id: string

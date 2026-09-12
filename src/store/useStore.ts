@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { create } from 'zustand'
 import { AppView, Project, Task, TaskLog, TaskPriority, TaskType, ViewMode } from '../types'
 import { todayISO, addUnitISO, Unit, addDays, diffDays, toDate, toISO } from '../lib/dates'
-import { shiftAnchor } from '../lib/timeline'
+import { timelineRange, DateRange } from '../lib/timeline'
 import { buildRows, collectDescendants, hasChildren, syncParentEnds, todoCascadeIds, todoGroupIds, Row } from '../lib/tree'
 import { loadData, saveData, PersistedData } from './storage'
 import { buildSeed } from '../lib/seed'
@@ -38,8 +38,15 @@ interface State {
   activeView: AppView
   selectedTaskId: string | null
   selectedProjectId: string | null
+  // yyyy-MM-dd of the day whose detail panel is open in the Calendar. View
+  // state only — the persistence subscriber below never writes it.
+  selectedDay: string | null
   viewMode: ViewMode
-  anchorISO: string
+  // The date the timeline scrolls back to when Today is pressed. Needs the tick
+  // beside it: pressing Today twice leaves `focusISO` unchanged, so the value
+  // alone cannot tell the Gantt that another scroll was asked for.
+  focusISO: string
+  focusTick: number
   today: string
   expanded: Record<string, boolean>
   projectFilter: string
@@ -47,9 +54,8 @@ interface State {
   setActiveView: (v: AppView) => void
   setSelected: (id: string | null) => void
   setSelectedProject: (id: string | null) => void
+  setSelectedDay: (day: string | null) => void
   setViewMode: (m: ViewMode) => void
-  goPrev: () => void
-  goNext: () => void
   goToday: () => void
   setProjectFilter: (id: string) => void
   toggleExpanded: (id: string, defaultOpen?: boolean) => void
@@ -99,8 +105,10 @@ export const useStore = create<State>()((set) => ({
   activeView: 'gantt',
   selectedTaskId: null,
   selectedProjectId: null,
+  selectedDay: null,
   viewMode: 'day',
-  anchorISO: todayISO(),
+  focusISO: todayISO(),
+  focusTick: 0,
   today: todayISO(),
   expanded: {},
   projectFilter: 'all',
@@ -108,10 +116,9 @@ export const useStore = create<State>()((set) => ({
   setActiveView: (v) => set({ activeView: v }),
   setSelected: (id) => set({ selectedTaskId: id, selectedProjectId: null }),
   setSelectedProject: (id) => set({ selectedProjectId: id, selectedTaskId: null }),
+  setSelectedDay: (day) => set({ selectedDay: day }),
   setViewMode: (m) => set({ viewMode: m }),
-  goPrev: () => set((s) => ({ anchorISO: shiftAnchor(s.viewMode, s.anchorISO, -1) })),
-  goNext: () => set((s) => ({ anchorISO: shiftAnchor(s.viewMode, s.anchorISO, 1) })),
-  goToday: () => set({ anchorISO: todayISO() }),
+  goToday: () => set((s) => ({ focusISO: todayISO(), focusTick: s.focusTick + 1 })),
   setProjectFilter: (id) => set({ projectFilter: id }),
   // `defaultOpen` has to be passed in: tasks are expanded until told otherwise,
   // but the synthesized to-do folders are collapsed until told otherwise, so
@@ -403,4 +410,20 @@ export function useRows(): Row[] {
     const visible = projectFilter === 'all' ? tasks : tasks.filter((t) => t.projectId === projectFilter)
     return buildRows(visible, expanded, projects, logs)
   }, [tasks, logs, today, expanded, projectFilter, projects])
+}
+
+/**
+ * The stretch of time the Gantt's axis covers, for the project in view.
+ *
+ * Deliberately not derived from `useRows()`: `buildRows` honours `expanded`, so
+ * collapsing a parent would move the right edge of the axis.
+ */
+export function useTimelineRange(mode: ViewMode, canvasWidth: number): DateRange {
+  const tasks = useStore((s) => s.tasks)
+  const today = useStore((s) => s.today)
+  const projectFilter = useStore((s) => s.projectFilter)
+  return useMemo(() => {
+    const visible = projectFilter === 'all' ? tasks : tasks.filter((t) => t.projectId === projectFilter)
+    return timelineRange(mode, visible, today, canvasWidth)
+  }, [mode, tasks, today, projectFilter, canvasWidth])
 }

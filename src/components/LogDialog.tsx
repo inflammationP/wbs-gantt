@@ -8,15 +8,17 @@ import { todayISO } from '../lib/dates'
 interface Props {
   taskId: string
   existing?: TaskLog | null
+  /** Date to prefill for a new log. Defaults to today. */
+  defaultDate?: string
   onClose: () => void
 }
 
-export function LogDialog({ taskId, existing, onClose }: Props) {
+export function LogDialog({ taskId, existing, defaultDate, onClose }: Props) {
   const task = useStore((s) => s.tasks.find((t) => t.id === taskId))
   const addLog = useStore((s) => s.addLog)
   const updateLog = useStore((s) => s.updateLog)
 
-  const [date, setDate] = useState(existing?.date ?? todayISO())
+  const [date, setDate] = useState(existing?.date ?? defaultDate ?? todayISO())
   const [content, setContent] = useState(existing?.content ?? '')
   const [targetProgress, setTargetProgress] = useState<number | null>(existing?.targetProgress ?? null)
   const [showTarget, setShowTarget] = useState(existing?.targetProgress != null)
