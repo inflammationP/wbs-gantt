@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
-import type { KeyboardEvent } from 'react'
+import type { CSSProperties, KeyboardEvent } from 'react'
+import { Flag, Play } from 'lucide-react'
 import { useStore } from '../store/useStore'
+import { Task } from '../types'
 import { addMonths, startOfMonth, startOfWeek, addDays, toISO, MONTHS } from '../lib/dates'
-import { STATUS_META } from '../lib/ui'
 import { effectiveStates } from '../lib/tree'
-import { strictLogRate } from '../lib/dayTasks'
+import { DayCellState, DayMilestones, StrictLogRate, dayCellState, milestonesOnDay, strictLogRate } from '../lib/dayTasks'
 
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
@@ -19,17 +20,6 @@ export function CalendarPage() {
 
   const eff = useMemo(() => effectiveStates(tasks, logs), [tasks, logs])
 
-  const byDay = useMemo(() => {
-    const map = new Map<string, typeof tasks>()
-    for (const t of tasks) {
-      if (t.startDate == null) continue
-      const key = t.startDate
-      if (!map.has(key)) map.set(key, [])
-      map.get(key)!.push(t)
-    }
-    return map
-  }, [tasks])
-
   // Keyed on the month rather than the Date object, so `days` (and the sweep
   // below) keep a stable identity across renders.
   const year = cursor.getFullYear()
@@ -42,10 +32,31 @@ export function CalendarPage() {
   // One sweep for the whole grid, so a cell can show how much of its strict work
   // has been logged without recomputing 42 times per render.
   const rings = useMemo(() => {
-    const m = new Map<string, { done: number; total: number }>()
+    const m = new Map<string, StrictLogRate>()
     for (const d of days) m.set(toISO(d), strictLogRate(tasks, logs, toISO(d)))
     return m
   }, [days, tasks, logs])
+
+  // Beginnings and deadlines — the cell's contents. Swept the same way, for the
+  // same reason.
+  const milestones = useMemo(() => {
+    const m = new Map<string, DayMilestones>()
+    for (const d of days) m.set(toISO(d), milestonesOnDay(tasks, eff, toISO(d)))
+    return m
+  }, [days, tasks, eff])
+
+  // Which tasks carry a log on each day. One pass over the logs rather than a
+  // sweep of the grid — the grid only ever asks whether a given task is in the
+  // set, and building 42 sets would be 42 walks of the same array.
+  const loggedByDay = useMemo(() => {
+    const m = new Map<string, Set<string>>()
+    for (const l of logs) {
+      let s = m.get(l.date)
+      if (!s) { s = new Set(); m.set(l.date, s) }
+      s.add(l.taskId)
+    }
+    return m
+  }, [logs])
 
   const onCellKey = (e: KeyboardEvent<HTMLDivElement>, iso: string) => {
     if (e.target !== e.currentTarget) return
@@ -80,49 +91,67 @@ export function CalendarPage() {
             {days.map((d) => {
               const iso = toISO(d)
               const inMonth = d.getMonth() === cursor.getMonth()
-              const dayTasks = byDay.get(iso) ?? []
               const isTodayD = iso === today
               const isSelected = iso === selectedDay
-              const ring = rings.get(iso)
+              const rate = rings.get(iso) ?? { done: 0, total: 0, pct: 0 }
+              const state = dayCellState(iso, today, rate)
+              const ms = milestones.get(iso) ?? { starts: [], due: [] }
+              // Deadlines first: what a calendar can show that the Gantt cannot.
+              const items: { task: Task; due: boolean }[] = [
+                ...ms.due.map((t) => ({ task: t, due: true })),
+                ...ms.starts.map((t) => ({ task: t, due: false })),
+              ]
+              const deco = cellDeco(state)
+              const label = `${iso}: ${ms.due.length} due, ${ms.starts.length} starting; ${coverageLabel(state)}`
+              // Every covered state carries the same pair; `clear` and `future`
+              // have no obligation to draw.
+              const owed = state.kind === 'owed' || state.kind === 'partial' || state.kind === 'full' ? state : null
               return (
                 <div
                   key={iso}
                   role="button"
                   tabIndex={0}
-                  aria-label={`Show tasks for ${iso}`}
+                  aria-label={label}
+                  title={label}
                   onClick={() => setSelectedDay(iso)}
                   onKeyDown={(e) => onCellKey(e, iso)}
-                  className={`min-h-[96px] border-r border-b border-line p-1 cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent ${
+                  className={`relative min-h-[96px] border-r border-b border-line cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent ${
                     inMonth ? '' : 'opacity-30'
                   } ${isSelected ? 'bg-accent/10 ring-1 ring-inset ring-accent' : isTodayD ? 'bg-accent/5' : 'hover:bg-panel2/40'}`}
                 >
-                  <div className="flex items-center justify-between px-0.5 mb-1">
-                    <span className={`text-[11px] font-mono ${isTodayD ? 'text-today font-bold' : 'text-muted'}`}>{d.getDate()}</span>
-                    {ring && ring.total > 0 && (
-                      <span
-                        className={`font-mono text-[9px] ${ring.done === ring.total ? 'text-[#3fb950]' : 'text-today'}`}
-                        title={`${ring.done} of ${ring.total} strict tasks logged`}
-                      >
-                        {ring.done}/{ring.total}
-                      </span>
-                    )}
-                  </div>
-                  <div className="space-y-0.5">
-                    {dayTasks.slice(0, 4).map((t) => {
-                      const meta = STATUS_META[eff.get(t.id)?.status ?? 'not-started']
-                      return (
-                        <button
-                          key={t.id}
-                          onClick={(e) => { e.stopPropagation(); setSelected(t.id) }}
-                          className="w-full flex items-center gap-1 px-1 h-4 text-[10px] rounded-[2px] truncate hover:brightness-125"
-                          style={{ background: meta.dim, color: meta.text }}
-                        >
-                          <span className="w-1 h-1 rounded-full shrink-0" style={{ background: meta.color }} />
-                          <span className="truncate">{t.name}</span>
-                        </button>
-                      )
-                    })}
-                    {dayTasks.length > 4 && <div className="text-[10px] text-dim px-1">+{dayTasks.length - 4} more</div>}
+                  {/* A separate layer rather than a box-shadow on the cell, so it
+                      can never clobber the selection ring or the focus ring. */}
+                  {deco.overlay && <div className="absolute inset-0 pointer-events-none" style={deco.overlay} />}
+                  <div className="relative z-10 p-1">
+                    <div className="flex items-center justify-between px-0.5 mb-1">
+                      <span className={`text-[11px] font-mono ${isTodayD ? 'text-today font-bold' : 'text-muted'}`}>{d.getDate()}</span>
+                      {owed && <ObligationPips done={owed.done} total={owed.total} />}
+                    </div>
+                    <div className="space-y-0.5">
+                      {items.slice(0, 4).map(({ task, due }) => {
+                        const logged = loggedByDay.get(iso)?.has(task.id) === true
+                        // Strict work is exactly what the corner squares count, so
+                        // the one colour left in the cell marks which milestones
+                        // carry that obligation. Status is deliberately absent —
+                        // the ▶ / ⏹ glyph already says what the row is, and a
+                        // status colour had nothing left to add.
+                        const strict = task.strictProgress && task.type === 'phase'
+                        return (
+                          <button
+                            key={task.id}
+                            onClick={(e) => { e.stopPropagation(); setSelected(task.id) }}
+                            title={`${due ? 'Due' : 'Starts'}${strict ? ' · strict' : ''} — ${task.name}${logged ? ' · logged this day' : ''}`}
+                            className={`w-full flex items-center gap-1 px-1 h-4 text-[10px] rounded-[2px] truncate text-left hover:bg-panel2 ${
+                              strict ? 'text-today' : logged ? 'text-muted' : 'text-fg/80'
+                            } ${logged ? 'line-through' : ''}`}
+                          >
+                            {due ? <Flag size={9} className="shrink-0" /> : <Play size={9} className="shrink-0" />}
+                            <span className="truncate">{task.name}</span>
+                          </button>
+                        )
+                      })}
+                      {items.length > 4 && <div className="text-[10px] text-dim px-1">+{items.length - 4} more</div>}
+                    </div>
                   </div>
                 </div>
               )
@@ -132,4 +161,90 @@ export function CalendarPage() {
       </div>
     </div>
   )
+}
+
+// An inset ring rather than a border colour: cells only carry `border-r` /
+// `border-b` (the grid's own edges), so colouring a border would light up two
+// sides and move the layout.
+const CLEAR_RING = 'inset 0 0 0 1px rgba(63,185,80,0.30)'
+const GLOW = {
+  partial: 'inset 0 0 10px rgba(227,179,65,0.28)',
+  full: 'inset 0 0 10px rgba(63,185,80,0.28)',
+}
+
+// Obligation squares. Logged ones fill in green; outstanding ones keep an
+// outline — amber while the day still has some progress on it, red once nothing
+// at all has been written.
+const PIP_DONE = '#3fb950'
+const PIP_OUTSTANDING = 'rgba(227,179,65,0.85)'
+const PIP_MISSED = 'rgba(248,81,73,0.85)'
+
+// Past this many, the squares would be wider than the date beside them, so the
+// row falls back to the plain count instead.
+const MAX_PIPS = 6
+
+/** The same thing in words, for the tooltip and the screen reader. */
+function coverageLabel(state: DayCellState): string {
+  switch (state.kind) {
+    case 'future': return 'not yet due'
+    case 'clear': return 'no strict work scheduled'
+    case 'owed': return `${state.done} of ${state.total} strict tasks logged`
+    case 'partial': return `${state.done} of ${state.total} strict tasks logged`
+    case 'full': return `all ${state.total} strict tasks logged`
+  }
+}
+
+/**
+ * One square per strict task that owed a log that day, filled for the ones that
+ * got one.
+ *
+ * Discrete on purpose. With one or two obligations a day, any proportion —
+ * a fill height, a bar width — can only ever draw 0%, 50% or 100%, which claims
+ * a resolution the data does not have and reads as three crude blocks. Counting
+ * squares says exactly as much as the data does, and no more.
+ */
+function ObligationPips({ done, total }: { done: number; total: number }) {
+  if (total > MAX_PIPS) {
+    const tone = done === total ? 'text-[#3fb950]' : done === 0 ? 'text-[#f85149]' : 'text-today'
+    return <span className={`font-mono text-[9px] ${tone}`}>{done}/{total}</span>
+  }
+  // Which particular logs are missing is not known — only how many — so the
+  // filled ones lead, as every meter of this kind does.
+  const outline = done === 0 ? PIP_MISSED : PIP_OUTSTANDING
+  return (
+    <span className="flex items-center gap-[2px]" aria-hidden>
+      {Array.from({ length: total }, (_, i) => (
+        <span
+          key={i}
+          className="w-[5px] h-[5px] rounded-[1px] border"
+          style={i < done ? { background: PIP_DONE, borderColor: PIP_DONE } : { borderColor: outline }}
+        />
+      ))}
+    </span>
+  )
+}
+
+/**
+ * The decorative layer of a cell. The state decision itself lives in
+ * `dayCellState`; this only turns it into styles.
+ */
+function cellDeco(state: DayCellState): { overlay?: CSSProperties } {
+  switch (state.kind) {
+    case 'future':
+      // Nothing has been owed yet, so nothing is marked. Not judging a day that
+      // has not arrived is the whole reason this state exists.
+      return {}
+    case 'clear':
+      // Nothing was owed and the day is over. A quiet outline and no glow: an
+      // empty day must not outshine one that was actually worked.
+      return { overlay: { boxShadow: CLEAR_RING } }
+    case 'owed':
+      // The squares already say "nothing written"; no glow on a day that has
+      // nothing to celebrate.
+      return {}
+    case 'partial':
+      return state.pct >= 90 ? { overlay: { boxShadow: GLOW.partial } } : {}
+    case 'full':
+      return { overlay: { boxShadow: GLOW.full } }
+  }
 }

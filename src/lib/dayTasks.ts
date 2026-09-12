@@ -1,5 +1,5 @@
 import { Project, Task, TaskLog, TaskStatus } from '../types'
-import { buildChildrenMap, computeWbs, deriveStatus, deriveTaskStatus } from './tree'
+import { buildChildrenMap, computeWbs, deriveStatus, deriveTaskStatus, EffState } from './tree'
 import { taskProgress } from './progress'
 import { addDays, toDate } from './dates'
 
@@ -161,6 +161,69 @@ export function strictLogRate(tasks: Task[], logs: TaskLog[], day: string): Stri
     if (logged.has(t.id)) done++
   }
   return { done, total, pct: total ? Math.round((done / total) * 100) : 0 }
+}
+
+export interface DayMilestones {
+  /** Leaf tasks beginning on `day`. */
+  starts: Task[]
+  /** Leaf tasks whose last day is `day`. */
+  due: Task[]
+}
+
+/**
+ * What begins and what lands on `day` — the calendar cell's contents.
+ *
+ * Leaves only. A parent's start and end are rolled up from its children
+ * (`effectiveStates` takes the earliest start and the latest end), so listing a
+ * phase alongside the child that produced those dates would spend a row saying
+ * the same thing twice. Every other count in the app is taken over leaves too.
+ *
+ * A task that both begins and ends on `day` is filed under `due` alone: for a
+ * one-day task the deadline is the fact worth a row.
+ *
+ * Status comes from `eff`, which is always *today's* reading — a past day's
+ * chip therefore shows the task's current colour, not the colour it had then.
+ */
+export function milestonesOnDay(tasks: Task[], eff: Map<string, EffState>, day: string): DayMilestones {
+  const children = buildChildrenMap(tasks)
+  const starts: Task[] = []
+  const due: Task[] = []
+  for (const t of tasks) {
+    if (t.isTodo) continue
+    if ((children.get(t.id) ?? []).length > 0) continue
+    if (t.endDate === day) due.push(t)
+    else if (t.startDate === day) starts.push(t)
+  }
+  const rank = (t: Task) => STATUS_RANK[eff.get(t.id)?.status ?? 'not-started']
+  const by = (a: Task, b: Task) =>
+    rank(a) - rank(b) || a.name.localeCompare(b.name) || a.id.localeCompare(b.id)
+  return { starts: starts.sort(by), due: due.sort(by) }
+}
+
+export type DayCellState =
+  | { kind: 'future' }
+  | { kind: 'clear' } //已过去或就是今天，当天没有任何严格任务要写
+  | { kind: 'owed'; done: number; total: number } // 有义务，一条没写（done 恒为 0）
+  | { kind: 'partial'; pct: number; done: number; total: number }
+  | { kind: 'full'; done: number; total: number }
+
+/**
+ * Which of the calendar's five cell states a day is in.
+ *
+ * `strictLogRate` is deliberately left untouched: it answers "how much of that
+ * day's strict work was logged", and it gives the same answer for a day that has
+ * not arrived yet — nothing is logged, so `done` is 0, and every task whose
+ * window covers that day counts toward `total`. Whether the day has *happened*
+ * is a presentation question, and it is settled here. Without that split, every
+ * remaining day of the month would read as work missed.
+ */
+export function dayCellState(day: string, today: string, rate: StrictLogRate): DayCellState {
+  // yyyy-MM-dd sorts chronologically as a string.
+  if (day > today) return { kind: 'future' }
+  if (rate.total === 0) return { kind: 'clear' }
+  if (rate.done === 0) return { kind: 'owed', done: 0, total: rate.total }
+  if (rate.done === rate.total) return { kind: 'full', done: rate.done, total: rate.total }
+  return { kind: 'partial', pct: rate.pct, done: rate.done, total: rate.total }
 }
 
 function depths(tasks: Task[]): Map<string, number> {

@@ -47,10 +47,16 @@ export function DayDetailPanel({ day }: { day: string }) {
   const toggle = (id: string) => setExpanded((e) => ({ ...e, [id]: !e[id] }))
 
   const { ring } = summary
-  // Three states, told apart by icon and wording as much as by colour: the
-  // ring's green and amber are only ΔE 3.8 apart under protanopia.
-  const ringView =
-    ring.total === 0
+  // `strictLogRate` answers the same for a day that has not happened yet —
+  // nothing is logged, so it reads as 0% and looks like a failure. A day still
+  // to come has no coverage to report, so it gets its own state rather than the
+  // "nothing logged yet" accusation.
+  const isFuture = day > today
+  const ringView = isFuture
+    ? { fill: null, track: '#242c35', icon: null, caption: 'Not yet due', tone: 'text-dim' }
+    : // The remaining states are told apart by icon and wording as much as by
+      // colour: the ring's green and amber are only ΔE 3.8 apart under protanopia.
+      ring.total === 0
       ? { fill: null, track: '#242c35', icon: null, caption: 'No strict work scheduled', tone: 'text-dim' }
       : ring.done === ring.total
         ? { fill: STATUS_META.completed.color, track: hexToRgba(STATUS_META.completed.color, 0.16), icon: Check, caption: 'All strict work logged', tone: 'text-[#3fb950]' }
@@ -65,6 +71,7 @@ export function DayDetailPanel({ day }: { day: string }) {
 
   const rowProps = {
     expanded,
+    isFuture,
     onToggle: toggle,
     onWriteLog: (id: string) => setLogFor(id),
     onOpenTask: (id: string) => setSelected(id),
@@ -90,19 +97,21 @@ export function DayDetailPanel({ day }: { day: string }) {
           {/* strict log coverage */}
           <div className="px-4 py-3 border-b border-border flex items-center gap-4">
             <ProgressRing
-              value={ring.pct}
+              value={isFuture ? 0 : ring.pct}
               fill={ringView.fill}
               track={ringView.track}
               label={
-                ring.total === 0
-                  ? 'No strict tasks scheduled'
-                  : `${ring.done} of ${ring.total} strict tasks logged`
+                isFuture
+                  ? 'Not yet due'
+                  : ring.total === 0
+                    ? 'No strict tasks scheduled'
+                    : `${ring.done} of ${ring.total} strict tasks logged`
               }
             >
               <span className="font-mono text-[19px] font-semibold leading-none text-fg">
-                {ring.total === 0 ? '—' : `${ring.pct}%`}
+                {isFuture || ring.total === 0 ? '—' : `${ring.pct}%`}
               </span>
-              {ring.total > 0 && (
+              {!isFuture && ring.total > 0 && (
                 <span className="font-mono text-[10px] text-dim mt-0.5">{ring.done}/{ring.total}</span>
               )}
             </ProgressRing>
@@ -207,6 +216,7 @@ function Empty({ children }: { children: ReactNode }) {
 function DayRowView({
   row,
   expanded,
+  isFuture,
   onToggle,
   onWriteLog,
   onOpenTask,
@@ -214,6 +224,7 @@ function DayRowView({
 }: {
   row: DayRow
   expanded: Record<string, boolean>
+  isFuture: boolean
   onToggle: (id: string) => void
   onWriteLog: (id: string) => void
   onOpenTask: (id: string) => void
@@ -224,8 +235,8 @@ function DayRowView({
   const done = row.status === 'completed'
   // A strict task owes a log only while it is still open for the day. Once it
   // was already finished when the day started, or is paused, there is nothing
-  // to chase.
-  const missingLog = row.strict && !row.hasLog && !row.pausedToday && !row.completedBefore && !done
+  // to chase — and a day that has not arrived cannot be behind on anything.
+  const missingLog = row.strict && !row.hasLog && !row.pausedToday && !row.completedBefore && !done && !isFuture
 
   return (
     <div className="group">
