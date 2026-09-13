@@ -5,6 +5,7 @@ import { Task, TaskLog } from '../types'
 import { useStore } from '../store/useStore'
 import { computeWbs, effectiveStates, todoCascadeIds } from '../lib/tree'
 import { logsForTask, parseLogContent } from '../lib/logs'
+import { hasStrictLeafUnder, pendingLogsUnder } from '../lib/dayTasks'
 import { STATUS_META, priorityMeta, sig, sigText } from '../lib/ui'
 import { diffDays, toDate } from '../lib/dates'
 import { formatDayMonthYear } from '../lib/i18n'
@@ -32,6 +33,9 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
   const tasks = useStore((s) => s.tasks)
   const logs = useStore((s) => s.logs)
   const projects = useStore((s) => s.projects)
+  // The store's own `today`, refreshed on a timer — anchoring the pending list
+  // to it means the reminder rolls over at midnight like every other count.
+  const today = useStore((s) => s.today)
   const setSelected = useStore((s) => s.setSelected)
   const deleteLog = useStore((s) => s.deleteLog)
   const pauseTask = useStore((s) => s.pauseTask)
@@ -60,6 +64,10 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
     .map((id) => tasks.find((t) => t.id === id))
     .filter(Boolean) as Task[]
   const taskLogs = logsForTask(logs, task.id)
+  // The branch's logging, not this task's: a parent's own progress comes from
+  // its children, so its children's gaps are the thing worth surfacing here.
+  const branchPending = hasKids ? pendingLogsUnder(tasks, logs, today, task.id) : []
+  const tracksLogs = hasKids && hasStrictLeafUnder(tasks, task.id)
   const taskStatus = eff?.status ?? 'not-started'
   const meta = STATUS_META[taskStatus]
   const prio = priorityMeta(task.priority)
@@ -107,6 +115,29 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
           </button>
         )}
 
+        {/* Today's gaps in this branch. Names only, and nothing to click: the
+            writing happens in the dialog above, which walks the same gaps one
+            after another. Derived from `pendingLogsUnder`, so what is listed
+            here is exactly what that dialog will offer and exactly what the
+            day panel's ring is counting. */}
+        {tracksLogs && (
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-dim mb-1">{t('task.pendingLogs')}</div>
+            {branchPending.length ? (
+              <div className="space-y-1">
+                {branchPending.map((p) => (
+                  <div key={p.id} className="flex items-center px-2 h-7 bg-panel2 border border-border rounded-[3px] text-[11px]">
+                    <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-not-started" />
+                    <span className="truncate ml-2 text-muted">{p.name}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-[12px] text-dim">{t('day.allLogged')}</div>
+            )}
+          </div>
+        )}
+
         {/* history — right below Write log so it's easy to find */}
         <div>
           <div className="flex items-center justify-between mb-1.5">
@@ -149,7 +180,15 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
         <ReadOnlyField label={t('common.type')}>{t(task.type === 'long-term' ? 'type.longTerm' : 'type.phase')}</ReadOnlyField>
 
         {task.type !== 'long-term' && !task.isTodo && (
-          <ReadOnlyField label={t('task.progressMode')}>{task.strictProgress ? t('task.modeStrict') : t('task.modeAuto')}</ReadOnlyField>
+          <ReadOnlyField label={t('task.progressMode')}>
+            {/* A task with children takes its progress from them, so the strict
+                flag is inert on it (`isStrictLeaf` requires no children). Saying
+                "Strict (log-based)" here contradicted every other surface —
+                the day ring, the Calendar, and the guide's own reminder, which
+                all correctly ignore it — and made a strict parent look like a
+                task that owed a daily log. */}
+            {hasKids ? t('task.modeRolledUp') : task.strictProgress ? t('task.modeStrict') : t('task.modeAuto')}
+          </ReadOnlyField>
         )}
 
         {/* status + priority — a to-do has no priority to show */}

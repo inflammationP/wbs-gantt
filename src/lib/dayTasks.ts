@@ -1,5 +1,5 @@
 import { Project, Task, TaskLog, TaskStatus } from '../types'
-import { buildChildrenMap, computeWbs, deriveStatus, deriveTaskStatus, EffState } from './tree'
+import { buildChildrenMap, collectDescendants, computeWbs, deriveStatus, deriveTaskStatus, EffState } from './tree'
 import { taskProgress } from './progress'
 import { addDays, toDate } from './dates'
 
@@ -137,16 +137,30 @@ function progressBefore(task: Task, clipped: TaskLog[], day: string): number {
   return taskProgress(task, clipped, addDays(toDate(day), -1)) ?? 0
 }
 
+/** One strict leaf that owed a log on a day, and whether it got one. */
+export interface LogObligation {
+  task: Task
+  logged: boolean
+}
+
 /**
- * How much of the day's strict work has been logged: the tasks that owed a log
- * on `day` versus the ones that got one.
+ * The strict leaves that owed a log on `day`, and which of them got one.
+ *
+ * Kept separate from `strictLogRate` so that anything else asking "what is still
+ * to be logged" gets the *same* answer the ring and the Calendar are drawn from.
+ * A second copy of these conditions would drift, and the drift would show as a
+ * list disagreeing with the ring printed beside it.
+ *
+ * The conditions are, in order: a strict leaf (`strictProgress` is inert on a
+ * parent — its progress is the average of its children's); scheduled over `day`;
+ * not paused that day; not already finished when the day began; and not already
+ * logged. That fourth one is why a completed task never comes back to nag.
  */
-export function strictLogRate(tasks: Task[], logs: TaskLog[], day: string): StrictLogRate {
+export function strictLogObligations(tasks: Task[], logs: TaskLog[], day: string): LogObligation[] {
   const clipped = logsUpTo(logs, day)
   const logged = loggedOnDay(logs, day)
   const children = buildChildrenMap(tasks)
-  let done = 0
-  let total = 0
+  const owed: LogObligation[] = []
   for (const t of tasks) {
     if (!isStrictLeaf(t, children)) continue
     if (!activeOnDay(t, day)) continue
@@ -157,10 +171,58 @@ export function strictLogRate(tasks: Task[], logs: TaskLog[], day: string): Stri
     // the day itself would evict a task the moment its log completed it,
     // turning 3/5 into 3/4 and reading as a regression.
     if (progressBefore(t, clipped, day) >= 100) continue
-    total++
-    if (logged.has(t.id)) done++
+    owed.push({ task: t, logged: logged.has(t.id) })
   }
+  return owed
+}
+
+/**
+ * Whether anything under `rootId` — itself included — is a strict leaf.
+ *
+ * Answers "does logging mean anything here?", which is different from "is
+ * anything owed today": a branch of plain phase tasks never owes a log, and
+ * telling its parent "all strict work is logged" every day would be a green
+ * light that means nothing — the fastest way to teach someone to ignore it.
+ * Deliberately not a "no obligations today" test either, since a branch whose
+ * strict work is all finished should still read as done rather than vanish.
+ */
+export function hasStrictLeafUnder(tasks: Task[], rootId: string): boolean {
+  const children = buildChildrenMap(tasks)
+  const ids = new Set([rootId, ...collectDescendants(tasks, rootId)])
+  return tasks.some((t) => ids.has(t.id) && isStrictLeaf(t, children))
+}
+
+/**
+ * How much of the day's strict work has been logged: the tasks that owed a log
+ * on `day` versus the ones that got one.
+ */
+export function strictLogRate(tasks: Task[], logs: TaskLog[], day: string): StrictLogRate {
+  const owed = strictLogObligations(tasks, logs, day)
+  const total = owed.length
+  const done = owed.filter((o) => o.logged).length
   return { done, total, pct: total ? Math.round((done / total) * 100) : 0 }
+}
+
+/**
+ * The tasks under `rootId` — itself included — that still owe a log on `day`.
+ *
+ * Order is the Gantt's: the root first, then its descendants in DFS pre-order
+ * (`collectDescendants`), so a list built from this reads as the same tree the
+ * user sees. `strictLogObligations` iterates store order instead, which is why
+ * the result is assembled by walking the ids rather than by filtering its output
+ * in place.
+ *
+ * A parent is never in the result: `strictProgress` is inert on anything with
+ * children, so a parent is not a strict leaf and owes nothing itself.
+ */
+export function pendingLogsUnder(tasks: Task[], logs: TaskLog[], day: string, rootId: string): Task[] {
+  const owed = new Map(strictLogObligations(tasks, logs, day).map((o) => [o.task.id, o]))
+  const out: Task[] = []
+  for (const id of [rootId, ...collectDescendants(tasks, rootId)]) {
+    const o = owed.get(id)
+    if (o && !o.logged) out.push(o.task)
+  }
+  return out
 }
 
 export interface DayMilestones {

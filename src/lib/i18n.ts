@@ -214,9 +214,14 @@ const en = {
   'task.hide': 'Hide',
   'task.hidden': 'Hidden.',
   'task.noSubtasks': 'No subtasks.',
+  // The parent's reminder. Names only — what is missing, not what was written.
+  'task.pendingLogs': 'Still to log',
   'task.progressMode': 'Progress mode',
   'task.modeStrict': 'Strict (log-based)',
   'task.modeAuto': 'Auto (date-based)',
+  // A parent's progress is the average of its children's, so neither of the two
+  // above applies to it — see `isStrictLeaf`.
+  'task.modeRolledUp': 'From subtasks',
   'task.noSchedule':
     'No schedule yet. Give it dates, a priority and a progress mode when you start it.',
   'task.pausedNote': {
@@ -254,6 +259,10 @@ const en = {
   'log.setTarget': 'Set target progress (optional)',
   'log.progressAfterDay': 'Progress after this day',
   'log.targetPlaceholder': 'e.g. 40',
+  // Writing on a task that has subtasks: the label above the picker, and the
+  // save button while more are still owed.
+  'log.task': 'Task',
+  'log.saveNext': 'Save and continue',
   'logs.all': 'All logs',
   'logs.empty': 'No logs yet.',
   'logs.moreTasks': { one: '+{count} more task', other: '+{count} more tasks' },
@@ -569,9 +578,11 @@ const zh: Dict = {
   'task.hide': '收起',
   'task.hidden': '已收起。',
   'task.noSubtasks': '暂无子任务。',
+  'task.pendingLogs': '今日待填',
   'task.progressMode': '进度模式',
   'task.modeStrict': '严格（按日志推进）',
   'task.modeAuto': '自动（按日期推进）',
+  'task.modeRolledUp': '由子任务汇总',
   'task.noSchedule': '尚未排期。开始这项任务时，再为它设定日期、优先级和进度模式。',
   'task.pausedNote': {
     one: '已暂停。开始于 {start} · 暂停于 {paused} · 已过去 {count} 天。',
@@ -598,6 +609,8 @@ const zh: Dict = {
   'log.setTarget': '设置目标进度（可选）',
   'log.progressAfterDay': '当天结束后的进度',
   'log.targetPlaceholder': '例如 40',
+  'log.task': '任务',
+  'log.saveNext': '保存并继续',
   'logs.all': '全部日志',
   'logs.empty': '暂无日志。',
   'logs.moreTasks': { one: '还有 {count} 项任务', other: '还有 {count} 项任务' },
@@ -891,9 +904,11 @@ const fr: Dict = {
   'task.hide': 'Masquer',
   'task.hidden': 'Masqué.',
   'task.noSubtasks': 'Aucune sous-tâche.',
+  'task.pendingLogs': 'Reste à journaliser',
   'task.progressMode': 'Mode d’avancement',
   'task.modeStrict': 'Strict (par journaux)',
   'task.modeAuto': 'Automatique (par dates)',
+  'task.modeRolledUp': 'D’après les sous-tâches',
   'task.noSchedule':
     'Pas encore planifiée. Donnez-lui des dates, une priorité et un mode d’avancement au moment de la démarrer.',
   'task.pausedNote': {
@@ -922,6 +937,8 @@ const fr: Dict = {
   'log.setTarget': 'Définir un avancement visé (facultatif)',
   'log.progressAfterDay': 'Avancement après ce jour',
   'log.targetPlaceholder': 'ex. 40',
+  'log.task': 'Tâche',
+  'log.saveNext': 'Enregistrer et continuer',
   'logs.all': 'Tous les journaux',
   'logs.empty': 'Aucun journal pour l’instant.',
   'logs.moreTasks': { one: '+{count} autre tâche', other: '+{count} autres tâches' },
