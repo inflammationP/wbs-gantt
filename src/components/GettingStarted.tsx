@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Check, HelpCircle, X } from 'lucide-react'
 import { GuideExplainId, TOUR_PAGES, TourPage, currentStepIndex, guideSteps, tourVisitKey } from '../lib/guide'
 import { LANGS, LANG_LABEL } from '../lib/i18n'
@@ -32,14 +32,25 @@ export function GettingStarted() {
   const guideDismissed = useStore((s) => s.guideDismissed)
   const dismissGuide = useStore((s) => s.dismissGuide)
   const markGuideDone = useStore((s) => s.markGuideDone)
-  const addSample = useStore((s) => s.addSample)
   const setSelected = useStore((s) => s.setSelected)
   const setActiveView = useStore((s) => s.setActiveView)
   const [open, setOpen] = useState<GuideExplainId | null>(null)
 
+  const steps = guideSteps(projects, tasks, logs, lang, guideDone)
+
+  // The reconcile that makes progress stick: whatever the board witnesses now is
+  // written down, so tidying up afterwards cannot take it back. Keyed on a joined
+  // string because the array is rebuilt on every render and would retrigger the
+  // effect forever.
+  const pending = steps.filter((s) => s.derived && !guideDone.includes(s.id)).map((s) => s.id)
+  const pendingKey = pending.join(',')
+  useEffect(() => {
+    if (!pendingKey) return
+    for (const id of pendingKey.split(',')) markGuideDone(id)
+  }, [pendingKey, markGuideDone])
+
   if (guideDismissed) return null
 
-  const steps = guideSteps(projects, tasks, logs, lang, guideDone)
   const current = currentStepIndex(steps)
   const allDone = current === steps.length
   // Steps that tell the user where to click name the page the way the sidebar
@@ -47,15 +58,9 @@ export function GettingStarted() {
   const pages = { manage: t('nav.manage'), settings: t('nav.settings') }
 
   const openExplain = (id: GuideExplainId) => {
-    if (id === 'tour') {
-      // The last step's dialog is about pages that are only worth a look once
-      // the board has something on it, so the sample arrives as it opens.
-      // Appended, not imported: the user built a project, a task and a subtask
-      // in steps 2-4 and replacing would delete all three.
-      addSample()
-    } else {
-      markGuideDone(id)
-    }
+    // `tour` records a page at a time instead, in `goToPage` — its step ends on
+    // having looked around rather than on having opened this.
+    if (id !== 'tour') markGuideDone(id)
     setOpen(id)
   }
 
@@ -201,6 +206,7 @@ function ExplainDialog({
           <>
             <p>{t('guide.explain.endDate.p1')}</p>
             <p>{t('guide.explain.endDate.p2')}</p>
+            <p>{t('guide.explain.endDate.p3')}</p>
           </>
         )}
 

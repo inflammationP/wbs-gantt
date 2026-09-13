@@ -8,7 +8,6 @@ import { loadData, saveData, loadPrefs, savePrefs, PersistedData } from './stora
 import { applyLang, Lang } from '../lib/i18n'
 import { applyTheme, ThemeId } from '../lib/theme'
 import { buildSeed } from '../lib/seed'
-import { buildSample, SAMPLE_PROJECT_IDS } from '../lib/sample'
 
 export interface NewTaskInput {
   name: string
@@ -98,8 +97,6 @@ interface State {
 
   importData: (data: PersistedData) => void
 
-  /** Append the sample board. Idempotent — see the implementation. */
-  addSample: () => void
   dismissGuide: () => void
   showGuide: () => void
   markGuideDone: (stepId: string) => void
@@ -431,29 +428,6 @@ export const useStore = create<State>()((set) => ({
 
   importData: (data) =>
     set({ projects: data.projects, tasks: data.tasks, logs: data.logs ?? [], selectedTaskId: null, selectedProjectId: null, projectFilter: 'all' }),
-
-  /**
-   * Append the sample board to whatever is already there.
-   *
-   * Appended, not imported wholesale: the guide loads this as its last step,
-   * right after the user has built a project, a parent task and a strict
-   * subtask of their own. Replacing would delete all three with no undo — the
-   * subscriber at the bottom of this file writes to localStorage immediately.
-   *
-   * Idempotent by way of `SAMPLE_PROJECT_IDS`: the sample's ids are stable
-   * strings where everything a user makes carries a uuid, so one of them being
-   * present means the sample is already in. Without the guard, re-reading the
-   * last step would append a second copy.
-   */
-  addSample: () => {
-    if (useStore.getState().projects.some((p) => SAMPLE_PROJECT_IDS.includes(p.id))) return
-    const sample = buildSample()
-    set((s) => ({
-      projects: [...s.projects, ...sample.projects],
-      tasks: [...s.tasks, ...sample.tasks],
-      logs: [...s.logs, ...sample.logs],
-    }))
-  },
 
   dismissGuide: () => {
     set({ guideDismissed: true })

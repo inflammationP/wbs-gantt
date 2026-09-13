@@ -396,9 +396,14 @@ const en = {
   'guide.explain.language.skip': 'Not now',
   'guide.explain.endDate.title': 'How a parent’s end date is worked out',
   'guide.explain.endDate.p1':
-    'A parent task keeps no schedule of its own — its end date is decided by its subtasks, and it is always the latest of them. The subtask you just added ends after the parent did, so the parent has moved out to meet it.',
+    'A phase parent keeps no schedule of its own — its end date is decided by its subtasks, and it is always the latest of them. Give a subtask an end date past the parent’s and the parent stretches out to meet it.',
   'guide.explain.endDate.p2':
-    'The interface says as much: open the parent for editing and the end-date field is greyed out, and hovering it reads “decided by the subtask that ends last”. Drag any subtask and the parent follows. Its progress works the same way — the average of its subtasks’ — which is why the parent will not let you type one in either.',
+    'The interface says as much: open a phase parent for editing and the end-date field is greyed out, reading “decided by the subtask that ends last”. Drag any subtask and the parent follows. Its progress works the same way — the average of its subtasks’ — which is why it will not let you type one in either.',
+  // The form offers long-term goals as parents too, so this dialog has to
+  // account for one: `syncParentEnds` skips them, and they carry no end date to
+  // stretch, which the two paragraphs above would otherwise misdescribe.
+  'guide.explain.endDate.p3':
+    'Long-term goals are the exception. They have a start and no end, so a parent of that kind has nothing to stretch — which is why it shows a start date and nothing else.',
   'guide.explain.strict.title': 'Strict and non-strict: where progress comes from',
   'guide.explain.strict.p1': 'The difference is where the number comes from, not how it is drawn.',
   'guide.explain.strict.p2':
@@ -409,7 +414,7 @@ const en = {
     'That is what a strict task is for: progress that reports what you actually did, instead of letting the calendar finish the work on your behalf.',
   'guide.explain.tour.title': 'A look around',
   'guide.explain.tour.intro':
-    'The sample board has been added alongside your own work, so Logs, Manage and Calendar all have something to show. One line on each:',
+    'These four pages all read the board you have just built, so there is something to see on each of them even while it is still small. One line on each:',
   'guide.explain.tour.logs':
     'Logs — everything written, collected by day; a strict task’s entries carry their target progress too.',
   'guide.explain.tour.manage':
@@ -712,9 +717,11 @@ const zh: Dict = {
   'guide.explain.language.skip': '先不用',
   'guide.explain.endDate.title': '父任务的结束日期是怎么来的',
   'guide.explain.endDate.p1':
-    '父任务自己不排期 —— 它的结束日期由子任务决定，永远是所有子任务里最晚的那个。你刚挂上去的子任务结束得更晚，所以父任务刚刚挪出去跟上了它。',
+    '阶段任务的父任务自己不排期 —— 它的结束日期由子任务决定，永远是所有子任务里最晚的那个。给某个子任务一个比父任务更晚的结束日期，父任务就会撑出去跟上它。',
   'guide.explain.endDate.p2':
-    '这一点界面上就写着：打开父任务的编辑框，结束日期那一栏是灰的，鼠标停上去写着「由结束最晚的子任务决定」。你拖动任何一个子任务，父任务都会跟着走。进度同理 —— 父任务的进度是子任务进度的平均，所以它也不让你手填。',
+    '这一点界面上就写着：打开一个阶段父任务的编辑框，结束日期那一栏是灰的，写着「由结束最晚的子任务决定」。你拖动任何一个子任务，父任务都会跟着走。进度同理 —— 父任务的进度是子任务进度的平均，所以它也不让你手填。',
+  'guide.explain.endDate.p3':
+    '长期目标是例外。它只有开始、没有结束，所以这种父任务没有东西可撑 —— 这就是它只显示一个开始日期的原因。',
   'guide.explain.strict.title': '严格与非严格：进度从哪来',
   'guide.explain.strict.p1': '差别在于这个数字从哪来，而不在于它怎么画。',
   'guide.explain.strict.p2':
@@ -725,7 +732,7 @@ const zh: Dict = {
     '这就是严格任务的意义：让进度如实反映你做了什么，而不是让日历替你干完。',
   'guide.explain.tour.title': '逛一圈',
   'guide.explain.tour.intro':
-    '示例数据已经追加到你的看板上（你自己建的东西都还在），所以日志、管理和日历页都有东西可看了。四个页面各一句：',
+    '这四个页面读的都是你刚建起来的看板 —— 就算它还很小，每个页面上也有东西可看。各一句：',
   'guide.explain.tour.logs': '日志 —— 所有写过的内容按天汇总；严格任务的条目还带着目标进度。',
   'guide.explain.tour.manage':
     'Manage —— 整体概览：今天该做什么、接下来是什么、哪些逾期了，下面再按项目和任务分列。',
@@ -1034,9 +1041,11 @@ const fr: Dict = {
   'guide.explain.language.skip': 'Plus tard',
   'guide.explain.endDate.title': 'D’où vient la date de fin d’une tâche parente',
   'guide.explain.endDate.p1':
-    'Une tâche parente ne porte pas de planning à elle : sa date de fin est déterminée par ses sous-tâches, et c’est toujours la plus tardive d’entre elles. La sous-tâche que vous venez d’ajouter se termine après la fin du parent, qui vient donc de s’allonger pour la rejoindre.',
+    'Une tâche parente de phase ne porte pas de planning à elle : sa date de fin est déterminée par ses sous-tâches, et c’est toujours la plus tardive d’entre elles. Donnez à une sous-tâche une date de fin postérieure à celle du parent et le parent s’étire pour la rejoindre.',
   'guide.explain.endDate.p2':
-    'L’interface le dit elle-même : ouvrez le parent en édition et le champ de date de fin est grisé, avec « déterminée par la sous-tâche qui se termine le plus tard » au survol. Déplacez une sous-tâche et le parent suit. Son avancement fonctionne de même — la moyenne de celui de ses sous-tâches — et c’est pourquoi il ne vous laisse pas non plus le saisir.',
+    'L’interface le dit elle-même : ouvrez un parent de phase en édition et le champ de date de fin est grisé, avec « déterminée par la sous-tâche qui se termine le plus tard ». Déplacez une sous-tâche et le parent suit. Son avancement fonctionne de même — la moyenne de celui de ses sous-tâches — et c’est pourquoi il ne vous laisse pas non plus le saisir.',
+  'guide.explain.endDate.p3':
+    'Les objectifs à long terme font exception. Ils ont un début et pas de fin : un tel parent n’a donc rien à étirer — d’où la date de début seule.',
   'guide.explain.strict.title': 'Stricte ou non : d’où vient l’avancement',
   'guide.explain.strict.p1': 'La différence tient à l’origine du nombre, pas à sa représentation.',
   'guide.explain.strict.p2':
@@ -1047,7 +1056,7 @@ const fr: Dict = {
     'C’est là l’objet d’une tâche stricte : un avancement qui dit ce que vous avez réellement fait, au lieu de laisser le calendrier terminer le travail à votre place.',
   'guide.explain.tour.title': 'Un tour rapide',
   'guide.explain.tour.intro':
-    'Le tableau d’exemple a été ajouté à côté de votre propre travail, si bien que Journaux, Gestion et Calendrier ont désormais de quoi montrer. Une ligne pour chacun :',
+    'Ces quatre pages lisent toutes le tableau que vous venez de bâtir : il y a donc quelque chose à voir sur chacune, même réduite. Une ligne pour chacune :',
   'guide.explain.tour.logs':
     'Journaux — tout ce qui a été écrit, rassemblé par jour ; les entrées d’une tâche stricte portent aussi leur avancement cible.',
   'guide.explain.tour.manage':
