@@ -38,6 +38,14 @@ export interface StartTodoInput {
 const NAG_AFTER_DAYS = 30
 
 /**
+ * How long the dialog's "ignore for now" button silences the update prompt.
+ *
+ * Exported so the button can name the span it is offering — a button reading
+ * "ignore for a while" would make the user guess how long.
+ */
+export const SNOOZE_DAYS = 7
+
+/**
  * Where the update check stands.
  *
  * `unreachable` is the one that carries news: to a user behind a blocked
@@ -77,17 +85,15 @@ interface State {
   // durable facts — the 30-day anchor, the nag throttle, the dismissal — are
   // preferences and live in `Prefs`.
   updatePhase: UpdatePhase
-  /** Which check produced `updatePhase`. Only a launch check raises the notice. */
-  updateMode: 'auto' | 'manual' | null
   updateInfo: AvailableUpdate | null
   updateInstalling: boolean
   /** Why the install failed, if it did. */
   updateError: string | null
   nagOpen: boolean
   // The persisted half, mirrored into state so components can read it directly.
-  updateNoticeDismissed: boolean
   updateAnchorAt: string | null
   nagShownAt: string | null
+  updateSnoozeUntil: string | null
 
   setLang: (l: Lang) => void
   setTheme: (t: ThemeId) => void
@@ -131,11 +137,11 @@ interface State {
   showGuide: () => void
   markGuideDone: (stepId: string) => void
 
-  runUpdateCheck: (mode: 'auto' | 'manual') => Promise<void>
+  runUpdateCheck: () => Promise<void>
   installUpdate: () => Promise<void>
   closeUpdateDialog: () => void
+  snoozeUpdate: () => void
   closeNag: () => void
-  dismissUpdateNotice: () => void
 }
 
 function uid(): string {
@@ -177,34 +183,28 @@ function persistPrefs(): void {
   // preference has to be named here. That is enforced rather than remembered:
   // `savePrefs` demands the full `Prefs` type, so forgetting one is a compile
   // error — as long as the field is declared required and not optional.
-  const {
-    lang,
-    theme,
-    guideDismissed,
-    guideDone,
-    updateNoticeDismissed,
-    updateAnchorAt,
-    nagShownAt,
-  } = useStore.getState()
-  savePrefs({
-    lang,
-    theme,
-    guideDismissed,
-    guideDone,
-    updateNoticeDismissed,
-    updateAnchorAt,
-    nagShownAt,
-  })
+  const { lang, theme, guideDismissed, guideDone, updateAnchorAt, nagShownAt, updateSnoozeUntil } =
+    useStore.getState()
+  savePrefs({ lang, theme, guideDismissed, guideDone, updateAnchorAt, nagShownAt, updateSnoozeUntil })
+}
+
+/** Is a snooze currently running? */
+function isSnoozed(): boolean {
+  const { updateSnoozeUntil } = useStore.getState()
+  return updateSnoozeUntil !== null && Date.parse(updateSnoozeUntil) > Date.now()
 }
 
 /**
  * Show the "it has been a while" nag, if the clock says so.
  *
- * Evaluated at the tail of a *failed* launch check, which is what makes the two
- * requirements fall out without special-casing. A successful check has just
- * moved the anchor to now, so the condition is false by construction; and a
- * user who cannot reach GitHub keeps their stale anchor, so they are nagged
- * even though the notice on the settings page already explained why.
+ * Evaluated at the tail of *every* failed check, whichever button started it.
+ * It states a fact about the anchor — "we have not reached GitHub in over a
+ * month" — and that fact does not depend on who asked, so making it depend on
+ * the caller would be the one way left for an automatic check to behave
+ * differently from a manual one. A successful check has just moved the anchor
+ * to now, so the condition is false by construction; and a user who cannot
+ * reach GitHub keeps their stale anchor, so they are nagged even though the
+ * notice on the settings page already explained why.
  *
  * `new Date(iso)`, not `toDate(iso)`: `toDate` splits on '-' and expects
  * 'yyyy-MM-dd', so a full instant would parse as the 1st of the month.
@@ -244,14 +244,13 @@ export const useStore = create<State>()((set) => ({
   guideDismissed: prefs.guideDismissed,
   guideDone: prefs.guideDone,
   updatePhase: 'idle',
-  updateMode: null,
   updateInfo: null,
   updateInstalling: false,
   updateError: null,
   nagOpen: false,
-  updateNoticeDismissed: prefs.updateNoticeDismissed,
   updateAnchorAt: prefs.updateAnchorAt,
   nagShownAt: prefs.nagShownAt,
+  updateSnoozeUntil: prefs.updateSnoozeUntil,
 
   setLang: (l) => {
     applyLang(l)
@@ -551,25 +550,27 @@ export const useStore = create<State>()((set) => ({
     persistPrefs()
   },
 
-  runUpdateCheck: async (mode) => {
+  // Takes no argument on purpose. The launch check *is* a manual check fired on
+  // the app's behalf, so anything that varied the outcome by who asked would be
+  // a difference the user could see — and the two are meant to be
+  // indistinguishable right down to the prompt.
+  runUpdateCheck: async () => {
     // Doubles as the double-click guard and as StrictMode's: the launch effect
     // fires twice in development, and a second check while one is in flight is
     // never what anyone wanted.
     if (useStore.getState().updatePhase === 'checking') return
-    set({ updatePhase: 'checking', updateMode: mode, updateError: null })
+    set({ updatePhase: 'checking', updateError: null })
 
     const result = await checkForUpdate()
 
     if (result.kind === 'unsupported') {
-      set({ updatePhase: 'unsupported', updateMode: null })
+      set({ updatePhase: 'unsupported' })
       return
     }
 
     if (result.kind === 'error') {
       set({ updatePhase: 'unreachable' })
-      // Only a launch check nags. A failed manual check already says so right
-      // where the user is looking, and the modal would just repeat it.
-      if (mode === 'auto') maybeNag()
+      maybeNag()
       return
     }
 
@@ -586,25 +587,17 @@ export const useStore = create<State>()((set) => ({
     set({ updatePhase: 'available', updateAnchorAt: anchorAt })
     persistPrefs()
 
-    if (mode === 'manual') {
-      // The manual path stops to ask — the user is right here, and an app that
-      // restarts itself under their cursor is not a courtesy.
-      set({ updateInfo: result })
-      return
-    }
-
-    // The launch path is unchanged from before this feature existed: install
-    // without a word. Gated on PROD so that `tauri dev`, which shares the real
-    // endpoint, cannot pull a published release over the working tree.
-    if (import.meta.env.PROD) {
-      set({ updateInstalling: true })
-      try {
-        await result.install()
-      } catch (err) {
-        console.warn('Update install failed:', err)
-        set({ updateInstalling: false })
-      }
-    }
+    // Never install unasked. An app that restarts itself under the user's
+    // cursor is not a courtesy, and the release notes are worth reading *before*
+    // the decision rather than after the restart — which is what the dialog is
+    // for. The cost is a prompt on every launch until the update is taken; that
+    // is the trade being made.
+    //
+    // A running snooze suppresses the dialog only. The phase still becomes
+    // `available`, so the settings page keeps reporting that an update exists —
+    // silencing the prompt must never amount to hiding the update.
+    const snoozed = isSnoozed()
+    if (!snoozed) set({ updateInfo: result })
   },
 
   installUpdate: async () => {
@@ -631,12 +624,19 @@ export const useStore = create<State>()((set) => ({
     void info?.dismiss()
   },
 
-  closeNag: () => set({ nagOpen: false }),
-
-  dismissUpdateNotice: () => {
-    set({ updateNoticeDismissed: true })
+  snoozeUpdate: () => {
+    const info = useStore.getState().updateInfo
+    set({
+      updateInfo: null,
+      updateInstalling: false,
+      updateError: null,
+      updateSnoozeUntil: addDays(new Date(), SNOOZE_DAYS).toISOString(),
+    })
     persistPrefs()
+    void info?.dismiss()
   },
+
+  closeNag: () => set({ nagOpen: false }),
 }))
 
 // Persist data (only) to localStorage whenever projects/tasks change.

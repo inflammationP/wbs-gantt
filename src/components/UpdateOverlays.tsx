@@ -1,4 +1,4 @@
-import { useStore } from '../store/useStore'
+import { SNOOZE_DAYS, useStore } from '../store/useStore'
 import { useT } from '../lib/useT'
 import { Modal } from './ui'
 
@@ -69,6 +69,7 @@ function UpdateDialog() {
   const error = useStore((s) => s.updateError)
   const installUpdate = useStore((s) => s.installUpdate)
   const closeUpdateDialog = useStore((s) => s.closeUpdateDialog)
+  const snoozeUpdate = useStore((s) => s.snoozeUpdate)
 
   if (!info) return null
 
@@ -96,9 +97,15 @@ function UpdateDialog() {
 
       {error && <p className="mt-3 text-[11px] text-delayed">{t('update.installFailed', { message: error })}</p>}
 
-      <div className="mt-4 flex justify-end gap-2">
+      <div className="mt-4 flex items-center justify-end gap-2">
         <button className={secondaryBtn} onClick={closeUpdateDialog} disabled={installing}>
           {t('update.later')}
+        </button>
+        {/* Names its span rather than saying "for a while", so the cost of the
+            click is known before it is made. The number comes from the store
+            constant, so changing it changes the copy with it. */}
+        <button className={secondaryBtn} onClick={snoozeUpdate} disabled={installing}>
+          {t('update.snooze', { days: SNOOZE_DAYS })}
         </button>
         <button className={primaryBtn} onClick={() => void installUpdate()} disabled={installing}>
           {installing ? t('update.installing') : t('update.downloadAndInstall')}

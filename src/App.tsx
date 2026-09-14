@@ -27,12 +27,13 @@ export default function App() {
     syncParentEnds()
   }, [tasks, syncParentEnds])
 
-  // The launch-time update check, fired once per run. In development StrictMode
-  // mounts twice; the `checking` guard inside the action makes the second call
-  // a no-op rather than a second request. It lives here rather than in
-  // `main.tsx` so that the app's entry point stays pure bootstrap.
+  // The update check the app fires on the user's behalf at startup — the same
+  // call the Settings button makes, with nothing to tell them apart. In
+  // development StrictMode mounts twice; the `checking` guard inside the action
+  // makes the second call a no-op rather than a second request. It lives here
+  // rather than in `main.tsx` so that the entry point stays pure bootstrap.
   useEffect(() => {
-    void runUpdateCheck('auto')
+    void runUpdateCheck()
   }, [runUpdateCheck])
 
   return (

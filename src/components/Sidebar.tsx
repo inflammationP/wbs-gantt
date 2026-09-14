@@ -32,9 +32,9 @@ export function Sidebar() {
   const tasks = useStore((s) => s.tasks)
   const logs = useStore((s) => s.logs)
   // The dot means "there is something to read in Settings", not merely "an
-  // update exists" — so it tracks the unreachable-GitHub notice specifically,
-  // and the permanent dismissal silences it for good.
-  const updateUnread = useStore((s) => s.updatePhase === 'unreachable' && !s.updateNoticeDismissed)
+  // update exists" — so it tracks the unreachable-GitHub banner specifically,
+  // and stays lit for exactly as long as that banner is up.
+  const updateUnread = useStore((s) => s.updatePhase === 'unreachable')
   const projectFilter = useStore((s) => s.projectFilter)
   const setProjectFilter = useStore((s) => s.setProjectFilter)
   const setSelected = useStore((s) => s.setSelected)

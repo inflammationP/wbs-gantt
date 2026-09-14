@@ -48,16 +48,6 @@ export interface Prefs {
    */
   guideDone: string[]
   /**
-   * The user pressed "got it" on the unreachable-GitHub notice.
-   *
-   * Permanent, and meant to be: the whole point of the button is that the
-   * notice never comes back. The informational block under the version line
-   * (the Watt Toolkit link) is the permanent affordance that replaces it, so
-   * silencing the warning does not remove the user's way out. Do not "fix" this
-   * into a re-arming flag.
-   */
-  updateNoticeDismissed: boolean
-  /**
    * When the app last successfully reached GitHub, as an ISO instant.
    *
    * This is the anchor for the "it has been a while" nag. `null` means we have
@@ -75,6 +65,15 @@ export interface Prefs {
    * that user be nagged on every single launch.
    */
   nagShownAt: string | null
+  /**
+   * Until when the update prompt has been silenced, as an ISO instant.
+   *
+   * Set by the dialog's "ignore for a while" button. `null` means no snooze is
+   * running. A snooze only suppresses the **prompt** — the check still runs and
+   * still reports its result on the settings page, so silencing the dialog
+   * never hides the fact that an update exists.
+   */
+  updateSnoozeUntil: string | null
 }
 
 const PREF_KEY = 'wbs-gantt.prefs'
@@ -84,9 +83,9 @@ export const DEFAULT_PREFS: Prefs = {
   theme: DEFAULT_THEME,
   guideDismissed: false,
   guideDone: [],
-  updateNoticeDismissed: false,
   updateAnchorAt: null,
   nagShownAt: null,
+  updateSnoozeUntil: null,
 }
 
 // An instant this module wrote itself. Anything else — absent, from an older
@@ -116,14 +115,13 @@ export function loadPrefs(): Prefs {
       guideDone: Array.isArray(parsed.guideDone)
         ? parsed.guideDone.filter((s): s is string => typeof s === 'string')
         : DEFAULT_PREFS.guideDone,
-      updateNoticeDismissed:
-        typeof parsed.updateNoticeDismissed === 'boolean'
-          ? parsed.updateNoticeDismissed
-          : DEFAULT_PREFS.updateNoticeDismissed,
       updateAnchorAt: isInstant(parsed.updateAnchorAt)
         ? parsed.updateAnchorAt
         : DEFAULT_PREFS.updateAnchorAt,
       nagShownAt: isInstant(parsed.nagShownAt) ? parsed.nagShownAt : DEFAULT_PREFS.nagShownAt,
+      updateSnoozeUntil: isInstant(parsed.updateSnoozeUntil)
+        ? parsed.updateSnoozeUntil
+        : DEFAULT_PREFS.updateSnoozeUntil,
     }
   } catch {
     return DEFAULT_PREFS

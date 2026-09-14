@@ -64,18 +64,20 @@ function VersionSection() {
   const t = useT()
   const desktop = isTauri()
   const phase = useStore((s) => s.updatePhase)
-  const mode = useStore((s) => s.updateMode)
-  const noticeDismissed = useStore((s) => s.updateNoticeDismissed)
   const installing = useStore((s) => s.updateInstalling)
   const runUpdateCheck = useStore((s) => s.runUpdateCheck)
-  const dismissUpdateNotice = useStore((s) => s.dismissUpdateNotice)
 
   const busy = phase === 'checking' || installing
-  const showNotice = desktop && phase === 'unreachable' && !noticeDismissed
-  // Only a manual check reports back here. The launch check is silent by design,
-  // and its unreachable case is what the notice below is for.
-  const manualResult =
-    mode !== 'manual' ? null : phase === 'current' ? t('update.upToDate') : phase === 'unreachable' ? t('update.checkFailed') : null
+  // Reported for the launch check and the manual one alike: the run that just
+  // happened is the run being described, and which one it was is not the
+  // reader's business. A failure is carried by the banner below instead, so
+  // this line only ever states the good news.
+  //
+  // `available` belongs here too, and not only for symmetry: the dialog can be
+  // silenced by a snooze, and this line is what keeps a snoozed update from
+  // being invisible. It is also the only feedback a check gets while snoozed.
+  const result =
+    phase === 'current' ? t('update.upToDate') : phase === 'available' ? t('update.availableShort') : null
 
   return (
     <section>
@@ -89,24 +91,23 @@ function VersionSection() {
         {desktop && (
           <button
             className="h-8 px-3 text-[12px] text-muted hover:text-fg border border-border rounded-[3px] disabled:opacity-40"
-            onClick={() => void runUpdateCheck('manual')}
+            onClick={() => void runUpdateCheck()}
             disabled={busy}
           >
             {installing ? t('update.installing') : phase === 'checking' ? t('update.checking') : t('update.check')}
           </button>
         )}
-        {manualResult && <span className="text-[12px] text-muted">{manualResult}</span>}
+        {result && <span className="ml-auto text-[12px] text-muted">{result}</span>}
       </div>
 
-      {showNotice && (
-        <div className="mt-3 flex items-start gap-3 rounded-[3px] border border-delayed/30 bg-delayed/15 p-3">
-          <p className="flex-1 text-[12px] leading-relaxed text-delayed">{t('update.unreachable')}</p>
-          <button
-            className="shrink-0 text-[12px] text-delayed hover:underline"
-            onClick={dismissUpdateNotice}
-          >
-            {t('update.dismiss')}
-          </button>
+      {/* No dismiss button, deliberately: this states a condition rather than
+          delivering a one-off message, so it is here for exactly as long as the
+          condition holds. There is no way to be rid of it except to let the app
+          reach GitHub, which is the point. The Watt Toolkit block below is the
+          standing way out. */}
+      {desktop && phase === 'unreachable' && (
+        <div className="mt-3 rounded-[3px] border border-delayed/30 bg-delayed/15 p-3">
+          <p className="text-[12px] leading-relaxed text-delayed">{t('update.unreachable')}</p>
         </div>
       )}
 
