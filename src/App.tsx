@@ -9,6 +9,7 @@ import { TaskDetailPanel } from './components/TaskDetailPanel'
 import { ProjectDetailPanel } from './components/ProjectDetailPanel'
 import { DayDetailPanel } from './components/DayDetailPanel'
 import { GettingStarted } from './components/GettingStarted'
+import { UpdateOverlays } from './components/UpdateOverlays'
 import { useStore } from './store/useStore'
 
 export default function App() {
@@ -19,11 +20,20 @@ export default function App() {
   const selectedProject = useStore((s) => s.projects.find((p) => p.id === s.selectedProjectId))
   const tasks = useStore((s) => s.tasks)
   const syncParentEnds = useStore((s) => s.syncParentEnds)
+  const runUpdateCheck = useStore((s) => s.runUpdateCheck)
 
   // Keep each phase parent's end date synced to its latest child's end date.
   useEffect(() => {
     syncParentEnds()
   }, [tasks, syncParentEnds])
+
+  // The launch-time update check, fired once per run. In development StrictMode
+  // mounts twice; the `checking` guard inside the action makes the second call
+  // a no-op rather than a second request. It lives here rather than in
+  // `main.tsx` so that the app's entry point stays pure bootstrap.
+  useEffect(() => {
+    void runUpdateCheck('auto')
+  }, [runUpdateCheck])
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-bg text-fg">
@@ -40,6 +50,7 @@ export default function App() {
         {view === 'calendar' && <CalendarPage />}
         {view === 'settings' && <SettingsPage />}
         <GettingStarted />
+        <UpdateOverlays />
       </main>
       {/* Sits left of the task panel, so opening a task from a day keeps the
           day's list on screen. Opened from the timeline header in the Gantt and

@@ -1,6 +1,6 @@
 # WBS · Gantt 功能需求与现状报告
 
-> 本报告整合了开发过程中提出的所有较为明确的功能需求（需求原文按中文原样摘录），以及当前版本（v0.3.2，2026-09-14）的最终实现情况。用于记录「要做什么」与「已经做成什么样」。
+> 本报告整合了开发过程中提出的所有较为明确的功能需求（需求原文按中文原样摘录），以及当前版本（v0.3.3，待发布）的最终实现情况。用于记录「要做什么」与「已经做成什么样」。
 
 ---
 
@@ -205,6 +205,25 @@ TaskLog { id, taskId, date, content, targetProgress?, createdAt, updatedAt }
 - 版本号写在 `src-tauri/tauri.conf.json`，由 `release.mjs` 交互式询问后写入；`latest.json` 与 `.release-notes.md` 是构建产物，已 gitignore。
 - 用户看到的「更新」由 GitHub Release 上的版本号驱动，**与提交次数、push 次数无关**——只有跑 `release.mjs` 那一刻才产生一次更新。
 - **「待发布」占位由脚本自动替换。** `CHANGELOG.md` 与 `FEATURES.md` 里同时含「待发布」和本次版本号的行，会被 `release.mjs` 的第 5 步换成本地日期。**只改工作区，替换后仍需手工提交**；版本号对不上（比如改了号却没写变更记录）只提示、不中断发布。此前这是手工步骤，连续两个版本忘记过。
+- **下载 URL 由 GitHub 回报的资源名生成，不由本地文件名推断。** GitHub 上传时会把文件名里的空格改写成点（`WBS Gantt_…` → `WBS.Gantt_…`）。此前脚本用本地名拼 URL，于是**每个已发布版本的安装包地址都是 404**，而更新器只会静默失败。
+- **发布走「草稿 → 转正」。** 先建草稿 Release、传安装包、回读 GitHub 实际使用的资源名、写 `latest.json`、最后才 `gh release edit --draft=false`。草稿不出现在 `releases/latest` 里，所以中途失败时全体用户仍指向上一个完好版本，而不是指向一个没有可用 manifest 的新 Release。
+- **capability 必须显式授权插件命令。** Tauri v2 的 ACL 默认拒绝一切插件命令，`core:default` 不覆盖任何插件。更新器需要 `updater:default` + `process:default`，开外链需要 `opener:default`。漏掉不会构建失败，只会让那次调用被静默拒绝。
+
+### 17. 版本与更新
+
+- **设置页有「版本」区块**，显示 `__APP_VERSION__` 并提供手动「检查更新」。桌面版每次启动也会自动检查一次（`App` 的挂载 effect，`checking` 守卫顺带吃掉 StrictMode 的双跑）。
+- **版本号的真值只有一个：`src-tauri/tauri.conf.json`。** 前端通过 Vite `define` 在构建期把它注入成 `__APP_VERSION__` 字面量。`package.json` 的 `version` 是陈旧的 `0.1.0` 且不参与任何流程——不要读它。选 `define` 而不是 `getVersion()`，是因为 Web 版没有 Tauri 可问，而 `@tauri-apps/api` 在这里只是传递依赖。
+- **`updater.ts` 是纯函数，不碰 store。** 返回判别联合 `unsupported | current | available | error`；`available` 把 `Update` 资源包在 `install`／`dismiss` 闭包里，插件的类型因此不外泄。**它不自动安装**——自动还是手动由调用方决定，这正是「启动静默、手动先问」得以分成两条路的原因。
+- **`error` 分支不再被吞掉。** 对网络被墙的用户，检查失败是**常态而不是异常**，所以它就是「连不上 GitHub」的信号。检查带 15 秒超时，否则请求可能挂很久、提示出现时机不可预测。
+- **离线提示与红点。** 判定为 `updatePhase === 'unreachable' && !updateNoticeDismissed`。**不按 `updateMode` 过滤**：横幅说的是「自动更新不可用」，这句话在手动检查失败时同样成立，两者并存不矛盾；而一旦检查成功，相位改变，横幅自动消失，不需要额外清标志。红点只在侧栏设置图标上，点「我知道了」**永久**关闭——那块常驻的 GitHub 说明就是替代它的永久入口，所以关掉提示不会让用户失去出路，**不要**把它改成会重新武装的开关。
+- **30 天提醒。** 锚点是**最近一次成功联系 GitHub 的时刻**，只在 `current`／`available` 时前移，失败不前移——所以连不上的人锚点会一直陈旧，提醒照常出现（这是用户明确要的）。首次 hydrate 时若锚点为空就补写成当下并**落盘一次**；若改成每次启动现算，锚点会被无限重置，提醒对最需要它的人永远不触发。节流戳 `nagShownAt` 在**弹窗显示时**写入而非关闭时，否则开着弹窗强杀进程会让用户每次启动都被弹。
+  - **只在桌面端启用。** Web 版锚点永不自增，放行的话浏览器用户每 30 天会被一个与自己无关的弹窗骚扰。
+- **手动检查发现新版本时先问再装。** 弹窗显示新版本号、当前版本与**更新说明**——说明取自 `latest.json` 的 `notes`，由 `release.mjs` 在发布时交互式写入（这条链路一直存在，只是此前没人读）。是纯文本不是 markdown，所以只换行不解析。安装前先把锚点落盘：Windows 上安装程序会结束进程，之后再写可能写不进去。
+- **启动时的自动更新行为未变**（静默安装并重启），但**只在 `import.meta.env.PROD` 下执行**：`tauri dev` 与打包版共用同一个 endpoint，否则一个落后于最新 Release 的开发构建会把正式版装到开发树上。
+- **外链一律渲染成按钮，不用 `<a href>`。** Tauri webview 不会把锚点导航交给系统浏览器，点了不会有反应——而「静默失败」正是这套链接要消除的东西。`src/lib/links.ts` 分平台：桌面走 `tauri-plugin-opener`（懒加载，Web 包不背它），Web 走 `window.open`。
+- **推荐 Watt Toolkit 之前核实过两件事**：官网 `steampp.net` 由官方仓库 `BeyondDimension/SteamTools` 声明的 homepage 交叉确认；以及更新器依赖 `rustls-platform-verifier`、走 Windows 系统证书库，所以它的自签根证书**会被信任**。若更新器走 webpki 内置根证书，这条建议反而会把更新搞坏。
+- **坑：`diffDays` 不能配 `toDate` 用。** `toDate` 按 `-` 切分并期望 `yyyy-MM-dd`，传入完整 ISO 时刻会得到 `NaN`，被 `|| 1` 兜成**当月 1 号**——不报错的错误日期。这里必须用 `new Date(iso)`。
+- **坑：新增 prefs 字段要改四处**（`Prefs` 接口、`DEFAULT_PREFS`、`loadPrefs`、`persistPrefs`）。`persistPrefs` 是显式解构重建的，漏改会在用户每次切主题/语言时把字段抹掉。**把字段声明为必填（可空的写 `string | null`，不用 `?`）**，这个错误就会变成硬编译错误而不是静默丢数据。
 
 ---
 

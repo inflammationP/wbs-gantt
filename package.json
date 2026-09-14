@@ -12,6 +12,7 @@
     "release": "node scripts/release.mjs"
   },
   "dependencies": {
+    "@tauri-apps/plugin-opener": "^2.5.5",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "^2.11.0",
     "lucide-react": "^0.451.0",

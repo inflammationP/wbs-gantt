@@ -4,10 +4,11 @@ import { AppView, Project, Task, TaskLog, TaskPriority, TaskType, ViewMode } fro
 import { todayISO, addUnitISO, Unit, addDays, diffDays, toDate, toISO } from '../lib/dates'
 import { timelineRange, DateRange } from '../lib/timeline'
 import { buildRows, collectDescendants, hasChildren, syncParentEnds, todoCascadeIds, todoGroupIds, Row } from '../lib/tree'
-import { loadData, saveData, loadPrefs, savePrefs, PersistedData } from './storage'
+import { loadData, saveData, loadPrefs, savePrefs, PersistedData, Prefs } from './storage'
 import { applyLang, Lang } from '../lib/i18n'
 import { applyTheme, ThemeId } from '../lib/theme'
 import { buildSeed } from '../lib/seed'
+import { checkForUpdate, isTauri, CheckResult } from '../lib/updater'
 
 export interface NewTaskInput {
   name: string
@@ -32,6 +33,20 @@ export interface StartTodoInput {
   strictProgress: boolean
   priority: TaskPriority
 }
+
+/** How long without reaching GitHub before the nag appears, and its throttle. */
+const NAG_AFTER_DAYS = 30
+
+/**
+ * Where the update check stands.
+ *
+ * `unreachable` is the one that carries news: to a user behind a blocked
+ * network it is the normal outcome of every launch, not an error state.
+ */
+export type UpdatePhase = 'idle' | 'checking' | 'current' | 'available' | 'unreachable' | 'unsupported'
+
+/** The `available` variant, kept whole so the dialog can call `install`. */
+export type AvailableUpdate = Extract<CheckResult, { kind: 'available' }>
 
 interface State {
   projects: Project[]
@@ -58,6 +73,21 @@ interface State {
   // guide's state lives with the preferences rather than with the work data.
   guideDismissed: boolean
   guideDone: string[]
+  // Update state. Session-only: it describes the check that just ran. The three
+  // durable facts — the 30-day anchor, the nag throttle, the dismissal — are
+  // preferences and live in `Prefs`.
+  updatePhase: UpdatePhase
+  /** Which check produced `updatePhase`. Only a launch check raises the notice. */
+  updateMode: 'auto' | 'manual' | null
+  updateInfo: AvailableUpdate | null
+  updateInstalling: boolean
+  /** Why the install failed, if it did. */
+  updateError: string | null
+  nagOpen: boolean
+  // The persisted half, mirrored into state so components can read it directly.
+  updateNoticeDismissed: boolean
+  updateAnchorAt: string | null
+  nagShownAt: string | null
 
   setLang: (l: Lang) => void
   setTheme: (t: ThemeId) => void
@@ -100,6 +130,12 @@ interface State {
   dismissGuide: () => void
   showGuide: () => void
   markGuideDone: (stepId: string) => void
+
+  runUpdateCheck: (mode: 'auto' | 'manual') => Promise<void>
+  installUpdate: () => Promise<void>
+  closeUpdateDialog: () => void
+  closeNag: () => void
+  dismissUpdateNotice: () => void
 }
 
 function uid(): string {
@@ -112,7 +148,20 @@ const loaded = loadData()
 const initial = loaded ?? buildSeed()
 if (!loaded) saveData({ projects: initial.projects, tasks: initial.tasks, logs: initial.logs })
 
-const prefs = loadPrefs()
+const loadedPrefs = loadPrefs()
+// Heal a missing update anchor exactly once, and write it back.
+//
+// Stamping a fresh "now" on every launch instead would restart the 30-day clock
+// forever for any blob that has no anchor — precisely the user who can never
+// reach GitHub, and so the one the nag exists for. A new object rather than a
+// mutation: `loadPrefs` returns `DEFAULT_PREFS` itself on two of its paths, and
+// that object is shared.
+const prefs: Prefs =
+  loadedPrefs.updateAnchorAt === null
+    ? { ...loadedPrefs, updateAnchorAt: new Date().toISOString() }
+    : loadedPrefs
+if (prefs !== loadedPrefs) savePrefs(prefs)
+
 // Before the first render, not in an effect: the palette is applied by an
 // attribute on <html>, and an effect would let one frame paint in the wrong one.
 // The *default* palette does not depend on this at all — it lives in `:root` —
@@ -124,8 +173,56 @@ applyLang(prefs.lang)
 // off the identity of projects/tasks/logs and never fires for a preference, and
 // a second subscriber would run after React commits, a frame late.
 function persistPrefs(): void {
-  const { lang, theme, guideDismissed, guideDone } = useStore.getState()
-  savePrefs({ lang, theme, guideDismissed, guideDone })
+  // Rebuilt field by field rather than spread off state, which is why every new
+  // preference has to be named here. That is enforced rather than remembered:
+  // `savePrefs` demands the full `Prefs` type, so forgetting one is a compile
+  // error — as long as the field is declared required and not optional.
+  const {
+    lang,
+    theme,
+    guideDismissed,
+    guideDone,
+    updateNoticeDismissed,
+    updateAnchorAt,
+    nagShownAt,
+  } = useStore.getState()
+  savePrefs({
+    lang,
+    theme,
+    guideDismissed,
+    guideDone,
+    updateNoticeDismissed,
+    updateAnchorAt,
+    nagShownAt,
+  })
+}
+
+/**
+ * Show the "it has been a while" nag, if the clock says so.
+ *
+ * Evaluated at the tail of a *failed* launch check, which is what makes the two
+ * requirements fall out without special-casing. A successful check has just
+ * moved the anchor to now, so the condition is false by construction; and a
+ * user who cannot reach GitHub keeps their stale anchor, so they are nagged
+ * even though the notice on the settings page already explained why.
+ *
+ * `new Date(iso)`, not `toDate(iso)`: `toDate` splits on '-' and expects
+ * 'yyyy-MM-dd', so a full instant would parse as the 1st of the month.
+ */
+function maybeNag(): void {
+  if (!isTauri()) return
+  const { updateAnchorAt, nagShownAt } = useStore.getState()
+  if (updateAnchorAt === null) return
+
+  const now = new Date()
+  if (diffDays(new Date(updateAnchorAt), now) < NAG_AFTER_DAYS) return
+  if (nagShownAt !== null && diffDays(new Date(nagShownAt), now) < NAG_AFTER_DAYS) return
+
+  // Stamped on display rather than on dismissal: a user who kills the app with
+  // the modal still open never dismisses it, and would otherwise be nagged on
+  // every single launch.
+  useStore.setState({ nagOpen: true, nagShownAt: now.toISOString() })
+  persistPrefs()
 }
 
 export const useStore = create<State>()((set) => ({
@@ -146,6 +243,15 @@ export const useStore = create<State>()((set) => ({
   theme: prefs.theme,
   guideDismissed: prefs.guideDismissed,
   guideDone: prefs.guideDone,
+  updatePhase: 'idle',
+  updateMode: null,
+  updateInfo: null,
+  updateInstalling: false,
+  updateError: null,
+  nagOpen: false,
+  updateNoticeDismissed: prefs.updateNoticeDismissed,
+  updateAnchorAt: prefs.updateAnchorAt,
+  nagShownAt: prefs.nagShownAt,
 
   setLang: (l) => {
     applyLang(l)
@@ -442,6 +548,93 @@ export const useStore = create<State>()((set) => ({
     // milestone twice, and the list is what the guide counts.
     if (useStore.getState().guideDone.includes(stepId)) return
     set((s) => ({ guideDone: [...s.guideDone, stepId] }))
+    persistPrefs()
+  },
+
+  runUpdateCheck: async (mode) => {
+    // Doubles as the double-click guard and as StrictMode's: the launch effect
+    // fires twice in development, and a second check while one is in flight is
+    // never what anyone wanted.
+    if (useStore.getState().updatePhase === 'checking') return
+    set({ updatePhase: 'checking', updateMode: mode, updateError: null })
+
+    const result = await checkForUpdate()
+
+    if (result.kind === 'unsupported') {
+      set({ updatePhase: 'unsupported', updateMode: null })
+      return
+    }
+
+    if (result.kind === 'error') {
+      set({ updatePhase: 'unreachable' })
+      // Only a launch check nags. A failed manual check already says so right
+      // where the user is looking, and the modal would just repeat it.
+      if (mode === 'auto') maybeNag()
+      return
+    }
+
+    // Reaching GitHub is the event the 30-day clock measures, whichever answer
+    // it gave. Recorded before anything else can go wrong.
+    const anchorAt = new Date().toISOString()
+
+    if (result.kind === 'current') {
+      set({ updatePhase: 'current', updateAnchorAt: anchorAt, updateInfo: null })
+      persistPrefs()
+      return
+    }
+
+    set({ updatePhase: 'available', updateAnchorAt: anchorAt })
+    persistPrefs()
+
+    if (mode === 'manual') {
+      // The manual path stops to ask — the user is right here, and an app that
+      // restarts itself under their cursor is not a courtesy.
+      set({ updateInfo: result })
+      return
+    }
+
+    // The launch path is unchanged from before this feature existed: install
+    // without a word. Gated on PROD so that `tauri dev`, which shares the real
+    // endpoint, cannot pull a published release over the working tree.
+    if (import.meta.env.PROD) {
+      set({ updateInstalling: true })
+      try {
+        await result.install()
+      } catch (err) {
+        console.warn('Update install failed:', err)
+        set({ updateInstalling: false })
+      }
+    }
+  },
+
+  installUpdate: async () => {
+    const info = useStore.getState().updateInfo
+    if (!info) return
+    // Stamp the anchor before installing: on Windows the installer exits the
+    // process, so anything written after this point may never land.
+    set({ updateInstalling: true, updateError: null, updateAnchorAt: new Date().toISOString() })
+    persistPrefs()
+    try {
+      await info.install()
+    } catch (err) {
+      set({
+        updateInstalling: false,
+        updateError: err instanceof Error ? err.message : String(err),
+      })
+    }
+  },
+
+  closeUpdateDialog: () => {
+    const info = useStore.getState().updateInfo
+    set({ updateInfo: null, updateInstalling: false, updateError: null })
+    // Release the Tauri resource. Nothing is lost: checking again re-fetches it.
+    void info?.dismiss()
+  },
+
+  closeNag: () => set({ nagOpen: false }),
+
+  dismissUpdateNotice: () => {
+    set({ updateNoticeDismissed: true })
     persistPrefs()
   },
 }))

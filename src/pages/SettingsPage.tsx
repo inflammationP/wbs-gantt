@@ -5,6 +5,8 @@ import { LANGS, LANG_LABEL, Lang, formatLongDate } from '../lib/i18n'
 import { CHROME_TOKENS, SIGNAL_TOKENS, THEME_ORDER, ThemeId, tripletToHex } from '../lib/theme'
 import { STATUS_META } from '../lib/ui'
 import { useT } from '../lib/useT'
+import { isTauri } from '../lib/updater'
+import { ACCELERATOR_URL, REPO_URL, openExternal } from '../lib/links'
 
 export function SettingsPage() {
   const t = useT()
@@ -40,8 +42,91 @@ export function SettingsPage() {
             ))}
           </div>
         </section>
+
+        {/* ---- Version ---- */}
+        <VersionSection />
       </div>
     </div>
+  )
+}
+
+const linkCls = 'mt-1.5 text-[12px] text-accent hover:underline'
+
+/**
+ * The version, and the two things a user needs when the updater cannot work.
+ *
+ * The GitHub material sits under a rule inside this section rather than as a
+ * peer `<section>`, because it tells one story: automatic updates need GitHub,
+ * so here is how to reach GitHub, and here is why it is worth reaching. Making
+ * it a peer of Language and Theme would let it compete with them.
+ */
+function VersionSection() {
+  const t = useT()
+  const desktop = isTauri()
+  const phase = useStore((s) => s.updatePhase)
+  const mode = useStore((s) => s.updateMode)
+  const noticeDismissed = useStore((s) => s.updateNoticeDismissed)
+  const installing = useStore((s) => s.updateInstalling)
+  const runUpdateCheck = useStore((s) => s.runUpdateCheck)
+  const dismissUpdateNotice = useStore((s) => s.dismissUpdateNotice)
+
+  const busy = phase === 'checking' || installing
+  const showNotice = desktop && phase === 'unreachable' && !noticeDismissed
+  // Only a manual check reports back here. The launch check is silent by design,
+  // and its unreachable case is what the notice below is for.
+  const manualResult =
+    mode !== 'manual' ? null : phase === 'current' ? t('update.upToDate') : phase === 'unreachable' ? t('update.checkFailed') : null
+
+  return (
+    <section>
+      <h2 className="text-[14px] font-semibold text-fg mb-1">{t('settings.version')}</h2>
+      <p className="text-[12px] text-muted mb-3">
+        {desktop ? t('settings.versionHint') : t('update.webNote')}
+      </p>
+
+      <div className="flex items-center gap-3">
+        <span className="font-mono text-[13px] text-fg">v{import.meta.env.VITE_APP_VERSION}</span>
+        {desktop && (
+          <button
+            className="h-8 px-3 text-[12px] text-muted hover:text-fg border border-border rounded-[3px] disabled:opacity-40"
+            onClick={() => void runUpdateCheck('manual')}
+            disabled={busy}
+          >
+            {installing ? t('update.installing') : phase === 'checking' ? t('update.checking') : t('update.check')}
+          </button>
+        )}
+        {manualResult && <span className="text-[12px] text-muted">{manualResult}</span>}
+      </div>
+
+      {showNotice && (
+        <div className="mt-3 flex items-start gap-3 rounded-[3px] border border-delayed/30 bg-delayed/15 p-3">
+          <p className="flex-1 text-[12px] leading-relaxed text-delayed">{t('update.unreachable')}</p>
+          <button
+            className="shrink-0 text-[12px] text-delayed hover:underline"
+            onClick={dismissUpdateNotice}
+          >
+            {t('update.dismiss')}
+          </button>
+        </div>
+      )}
+
+      <div className="mt-5 space-y-4 border-t border-line pt-4">
+        <div>
+          <div className="mb-1 text-[13px] font-semibold text-fg">{t('update.connectTitle')}</div>
+          <p className="text-[12px] leading-relaxed text-muted">{t('update.connectBody')}</p>
+          <button className={linkCls} onClick={() => void openExternal(ACCELERATOR_URL)}>
+            {t('update.connectLink')}
+          </button>
+        </div>
+
+        <div>
+          <p className="text-[12px] leading-relaxed text-muted">{t('update.opensource')}</p>
+          <button className={linkCls} onClick={() => void openExternal(REPO_URL)}>
+            {t('update.openRepo')}
+          </button>
+        </div>
+      </div>
+    </section>
   )
 }
 

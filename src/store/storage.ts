@@ -47,6 +47,34 @@ export interface Prefs {
    * along with the other three places still to see.
    */
   guideDone: string[]
+  /**
+   * The user pressed "got it" on the unreachable-GitHub notice.
+   *
+   * Permanent, and meant to be: the whole point of the button is that the
+   * notice never comes back. The informational block under the version line
+   * (the Watt Toolkit link) is the permanent affordance that replaces it, so
+   * silencing the warning does not remove the user's way out. Do not "fix" this
+   * into a re-arming flag.
+   */
+  updateNoticeDismissed: boolean
+  /**
+   * When the app last successfully reached GitHub, as an ISO instant.
+   *
+   * This is the anchor for the "it has been a while" nag. `null` means we have
+   * never managed it — either a fresh install or a blob from before this field
+   * existed. The store heals that to "now" and writes it back exactly once, so
+   * a missing value cannot restart the 30-day clock on every launch (which
+   * would mean the nag never fires for the user who most needs it).
+   */
+  updateAnchorAt: string | null
+  /**
+   * When the nag was last *shown* — written on display, not on dismissal.
+   *
+   * Display is what has to be rate-limited: a user who kills the app with the
+   * modal still open never dismisses it, and a dismiss-time stamp would let
+   * that user be nagged on every single launch.
+   */
+  nagShownAt: string | null
 }
 
 const PREF_KEY = 'wbs-gantt.prefs'
@@ -56,6 +84,17 @@ export const DEFAULT_PREFS: Prefs = {
   theme: DEFAULT_THEME,
   guideDismissed: false,
   guideDone: [],
+  updateNoticeDismissed: false,
+  updateAnchorAt: null,
+  nagShownAt: null,
+}
+
+// An instant this module wrote itself. Anything else — absent, from an older
+// build, hand-edited — reads as "never", which the store then heals. Parsing
+// rather than pattern-matching because `Date.parse` is the operation that
+// actually has to succeed later.
+function isInstant(v: unknown): v is string {
+  return typeof v === 'string' && !Number.isNaN(Date.parse(v))
 }
 
 // Anything unrecognised falls back to the default rather than propagating: a
@@ -77,6 +116,14 @@ export function loadPrefs(): Prefs {
       guideDone: Array.isArray(parsed.guideDone)
         ? parsed.guideDone.filter((s): s is string => typeof s === 'string')
         : DEFAULT_PREFS.guideDone,
+      updateNoticeDismissed:
+        typeof parsed.updateNoticeDismissed === 'boolean'
+          ? parsed.updateNoticeDismissed
+          : DEFAULT_PREFS.updateNoticeDismissed,
+      updateAnchorAt: isInstant(parsed.updateAnchorAt)
+        ? parsed.updateAnchorAt
+        : DEFAULT_PREFS.updateAnchorAt,
+      nagShownAt: isInstant(parsed.nagShownAt) ? parsed.nagShownAt : DEFAULT_PREFS.nagShownAt,
     }
   } catch {
     return DEFAULT_PREFS

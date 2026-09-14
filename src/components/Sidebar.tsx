@@ -31,6 +31,10 @@ export function Sidebar() {
   const projects = useStore((s) => s.projects)
   const tasks = useStore((s) => s.tasks)
   const logs = useStore((s) => s.logs)
+  // The dot means "there is something to read in Settings", not merely "an
+  // update exists" — so it tracks the unreachable-GitHub notice specifically,
+  // and the permanent dismissal silences it for good.
+  const updateUnread = useStore((s) => s.updatePhase === 'unreachable' && !s.updateNoticeDismissed)
   const projectFilter = useStore((s) => s.projectFilter)
   const setProjectFilter = useStore((s) => s.setProjectFilter)
   const setSelected = useStore((s) => s.setSelected)
@@ -87,13 +91,21 @@ export function Sidebar() {
             <button
               key={item.id}
               onClick={() => setActiveView(item.id)}
+              title={item.id === 'settings' && updateUnread ? t('update.unreachable') : undefined}
               className={`w-full flex items-center gap-2.5 px-4 h-9 text-[12px] transition-colors border-l-2 ${
                 active
                   ? 'bg-panel2 text-fg border-accent'
                   : 'text-muted hover:text-fg hover:bg-panel2/50 border-transparent'
               }`}
             >
-              <Icon size={15} className={active ? 'text-accent' : ''} />
+              {/* The dot is absolutely positioned inside a relative wrapper so
+                  that it cannot shift the label beside it. */}
+              <span className="relative inline-flex shrink-0">
+                <Icon size={15} className={active ? 'text-accent' : ''} />
+                {item.id === 'settings' && updateUnread && (
+                  <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-delayed" />
+                )}
+              </span>
               {t(item.labelKey)}
             </button>
           )

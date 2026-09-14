@@ -15,6 +15,7 @@
 | 2026-09-13 | 设置页：语言与主题 | [2026-09-13-settings-i18n-theme.md](docs/plans/2026-09-13-settings-i18n-theme.md) | `169e89b` added a settings page with three languages and four colour themes | `1559b7da` |
 | 2026-09-13 | 入门引导（计划里是六步，做成七步） | [2026-09-13-getting-started-guide.md](docs/plans/2026-09-13-getting-started-guide.md) | `63bd162` guidance for beginners，后续修补在 `b5fbf54` | `1559b7da` |
 | 2026-09-14 | 父任务的待填提醒与批量填写 | [2026-09-14-parent-subtask-logs.md](docs/plans/2026-09-14-parent-subtask-logs.md) | | 本次 |
+| 2026-09-14 | 设置页「版本 / 更新」区块 | [2026-09-14-update-ui.md](docs/plans/2026-09-14-update-ui.md) | | 本次 |
 
 源文件对应关系（便于回查原始位置）：
 
@@ -26,11 +27,12 @@
 ~/.claude/plans/squishy-scribbling-tide.md     -> docs/plans/2026-09-13-settings-i18n-theme.md
 ~/.claude/plans/wise-coalescing-nebula.md      -> docs/plans/2026-09-13-getting-started-guide.md
                                                   和 docs/plans/2026-09-14-parent-subtask-logs.md（同一个文件被写两次）
+~/.claude/plans/breezy-stargazing-firefly.md   -> docs/plans/2026-09-14-update-ui.md
 ```
 
 ## 阅读须知
 
-- **这是计划，不是实现记录。** 文件内容是获批那一刻的方案。实际实现过程中的偏离、追加需求、砍掉的部分默认不会体现，只在下面按例外列出。**唯一的例外是 2026-09-14 那一份**：它按用户要求把获批后的修订写进了自己的「八、获批之后的修订」一节，所以那一份不是纯快照，读的时候要看那一节。
+- **这是计划，不是实现记录。** 文件内容是获批那一刻的方案。实际实现过程中的偏离、追加需求、砍掉的部分默认不会体现，只在下面按例外列出。**例外是 2026-09-14 那两份**：《父任务的待填提醒与批量填写》按用户要求把获批后的修订写进了自己的「八、获批之后的修订」一节；《设置页「版本 / 更新」区块》同样带一节「八、获批之后的修订」（十一条：十条来自获批后的复核 agent，一条是实现时实测推翻了计划本身的正确性问题 —— 计划让用 Vite `define` 注入版本号，而 `define` 在 dev 下不生效，会直接白屏）。所以这两份都不是纯快照，读的时候要看那一节。
 - 计划里没提、但实现时改掉的，逐条记在这里：
   - 日期详情面板最后把入口加到了甘特图时间轴表头上（原计划只做 Calendar）；
   - 日历改造原计划用水位高度表示日志完成率，实测后改成了义务方块，原因见 `FEATURES.md` 第 4.10 节；

@@ -49,35 +49,71 @@ process.env.TAURI_SIGNING_PRIVATE_KEY = readFileSync(KEY_PATH, 'utf8').replace(/
 process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ''
 run('npm run tauri build')
 
-// 3. read signature and write the update manifest
-const signature = readFileSync(sigPath, 'utf8').trim()
-const url = `https://github.com/${REPO}/releases/download/${tag}/${encodeURIComponent(setupName)}`
-writeFileSync(
-  'latest.json',
-  JSON.stringify(
-    {
-      version,
-      notes,
-      pub_date: new Date().toISOString(),
-      platforms: { [TARGET]: { signature, url } },
-    },
-    null,
-    2,
-  ) + '\n',
-)
+// 3. the update manifest
+// The download URL has to name the asset exactly as GitHub stored it, and GitHub
+// rewrites asset filenames on upload (spaces become dots). So the caller passes
+// in the name GitHub reported back — never the local file name.
+function writeManifest(assetName) {
+  const signature = readFileSync(sigPath, 'utf8').trim()
+  const url = `https://github.com/${REPO}/releases/download/${tag}/${encodeURIComponent(assetName)}`
+  writeFileSync(
+    'latest.json',
+    JSON.stringify(
+      {
+        version,
+        notes,
+        pub_date: new Date().toISOString(),
+        platforms: { [TARGET]: { signature, url } },
+      },
+      null,
+      2,
+    ) + '\n',
+  )
+  return url
+}
 
 // 4. publish via GitHub CLI
+// The release starts as a draft: releases/latest keeps serving the previous
+// manifest until this one is complete. A live release whose latest.json is
+// missing or points at a 404 silently stops updates for every user, and keeps
+// doing it until somebody notices.
 const notesFile = '.release-notes.md'
 writeFileSync(notesFile, notes || 'No release notes.')
+
+let draftOpen = false
 try {
-  run(`gh release create ${tag} "${exePath}" "latest.json" --title "${tag}" --notes-file ${notesFile} --repo ${REPO}`)
+  run(`gh release create ${tag} "${exePath}" --draft --title "${tag}" --notes-file ${notesFile} --repo ${REPO}`)
+  draftOpen = true
+
+  // Ask GitHub what it actually named the asset instead of guessing.
+  const assets = JSON.parse(
+    execSync(`gh release view ${tag} --repo ${REPO} --json assets`, { encoding: 'utf8' }),
+  ).assets
+  const assetName = assets.map((a) => a.name).find((n) => n.endsWith('-setup.exe'))
+  if (!assetName) {
+    throw new Error(`Release 里没有安装包资源（实际有：${assets.map((a) => a.name).join(', ') || '无'}）`)
+  }
+
+  const url = writeManifest(assetName)
+  console.log(`   manifest url → ${url}`)
+  run(`gh release upload ${tag} latest.json --repo ${REPO}`)
+  run(`gh release edit ${tag} --repo ${REPO} --draft=false`)
   console.log(`\n✅ Release ${tag} published. Users will auto-update on next launch.\n`)
 } catch (err) {
-  console.log('\n⚠️  gh CLI 未安装或未登录，未能自动发布。')
+  console.log(`\n⚠️  未能自动完成发布：${err.message}`)
+  if (draftOpen) {
+    console.log(`   已留下草稿 Release ${tag}。草稿不会被 releases/latest 看到，现有用户不受影响；`)
+    console.log('   补完或删除后重试即可（gh release upload / gh release edit / gh release delete）。')
+  }
+  // Manual path: GitHub rewrites spaces in asset names to dots, so point the URL
+  // at the name it will most likely end up with.
+  writeManifest(setupName.replace(/ /g, '.'))
   console.log(`请手动把下面两个文件上传到 GitHub Release（tag: ${tag}）：`)
   console.log(`  1. ${exePath}`)
   console.log('  2. latest.json')
-  console.log('  或在安装并登录 gh 后重新运行本脚本。\n')
+  console.log(`上传后打开 https://github.com/${REPO}/releases/latest/download/latest.json 核对 url 字段，`)
+  console.log('确认它真能下到安装包（GitHub 会把文件名里的空格改成点）。')
+  console.log('或在安装并登录 gh 后重新运行本脚本。\n')
 }
 
 // 5. stamp the release date into the docs
