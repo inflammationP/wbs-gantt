@@ -463,7 +463,7 @@ const en = {
   'guide.explain.tour.logs':
     'Logs — everything written, collected by day; a strict task’s entries carry their target progress too.',
   'guide.explain.tour.manage':
-    'Manage — the overview: what is on today, what is coming, what has slipped, then projects and tasks broken out below.',
+    'Manage — the overview: what is on today, what is coming, what has slipped, then a year of completion shading, and projects and tasks broken out below.',
   'guide.explain.tour.calendar':
     'Calendar — the month at a glance. A cell’s shade is how much of that day’s strict work was logged, and days carrying milestones or overdue work are marked.',
   'guide.explain.tour.settings':
@@ -819,7 +819,7 @@ const zh: Dict = {
     '这四个页面读的都是你刚建起来的看板 —— 就算它还很小，每个页面上也有东西可看。各一句：',
   'guide.explain.tour.logs': '日志 —— 所有写过的内容按天汇总；严格任务的条目还带着目标进度。',
   'guide.explain.tour.manage':
-    'Manage —— 整体概览：今天该做什么、接下来是什么、哪些逾期了，下面再按项目和任务分列。',
+    'Manage —— 整体概览：今天该做什么、接下来是什么、哪些逾期了，往下是一年的完成热力图，再往下按项目和任务分列。',
   'guide.explain.tour.calendar':
     '日历 —— 整月一屏。每格的深浅是当天严格任务的日志覆盖率，有里程碑或逾期任务的日子会标出来。',
   'guide.explain.tour.settings': '设置 —— 三种语言、四套配色，随时可切。',
@@ -1186,7 +1186,7 @@ const fr: Dict = {
   'guide.explain.tour.logs':
     'Journaux — tout ce qui a été écrit, rassemblé par jour ; les entrées d’une tâche stricte portent aussi leur avancement cible.',
   'guide.explain.tour.manage':
-    'Gestion — la vue d’ensemble : ce qui est au programme aujourd’hui, ce qui arrive, ce qui a glissé, puis les projets et les tâches détaillés en dessous.',
+    'Gestion — la vue d’ensemble : ce qui est au programme aujourd’hui, ce qui arrive, ce qui a glissé, puis une année de complétion en nuance, et les projets et les tâches détaillés en dessous.',
   'guide.explain.tour.calendar':
     'Calendrier — le mois d’un coup d’œil. La nuance d’une case indique la part du travail strict journalisée ce jour-là, et les jours portant un jalon ou du retard sont signalés.',
   'guide.explain.tour.settings':
