@@ -9,6 +9,7 @@ import { formatShortDate } from '../lib/i18n'
 import { useLang, useT } from '../lib/useT'
 import { computeWbs, effectiveStates } from '../lib/tree'
 import { useDialogs } from '../components/dialogs'
+import { CompletionHeatmap, YEAR_WEEKS } from '../components/CompletionHeatmap'
 
 // Dashboard, Tasks, Projects and Statistics used to be four separate pages that
 // each re-derived the same numbers. They are one page now, in three bands:
@@ -125,6 +126,16 @@ export function ManagePage() {
                 <TaskRow key={task.id} task={task} status={eff.get(task.id)?.status ?? 'not-started'} project={projects.find((p) => p.id === task.projectId)} onClick={() => setSelected(task.id)} overdue />
               ))}
             </Section>
+          </div>
+        </div>
+
+        {/* ---- Heatmap ---- */}
+        <div>
+          <h2 className="text-[14px] font-semibold text-fg mb-3">{t('manage.heat')}</h2>
+          <div className="bg-panel border border-border rounded-[3px] p-4">
+            {/* The whole board, a year back from today — the page is wide enough
+                for the year the panel has to truncate to five months. */}
+            <CompletionHeatmap taskId={null} start={null} end={null} weeks={YEAR_WEEKS} />
           </div>
         </div>
 

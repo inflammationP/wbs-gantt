@@ -12,7 +12,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { Row, RowTask, RowTodoGroup } from '../../lib/tree'
-import { STATUS_META, sig, sigAlpha, sigText, priorityMeta } from '../../lib/ui'
+import { STATUS_META, sig, sigAlpha, sigText } from '../../lib/ui'
 import { useStore } from '../../store/useStore'
 import { useT } from '../../lib/useT'
 import { useDialogs } from '../dialogs'
@@ -64,6 +64,7 @@ export function RowLeft({ row, todo, onAddChild, onEdit, onContext }: Props) {
   const setSelected = useStore((s) => s.setSelected)
   const toggleExpanded = useStore((s) => s.toggleExpanded)
   const deleteTask = useStore((s) => s.deleteTask)
+  const projects = useStore((s) => s.projects)
   // Folders are collapsed until explicitly opened, tasks are expanded until
   // explicitly closed — so "absent from the map" means the opposite for each.
   const expandedEntry = useStore((s) => s.expanded[row.id])
@@ -82,9 +83,11 @@ export function RowLeft({ row, todo, onAddChild, onEdit, onContext }: Props) {
   }
 
   const isTodo = row.task.isTodo
-  const prio = priorityMeta(row.task.priority)
   const meta = STATUS_META[row.eff.status]
   const checked = todo.selected.has(row.id)
+  // Identity, not status: tasks from several projects share this column, and the
+  // project is what the tree can't otherwise show.
+  const project = projects.find((p) => p.id === row.task.projectId)
 
   const handleDelete = (e: MouseEvent) => {
     e.stopPropagation()
@@ -124,14 +127,24 @@ export function RowLeft({ row, todo, onAddChild, onEdit, onContext }: Props) {
       </div>
       {/* name — to-dos get a dashed chip so unscheduled work is unmistakable */}
       <div className="flex-1 min-w-0 flex items-center gap-1.5 pr-1">
-        {/* Fixed-width glyph slot: the priority dot, the to-do ring and the
+        {/* Fixed-width glyph slot: the project dot, the to-do ring and the
             folder icon are different widths, and without this the names below
             them start at different x positions. */}
         <span className="shrink-0 flex items-center justify-center" style={{ width: GLYPH_W }}>
           {isTodo ? (
             <CircleDashed size={12} style={{ color: sig('todo') }} />
           ) : (
-            <span className="w-1.5 h-1.5 rounded-full" style={{ background: sig(prio.token) }} title={t('priority.title', { level: t(prio.labelKey) })} />
+            // The project's own colour — picked for identity, not contrast, so
+            // it stays a mark and never becomes text (see ManagePage's TaskRow).
+            // A dangling projectId (hand-edited import) draws nothing rather
+            // than an undefined colour.
+            project && (
+              <span
+                className="w-1.5 h-1.5 rounded-full"
+                style={{ background: project.color }}
+                title={`${t('common.project')}: ${project.name}`}
+              />
+            )
           )}
         </span>
         <span

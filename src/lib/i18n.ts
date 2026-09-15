@@ -234,6 +234,13 @@ const en = {
   'task.pause': 'Pause task',
   'task.pauseHistory': 'Pause history ({count})',
   'task.pauseEntry': 'Paused {from} → resumed {to}',
+  'task.heat.title': 'Completion',
+  'task.heat.done': 'Done',
+  'task.heat.pending': 'Not done',
+  'task.heat.none': 'Not scheduled',
+  'task.heat.count': { one: '{count} task done', other: '{count} tasks done' },
+  'task.heat.less': 'Less',
+  'task.heat.more': 'More',
   'task.setAsTodoConfirm': 'Mark "{name}" as to-do?\n\nIts dates, priority and progress are cleared.',
   'task.setAsTodoConfirmMany': {
     one:
@@ -307,6 +314,7 @@ const en = {
 
   // --- manage ---
   'manage.overall': 'Overall',
+  'manage.heat': 'Completion heatmap',
   'manage.totalTasks': 'Total tasks',
   'manage.leafTasks': { one: '{count} leaf task', other: '{count} leaf tasks' },
   'manage.upcoming': 'Upcoming (7 days)',
@@ -622,6 +630,13 @@ const zh: Dict = {
   'task.pause': '暂停任务',
   'task.pauseHistory': '暂停记录（{count}）',
   'task.pauseEntry': '暂停于 {from} → 恢复于 {to}',
+  'task.heat.title': '完成情况',
+  'task.heat.done': '已完成',
+  'task.heat.pending': '未完成',
+  'task.heat.none': '无排期',
+  'task.heat.count': { one: '完成 {count} 项任务', other: '完成 {count} 项任务' },
+  'task.heat.less': '少',
+  'task.heat.more': '多',
   'task.setAsTodoConfirm': '确定将“{name}”设为待办？\n\n它的日期、优先级和进度将被清除。',
   'task.setAsTodoConfirmMany': {
     one: '确定将“{name}”及其 {count} 项未完成的子任务设为待办？\n\n它们的日期、优先级和进度将被清除；已完成的子任务不受影响。',
@@ -680,6 +695,7 @@ const zh: Dict = {
   'day.viewTask': '查看任务 →',
 
   'manage.overall': '总览',
+  'manage.heat': '完成热力图',
   'manage.totalTasks': '任务总数',
   'manage.leafTasks': { one: '{count} 项末级任务', other: '{count} 项末级任务' },
   'manage.upcoming': '未来 7 天',
@@ -976,6 +992,13 @@ const fr: Dict = {
   'task.pause': 'Mettre en pause',
   'task.pauseHistory': 'Historique des pauses ({count})',
   'task.pauseEntry': 'En pause le {from} → reprise le {to}',
+  'task.heat.title': 'Complétion',
+  'task.heat.done': 'Fait',
+  'task.heat.pending': 'Non fait',
+  'task.heat.none': 'Non planifié',
+  'task.heat.count': { one: '{count} tâche faite', other: '{count} tâches faites' },
+  'task.heat.less': 'Moins',
+  'task.heat.more': 'Plus',
   'task.setAsTodoConfirm':
     'Marquer « {name} » comme tâche à faire ?\n\nSes dates, sa priorité et son avancement seront effacés.',
   'task.setAsTodoConfirmMany': {
@@ -1035,6 +1058,7 @@ const fr: Dict = {
   'day.viewTask': 'Voir la tâche →',
 
   'manage.overall': 'Vue d’ensemble',
+  'manage.heat': 'Carte de complétion',
   'manage.totalTasks': 'Tâches au total',
   'manage.leafTasks': { one: '{count} tâche feuille', other: '{count} tâches feuilles' },
   'manage.upcoming': 'À venir (7 jours)',

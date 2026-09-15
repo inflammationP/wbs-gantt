@@ -10,6 +10,7 @@ import { STATUS_META, priorityMeta, sig, sigText } from '../lib/ui'
 import { diffDays, toDate } from '../lib/dates'
 import { formatDayMonthYear } from '../lib/i18n'
 import { useLang, useT } from '../lib/useT'
+import { CompletionHeatmap } from './CompletionHeatmap'
 import { LogDialog } from './LogDialog'
 import { StartTodoDialog } from './StartTodoDialog'
 import { useDialogs } from './dialogs'
@@ -285,6 +286,12 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
               <div className="h-full" style={{ width: `${effProgress}%`, background: sig(meta.token), opacity: 0.7 }} />
             </div>
           </div>
+        )}
+
+        {/* The same days the Calendar counts, drawn as squares. A to-do has no
+            schedule to draw, so it is the one task kind left out. */}
+        {!task.isTodo && (
+          <CompletionHeatmap taskId={task.id} start={eff?.start ?? null} end={eff?.end ?? null} title={t('task.heat.title')} />
         )}
 
         {/* tags */}
