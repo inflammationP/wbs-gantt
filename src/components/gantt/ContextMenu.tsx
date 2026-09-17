@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import type { ReactNode } from 'react'
-import { CornerUpLeft, NotebookPen, Pencil, Plus, Trash2 } from 'lucide-react'
+import { CornerUpLeft, NotebookText, Pencil, Plus, Trash2 } from 'lucide-react'
 import { RowTask } from '../../lib/tree'
 import { useT } from '../../lib/useT'
 
@@ -63,7 +63,7 @@ export function ContextMenu({ menu, onClose, onAddChild, onAddSibling, onEdit, o
         <div className="my-1 border-t border-line" />
         <Item icon={<Pencil size={13} />} label={t('common.edit')} onClick={() => { onEdit(menu.row); onClose() }} />
         {menu.row.eff.status === 'in-progress' || menu.row.eff.status === 'delayed' ? (
-          <Item icon={<NotebookPen size={13} />} label={t('log.write')} onClick={() => { onWriteLog(menu.row); onClose() }} />
+          <Item icon={<NotebookText size={13} />} label={t('log.write')} onClick={() => { onWriteLog(menu.row); onClose() }} />
         ) : null}
         <Item icon={<CornerUpLeft size={13} />} label={t('gantt.moveToTopLevel')} onClick={() => { onOutdent(menu.row); onClose() }} />
         <div className="my-1 border-t border-line" />

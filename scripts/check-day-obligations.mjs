@@ -15,6 +15,7 @@ import { createServer } from 'vite'
 
 const server = await createServer({ server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' })
 const { strictLogObligations } = await server.ssrLoadModule('/src/lib/dayTasks.ts')
+const { taskProgress } = await server.ssrLoadModule('/src/lib/progress.ts')
 
 const TODAY = '2026-09-15'
 
@@ -28,9 +29,9 @@ const task = (over) => ({
   ...over,
 })
 
-// `taskProgress` takes a strict task's latest log at its word when that log
-// carries a target, which is how these fixtures pin a progress without having
-// to write a window's worth of entries.
+// `taskProgress` takes a strict task's latest *target-carrying* log at its word,
+// which is how these fixtures pin a progress without having to write a window's
+// worth of entries. A log left with `null` states nothing and is walked past.
 const log = (taskId, date, targetProgress = null) => ({
   id: `${taskId}@${date}`, taskId, date, content: '', targetProgress, createdAt: '', updatedAt: '',
 })
@@ -81,6 +82,15 @@ assert.deepEqual(owes([task({ isTodo: true, startDate: null, endDate: null })], 
 assert.deepEqual(owes([task({ type: 'long-term', endDate: null })], []), [])
 // A plain (non-strict) leaf owes nothing either: it has no log to write.
 assert.deepEqual(owes([task({ strictProgress: false })], []), [])
+
+// A log that states no target states *nothing* — it must not erase a number an
+// earlier log wrote. Reading only the latest row did exactly that: this pair
+// reported the fallback (2 logged days ÷ 19 ≈ 11%), so a task finished on the
+// 10th quietly un-finished itself because someone wrote a diary entry on the
+// 12th, and came back to owe a log every day from then on.
+const stated = [log('a', '2026-09-10', 100), log('a', '2026-09-12')]
+assert.deepEqual(owes([task({})], stated, '2026-09-20'), [])
+assert.equal(taskProgress(task({}), stated, new Date(2026, 8, 20)), 100)
 
 await server.close()
 console.log('day obligations: ok')

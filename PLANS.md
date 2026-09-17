@@ -16,6 +16,9 @@
 | 2026-09-13 | 入门引导（计划里是六步，做成七步） | [2026-09-13-getting-started-guide.md](docs/plans/2026-09-13-getting-started-guide.md) | `63bd162` guidance for beginners，后续修补在 `b5fbf54` | `1559b7da` |
 | 2026-09-14 | 父任务的待填提醒与批量填写 | [2026-09-14-parent-subtask-logs.md](docs/plans/2026-09-14-parent-subtask-logs.md) | `a8a0939` Parent tasks now show which subtasks still owe a log today… | `1559b7da` |
 | 2026-09-14 | 设置页「版本 / 更新」区块 | [2026-09-14-update-ui.md](docs/plans/2026-09-14-update-ui.md) | `cec6c40` 0.3.3 updated auto update check and install（v0.3.3） | 本次 |
+| 2026-09-17 | 日志进度：两个格子，必填 | [2026-09-17-log-progress-required.md](docs/plans/2026-09-17-log-progress-required.md) | 待提交 | 本次 |
+
+> 最后那份也带一节「获批之后的修订」（三条：报错时两格一起标红、必填提示要指明是哪个格子、推翻了获批方案里「增量可为负」这条），读的时候要看那一节。
 
 源文件对应关系（便于回查原始位置）：
 

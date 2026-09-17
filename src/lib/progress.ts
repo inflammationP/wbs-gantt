@@ -28,10 +28,19 @@ export function taskProgress(task: Task, logs: TaskLog[], onDate: Date): number 
     .filter((l) => l.taskId === task.id)
     .sort((a, b) => a.date.localeCompare(b.date))
   if (own.length === 0) return 0
-  const last = own[own.length - 1]
-  // Manual override: the latest log's explicit target progress wins.
-  if (last.targetProgress != null) return Math.max(0, Math.min(100, last.targetProgress))
+  // The latest log that *states* a target wins — searched back through the list
+  // rather than read off the last row. A log carrying no target states nothing
+  // and must not erase a number an earlier one wrote: reading only the last row
+  // let a blank log drop a stated 50% to "logged days ÷ window days".
+  for (let i = own.length - 1; i >= 0; i--) {
+    const stated = own[i].targetProgress
+    if (stated != null) return Math.max(0, Math.min(100, stated))
+  }
   // Auto-accumulate: each distinct logged day counts as one slice of the total.
+  // Every log written since the progress fields became mandatory carries a
+  // target, so this branch is only ever reached by logs written before that —
+  // keeping it is what stops those tasks from reading 0% (and, once their window
+  // filled up, from coming back to owe a log every day forever).
   if (task.startDate == null || task.endDate == null) return 0
   const totalDays = Math.max(1, diffDays(toDate(task.startDate), toDate(task.endDate)))
   const loggedDays = new Set(own.map((l) => l.date)).size

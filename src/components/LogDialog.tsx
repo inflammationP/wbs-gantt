@@ -3,10 +3,24 @@ import type { KeyboardEvent } from 'react'
 import { Modal, Field, inputCls } from './ui'
 import { useStore } from '../store/useStore'
 import { Task, TaskLog } from '../types'
-import { todayISO } from '../lib/dates'
-import { pendingLogsUnder } from '../lib/dayTasks'
-import { hasChildren } from '../lib/tree'
+import { addDays, toDate, toISO, todayISO } from '../lib/dates'
+import { isStrictLeaf, pendingLogsUnder } from '../lib/dayTasks'
+import { buildChildrenMap, hasChildren } from '../lib/tree'
+import { taskProgress } from '../lib/progress'
 import { useT } from '../lib/useT'
+
+// `inputCls` carries `border-border`, and a red box has to not race it in the
+// stylesheet — swapping the token out is explicit about which one is in force.
+const errCls = inputCls.replace('border-border', 'border-delayed')
+
+const clampPct = (n: number) => Math.max(0, Math.min(100, n))
+
+/** A half-typed number — `-`, `1.` — is not a number yet, and not 0 either. */
+function parseNum(s: string): number | null {
+  if (s.trim() === '') return null
+  const n = Number(s)
+  return Number.isFinite(n) ? n : null
+}
 
 interface Props {
   taskId: string
@@ -52,6 +66,8 @@ export function LogDialog({ taskId, existing, defaultDate, onClose }: Props) {
     () => (hasChildren(tasks, taskId) ? pendingLogsUnder(tasks, logs, today, taskId) : []),
     [tasks, logs, today, taskId],
   )
+
+  const children = useMemo(() => buildChildrenMap(tasks), [tasks])
 
   // Batch only when there is a gap to walk. With none, this is the ordinary log
   // button it has always been, writing on the task it was opened from; a leaf
@@ -106,11 +122,12 @@ export function LogDialog({ taskId, existing, defaultDate, onClose }: Props) {
           task={targetTask}
           existing={existing}
           defaultDate={defaultDate}
+          logs={logs}
           // A target progress is only ever read back on a strict *leaf*
           // (`isStrictLeaf`), so offering the field on a task with children
           // would collect a number nothing reads — the same lie the detail
           // panel used to tell about a parent's progress mode.
-          strict={targetTask.strictProgress === true && targetTask.type === 'phase' && !hasChildren(tasks, target)}
+          strict={isStrictLeaf(targetTask, children)}
           saveLabel={batch && pending.some((p) => p.id !== target) ? t('log.saveNext') : t('common.save')}
           onSave={save}
           onCancel={onClose}
@@ -124,6 +141,7 @@ function LogForm({
   task,
   existing,
   defaultDate,
+  logs,
   strict,
   saveLabel,
   onSave,
@@ -132,6 +150,7 @@ function LogForm({
   task: Task
   existing?: TaskLog | null
   defaultDate?: string
+  logs: TaskLog[]
   strict: boolean
   saveLabel: string
   onSave: (date: string, content: string, targetProgress: number | null) => void
@@ -141,8 +160,52 @@ function LogForm({
 
   const [date, setDate] = useState(existing?.date ?? defaultDate ?? todayISO())
   const [content, setContent] = useState(existing?.content ?? '')
-  const [targetProgress, setTargetProgress] = useState<number | null>(existing?.targetProgress ?? null)
-  const [showTarget, setShowTarget] = useState(existing?.targetProgress != null)
+  const [error, setError] = useState<'missing' | 'backward' | null>(null)
+
+  // The task's progress as of the day *before* this log — what "increase" is
+  // measured from. Clipped to the previous day and to logs other than the one
+  // being edited, so pushing the date forward can't make a log its own baseline.
+  const base = useMemo(() => {
+    if (!date) return 0
+    const before = addDays(toDate(date), -1)
+    const prior = logs.filter((l) => l.id !== existing?.id && l.date <= toISO(before))
+    return taskProgress(task, prior, before) ?? 0
+  }, [logs, task, date, existing?.id])
+
+  // One number, two boxes. `src` is whichever the user typed into and stays the
+  // master until they type into the other; the other is re-derived from `base`
+  // on every render, so changing the date moves it with the baseline. Held as
+  // the raw string rather than a number because "" is a state of its own — an
+  // empty required box must not read as 0, and neither must a lone "-".
+  const [prog, setProg] = useState<{ src: 'delta' | 'absolute'; input: string }>(() => {
+    const stored = existing?.targetProgress
+    if (stored != null) return { src: 'absolute', input: String(stored) }
+    // A log written before the field became mandatory has no number of its own.
+    // It opens at the baseline, so saving it untouched writes nothing new —
+    // which is what "don't send the user back to fix old logs" has to mean.
+    return { src: 'absolute', input: existing ? String(base) : '' }
+  })
+  // Frozen at mount: the number the user was shown, so "left it alone" can be
+  // told apart from "typed the same thing back".
+  const seed = useRef(prog.input).current
+  const touched = prog.input !== seed
+
+  const typed = parseNum(prog.input)
+  const absolute = typed == null ? null : clampPct(prog.src === 'absolute' ? typed : base + typed)
+  const delta = absolute == null ? null : absolute - base
+  const deltaText = prog.src === 'delta' ? prog.input : delta == null ? '' : String(delta)
+  const absoluteText = prog.src === 'absolute' ? prog.input : absolute == null ? '' : String(absolute)
+
+  // Only one of the two is ever stored, so the clamp lives on the absolute and
+  // the delta's own range is whatever lands inside it — [-base, 100 - base], of
+  // which the lower half is rejected on save rather than clamped away (see
+  // `submit`). Out of the top of the range, the typed box is brought back in
+  // line on blur rather than mid-keystroke, which would rewrite it under the
+  // caret.
+  const settle = () => {
+    if (absolute == null) return
+    setProg((p) => ({ ...p, input: String(p.src === 'delta' ? absolute - base : absolute) }))
+  }
 
   const taRef = useRef<HTMLTextAreaElement>(null)
   // Caret position to restore after the controlled re-render; setting
@@ -179,8 +242,29 @@ function LogForm({
   }
 
   const submit = () => {
-    if (!content.trim()) return
-    onSave(date, content, strict ? targetProgress : null)
+    // A cleared date would be written as '' — which sorts before every real
+    // date and so falls inside `logsUpTo` for every day there has ever been.
+    if (!content.trim() || !date) return
+    if (!strict) {
+      onSave(date, content, null)
+      return
+    }
+    if (absolute == null) {
+      setError('missing')
+      return
+    }
+    // A retreat is not a typo to be clamped away — the figure is a record of
+    // work done, and lowering it rewrites history rather than reporting it.
+    // Only checked on a value the user actually chose: an untouched row writes
+    // back whatever it already carried, including the retreats old data has.
+    if (touched && absolute < base) {
+      setError('backward')
+      return
+    }
+    // Never typed into: write back what the row already carried, so opening a
+    // log and pressing save is a true no-op instead of stamping a number onto a
+    // row that deliberately had none.
+    onSave(date, content, touched ? absolute : (existing?.targetProgress ?? null))
   }
 
   return (
@@ -203,28 +287,48 @@ function LogForm({
       </Field>
 
       {strict && (
-        <div className="border-t border-line pt-2">
-          <button onClick={() => setShowTarget(!showTarget)} className="flex items-center gap-1 text-[12px] text-muted hover:text-fg">
-            <span className="text-[10px]">{showTarget ? '▾' : '▸'}</span>
-            {t('log.setTarget')}
-          </button>
-          {showTarget && (
-            <div className="mt-2">
-              <Field label={t('log.progressAfterDay')}>
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  className={inputCls}
-                  value={targetProgress ?? ''}
-                  onChange={(e) =>
-                    setTargetProgress(e.target.value === '' ? null : Math.max(0, Math.min(100, Number(e.target.value))))
-                  }
-                  placeholder={t('log.targetPlaceholder')}
-                />
-              </Field>
-            </div>
-          )}
+        <div className="border-t border-line pt-3">
+          {/* Two boxes on one number: typing in either fills the other. "Did
+              nothing today" is a 0 in the delta — one keystroke, no arithmetic
+              against a total nobody remembers. */}
+          <div className="grid grid-cols-2 gap-2">
+            <Field label={t('log.progressAdd')}>
+              <input
+                // Not `type="number"`: a lone "-" reports as "" there, so the
+                // minus is swallowed on re-render and a retreat becomes
+                // untypeable — which is the whole point of this box.
+                type="text"
+                inputMode="decimal"
+                className={error ? errCls : inputCls}
+                value={deltaText}
+                onChange={(e) => {
+                  setError(null)
+                  setProg({ src: 'delta', input: e.target.value })
+                }}
+                onBlur={settle}
+              />
+            </Field>
+            <Field label={t('log.progressAfterDay')}>
+              <input
+                type="text"
+                inputMode="decimal"
+                className={error ? errCls : inputCls}
+                value={absoluteText}
+                onChange={(e) => {
+                  setError(null)
+                  setProg({ src: 'absolute', input: e.target.value })
+                }}
+                onBlur={settle}
+              />
+            </Field>
+          </div>
+          <div className={`text-[11px] mt-1 ${error ? 'text-delayed' : 'text-dim'}`}>
+            {error === 'backward'
+              ? t('log.progressBackward')
+              : error === 'missing'
+                ? t('log.progressRequired', { add: t('log.progressAdd') })
+                : t('log.currentProgress', { percent: base })}
+          </div>
         </div>
       )}
 

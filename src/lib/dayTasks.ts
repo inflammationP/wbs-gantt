@@ -84,8 +84,15 @@ export function isPausedOnDay(task: Task, day: string): boolean {
   return task.paused && task.pauseDate != null && task.pauseDate <= day
 }
 
-/** `strictProgress` is inert on parents — only leaves ever feed `taskProgress`. */
-function isStrictLeaf(task: Task, children: Map<string | null, Task[]>): boolean {
+/**
+ * The tasks a log's progress field means something on. Exported because
+ * `LogDialog` has to ask the same question before it offers the field — a
+ * mandatory field on a task whose value nothing reads is the worst version of
+ * this duplication.
+ *
+ * `strictProgress` is inert on parents — only leaves ever feed `taskProgress`.
+ */
+export function isStrictLeaf(task: Task, children: Map<string | null, Task[]>): boolean {
   return (
     !task.isTodo &&
     task.type === 'phase' &&

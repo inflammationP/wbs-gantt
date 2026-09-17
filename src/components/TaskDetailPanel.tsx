@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { NotebookPen, Pencil, Trash2, X } from 'lucide-react'
+import { NotebookText, Pencil, Trash2, X } from 'lucide-react'
 import { Task, TaskLog } from '../types'
 import { useStore } from '../store/useStore'
 import { computeWbs, effectiveStates, todoCascadeIds } from '../lib/tree'
@@ -112,7 +112,7 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
       <div className="flex-1 overflow-auto p-4 space-y-4">
         {isLoggable && (
           <button onClick={() => setLogDialog({ existing: null })} className="w-full h-8 inline-flex items-center justify-center gap-1.5 text-[12px] font-medium bg-accent text-on-accent rounded-[3px] hover:brightness-110">
-            <NotebookPen size={14} /> {t('log.write')}
+            <NotebookText size={14} /> {t('log.write')}
           </button>
         )}
 

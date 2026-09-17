@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
-import { Check, ChevronDown, ChevronRight, NotebookPen, Pencil, ScrollText, TriangleAlert } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, NotebookText, Pencil, ScrollText, TriangleAlert } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { Chore, TaskLog } from '../types'
 import { DayRow, daySummary } from '../lib/dayTasks'
@@ -343,20 +343,44 @@ function DayRowView({
 
   return (
     <div className="group">
-      <div className="relative">
+      {/* The log button sits a fixed gap after the name rather than in the far
+          corner: parked at the right edge it got buried behind the badges, and
+          read as part of them. Which is also why the name no longer stretches —
+          "after the name" has to mean the name, not the space it was taking up.
+          The badges keep to the right via `ml-auto`. */}
+      <div
+        onClick={() => onToggle(row.task.id)}
+        className="flex items-center gap-1.5 pl-2 pr-2 h-7 rounded-[3px] hover:bg-panel2"
+      >
         <button
-          onClick={() => onToggle(row.task.id)}
           aria-expanded={isOpen}
-          className="w-full flex items-center gap-1.5 pl-2 pr-6 h-7 rounded-[3px] hover:bg-panel2 text-left"
+          className="min-w-0 flex items-center gap-1.5 text-left"
         >
           <span className="text-dim shrink-0">{isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>
           <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: sig(meta.token) }} />
           <span
-            className={`min-w-0 flex-1 truncate text-[12px] ${struck ? 'line-through text-dim' : 'text-fg/90'}`}
+            className={`min-w-0 truncate text-[12px] ${struck ? 'line-through text-dim' : 'text-fg/90'}`}
             title={`${row.wbs} ${row.task.name}`}
           >
             {row.task.name}
           </span>
+        </button>
+        {row.strict && (
+          <button
+            onClick={(e) => {
+              // The row as a whole toggles; writing a log is the one thing here
+              // that must not also expand it.
+              e.stopPropagation()
+              onWriteLog(row.task.id)
+            }}
+            title={t('gantt.writeLogForDay')}
+            aria-label={t('gantt.writeLogForDay')}
+            className="ml-2 shrink-0 p-1 rounded-[3px] text-dim hover:text-accent opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+          >
+            <NotebookText size={12} />
+          </button>
+        )}
+        <span className="ml-auto shrink-0 flex items-center gap-1.5">
           {missingLog && (
             <span className="shrink-0 inline-flex items-center gap-0.5 px-1 h-4 text-[9px] font-medium rounded-[2px] bg-today/15 text-today border border-today/30">
               <TriangleAlert size={9} /> {t('day.noLog')}
@@ -372,17 +396,7 @@ function DayRowView({
               {t('status.paused')}
             </span>
           )}
-        </button>
-        {row.strict && (
-          <button
-            onClick={() => onWriteLog(row.task.id)}
-            title={t('gantt.writeLogForDay')}
-            aria-label={t('gantt.writeLogForDay')}
-            className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded-[3px] text-dim hover:text-accent opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
-          >
-            <NotebookPen size={12} />
-          </button>
-        )}
+        </span>
       </div>
       {/* The bar stays mounted and animates both axes, so it genuinely grows
           rightward from zero instead of appearing at full width. */}

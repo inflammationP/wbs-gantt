@@ -68,9 +68,19 @@ const notes = await askLines(
   'Release notes — one bullet per line, blank line to finish (Enter alone to skip):\n> ',
 )
 
+// The version belongs in the commit that writes the changelog section — bump it
+// there and a release finds it already correct, writes nothing, and leaves the
+// tree clean. Reaching this branch means it was bumped late, so this file is now
+// dirty and needs a commit of its own. Said out loud rather than left to be
+// discovered: a silent extra edit here is exactly what produced the follow-up
+// "0.4.0" commits.
 if (version !== oldVersion) {
   conf.version = version
   writeFileSync(confPath, JSON.stringify(conf, null, 2) + '\n')
+  console.log(
+    `\n📝 ${confPath} 的版本号写成了 ${version}。\n` +
+      '   正常路径是写变更记录那一节时顺手改掉它，这次没赶上 —— 发布完需要为这一个文件补一次提交。\n',
+  )
 }
 
 const tag = `v${version}`
@@ -150,11 +160,14 @@ try {
   console.log('或在安装并登录 gh 后重新运行本脚本。\n')
 }
 
-// 5. stamp the release date into the docs
-// The CHANGELOG heading and FEATURES' version line carry a 待发布 placeholder that
-// has to become the real date. Done here because it was forgotten two releases
-// running. Editing a doc must never block a release, so every failure is reported
-// and skipped rather than thrown.
+// 5. stamp the release date into the docs — a fallback, not the normal path
+// Both the CHANGELOG heading and FEATURES' version line are meant to carry their
+// real date already: a section is written once, finished, and released as it
+// stands. This only fires for a 待发布 placeholder that survived — a section
+// written days before the release, whose date nobody re-checked. That case is
+// why it exists (it was forgotten by hand two releases running); in the ordinary
+// one it changes nothing, and the tree stays clean. Editing a doc must never
+// block a release, so every failure is reported and skipped rather than thrown.
 {
   const d = new Date()
   const pad = (n) => String(n).padStart(2, '0')
