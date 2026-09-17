@@ -1,4 +1,4 @@
-import { Project, Task, TaskLog } from '../types'
+import { Chore, Project, Task, TaskLog } from '../types'
 import { DEFAULT_LANG, isLang, Lang } from '../lib/i18n'
 import { DEFAULT_THEME, isThemeId, ThemeId } from '../lib/theme'
 
@@ -6,7 +6,26 @@ export interface PersistedData {
   projects: Project[]
   tasks: Task[]
   logs: TaskLog[]
+  /**
+   * Chores, kept apart from `tasks` on purpose — see `Chore` in types.ts.
+   *
+   * Optional in the type, unlike the three above: every blob written before
+   * chores existed has no such field, and `normalize` is what turns that into
+   * an empty array. Declaring it required would only move the same admission
+   * to a cast at each read.
+   */
+  chores?: Chore[]
 }
+
+/**
+ * What `normalize` guarantees: every collection present, whatever the blob had.
+ *
+ * The distinction from `PersistedData` is the whole point of these two types.
+ * On the way in, a field may be absent — old blobs, hand-edited files. On the
+ * way out it may not, so the store never has to write `?? []` and a future
+ * collection cannot be half-adopted.
+ */
+export type LoadedData = Required<PersistedData>
 
 const KEY = 'wbs-gantt.v2'
 
@@ -140,9 +159,26 @@ export function savePrefs(prefs: Prefs): void {
 // coerce missing dates to null, and default missing collections. This is also
 // the invariant repair point for to-dos — a task marked `isTodo` always comes
 // back unscheduled, however it was written.
-function normalize(data: PersistedData): PersistedData {
+function normalize(data: PersistedData): LoadedData {
   return {
     projects: data.projects,
+    chores: (Array.isArray(data.chores) ? data.chores : []).map((c) => {
+      const date = c.date ?? ''
+      const done = c.done === true
+      return {
+        ...c,
+        title: c.title ?? '',
+        note: c.note ?? '',
+        date,
+        done,
+        // `done` is authoritative in both directions. An open chore carrying a
+        // completion date would credit the heatmap for work that is not done,
+        // and a checked one from a blob written before the field existed falls
+        // back to its own date — the best guess available, and one the heatmap
+        // can use, where a null it would silently skip.
+        completedDate: done ? (c.completedDate ?? date) : null,
+      }
+    }),
     tasks: data.tasks.map((t) => {
       const isLT = t.type === 'long-term'
       const isTodo = t.isTodo === true
@@ -168,7 +204,7 @@ function normalize(data: PersistedData): PersistedData {
   }
 }
 
-export function loadData(): PersistedData | null {
+export function loadData(): LoadedData | null {
   try {
     const raw = localStorage.getItem(KEY)
     if (!raw) return null
@@ -190,16 +226,28 @@ export function saveData(data: PersistedData): void {
 
 export function exportJson(data: PersistedData): string {
   return JSON.stringify(
-    { version: 1, exportedAt: new Date().toISOString(), projects: data.projects, tasks: data.tasks, logs: data.logs },
+    {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      projects: data.projects,
+      tasks: data.tasks,
+      logs: data.logs,
+      chores: data.chores ?? [],
+    },
     null,
     2,
   )
 }
 
-export function parseImport(json: string): PersistedData {
+export function parseImport(json: string): LoadedData {
   const parsed = JSON.parse(json) as PersistedData
   if (!Array.isArray(parsed.projects) || !Array.isArray(parsed.tasks)) {
     throw new Error('Invalid file: expected { projects, tasks } arrays')
   }
-  return normalize({ projects: parsed.projects, tasks: parsed.tasks, logs: parsed.logs ?? [] })
+  return normalize({
+    projects: parsed.projects,
+    tasks: parsed.tasks,
+    logs: parsed.logs ?? [],
+    chores: parsed.chores ?? [],
+  })
 }

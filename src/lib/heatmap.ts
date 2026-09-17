@@ -1,4 +1,4 @@
-import { Task, TaskLog } from '../types'
+import { Chore, Task, TaskLog } from '../types'
 import { buildChildrenMap, collectDescendants } from './tree'
 import { activeOnDay, isPausedOnDay } from './dayTasks'
 
@@ -90,9 +90,35 @@ export function branchDayTallies(
 }
 
 /**
- * A day's tally for the whole board — every scheduled leaf in every project.
- * Manage's overview reads this.
+ * A day's tally for the whole board — every scheduled leaf in every project,
+ * plus every chore ticked off. Manage's overview reads this.
+ *
+ * Chores are counted here and only here. `branchDayTallies` is a view down one
+ * branch of the task tree, and a chore belongs to no branch — it is not a task,
+ * has no project and no parent — so there is nothing to scope one to.
+ *
+ * A chore is credited to the day it was **ticked**, not the day it was written
+ * for. Chores carry their original day through a slip, so counting by `date`
+ * would let finishing Monday's chore on Tuesday turn Monday green after the
+ * fact — a day that genuinely passed with the work undone.
+ *
+ * Only `done` moves; `total` stays with the scheduled leaves. The board shades
+ * by `done` alone, and giving chores a `total` would mean inventing an answer to
+ * "which day was this chore scheduled for" that nothing asks.
  */
-export function boardDayTallies(tasks: Task[], logs: TaskLog[], today: string, days: string[]): Map<string, DayTally> {
-  return dayTallies(logs, today, scheduledLeaves(tasks, buildChildrenMap(tasks)), days)
+export function boardDayTallies(
+  tasks: Task[],
+  logs: TaskLog[],
+  chores: Chore[],
+  today: string,
+  days: string[],
+): Map<string, DayTally> {
+  const out = dayTallies(logs, today, scheduledLeaves(tasks, buildChildrenMap(tasks)), days)
+  for (const c of chores) {
+    // `days` is a window, not all of time: a chore ticked before it starts has
+    // no square to land on, and must not fall through to one.
+    const hit = c.completedDate !== null ? out.get(c.completedDate) : undefined
+    if (hit) hit.done++
+  }
+  return out
 }

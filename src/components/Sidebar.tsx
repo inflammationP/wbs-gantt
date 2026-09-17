@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import {
-  BarChart2, Calendar, ClipboardList, Download, HelpCircle, LayoutDashboard, Minus, Pencil, Plus,
-  Settings, Upload,
+  BarChart2, Calendar, ClipboardList, Download, HelpCircle, LayoutDashboard, ListChecks, Minus,
+  Pencil, Plus, Settings, Upload,
 } from 'lucide-react'
 import { AppView, Project } from '../types'
 import { useStore } from '../store/useStore'
@@ -17,6 +17,9 @@ import { useDialogs } from './dialogs'
 // a string in it would be frozen in whichever language loaded first.
 const NAV: { id: AppView; labelKey: keyof Dict; icon: typeof BarChart2 }[] = [
   { id: 'gantt', labelKey: 'nav.gantt', icon: BarChart2 },
+  // Reads `time.today` rather than a nav key of its own — same word, same
+  // meaning, and one key fewer for the three languages to disagree about.
+  { id: 'today', labelKey: 'time.today', icon: ListChecks },
   { id: 'logs', labelKey: 'nav.logs', icon: ClipboardList },
   { id: 'manage', labelKey: 'nav.manage', icon: LayoutDashboard },
   { id: 'calendar', labelKey: 'nav.calendar', icon: Calendar },
@@ -31,6 +34,7 @@ export function Sidebar() {
   const projects = useStore((s) => s.projects)
   const tasks = useStore((s) => s.tasks)
   const logs = useStore((s) => s.logs)
+  const chores = useStore((s) => s.chores)
   // The dot means "there is something to read in Settings", not merely "an
   // update exists" — so it tracks the unreachable-GitHub banner specifically,
   // and stays lit for exactly as long as that banner is up.
@@ -52,7 +56,7 @@ export function Sidebar() {
   }
 
   const handleExport = () => {
-    const blob = new Blob([exportJson({ projects, tasks, logs })], { type: 'application/json' })
+    const blob = new Blob([exportJson({ projects, tasks, logs, chores })], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url

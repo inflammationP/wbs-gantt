@@ -32,7 +32,12 @@ const log = (taskId, date) => ({ id: `${taskId}@${date}`, taskId, date, content:
 // Every clause asks about one week, so one list of days does for all of them.
 const WEEK = ['2026-09-09', '2026-09-10', '2026-09-11', '2026-09-12', '2026-09-13', '2026-09-14', '2026-09-15']
 const talliesOf = (tasks, logs, days = WEEK) => branchDayTallies(tasks, logs, TODAY, 'a', days)
-const board = (tasks, logs, days = WEEK) => boardDayTallies(tasks, logs, TODAY, days)
+const board = (tasks, logs, days = WEEK) => boardDayTallies(tasks, logs, [], TODAY, days)
+const chore = (over) => ({
+  id: 'c', title: 'c', note: '', date: '2026-09-11', done: false,
+  completedDate: null, createdAt: '', updatedAt: '',
+  ...over,
+})
 /** The days a branch counts as clean — what the task panel's heatmap lights. */
 const doneOn = (tasks, logs, days = WEEK) => {
   const tallies = talliesOf(tasks, logs, days)
@@ -115,6 +120,42 @@ assert.deepEqual(board(split, []).get('2026-09-11'), { total: 1, done: 1 })
 assert.deepEqual(board(split, [], ['2026-09-22']).get('2026-09-22'), { total: 1, done: 0 })
 // A paused task is not scheduled work, so it does not pad the day's size.
 assert.deepEqual(board([task({ id: 'a', paused: true, pauseDate: '2026-09-12' })], []).get('2026-09-12'), { total: 0, done: 0 })
+
+// Chores join the board and nothing else: a branch is a view down the task
+// tree, and a chore is not in it.
+//
+// Written as a delta off the same board without chores, so each case states the
+// claim — "a chore adds one to the day it was ticked" — rather than restating
+// arithmetic that would have to be recomputed whenever the task fixtures move.
+const BOARD_LOGS = [log('b', '2026-09-11')]
+const base = board(boardTasks, BOARD_LOGS)
+const withChores = (chores, days = WEEK) => boardDayTallies(boardTasks, BOARD_LOGS, chores, TODAY, days)
+/** How many the given chores add to `day`, and whether `total` moved at all. */
+const added = (chores, day) => {
+  const tally = withChores(chores).get(day)
+  return { added: tally.done - base.get(day).done, totalMoved: tally.total - base.get(day).total }
+}
+
+// One chore finished on a day adds exactly one to that day, and announces its
+// size nowhere: nothing shades the board by `total`, and a chore has no schedule
+// to be sized by.
+assert.deepEqual(added([chore({ done: true, completedDate: '2026-09-12' })], '2026-09-12'), { added: 1, totalMoved: 0 })
+// Credited to the day it was ticked, not the day it was written for. A chore
+// dated the 11th and ticked on the 12th leaves the 11th exactly as it was —
+// finishing Monday's chore on Tuesday must not turn Monday green.
+const slipped = [chore({ date: '2026-09-11', done: true, completedDate: '2026-09-12' })]
+assert.deepEqual(added(slipped, '2026-09-11'), { added: 0, totalMoved: 0 })
+assert.deepEqual(added(slipped, '2026-09-12'), { added: 1, totalMoved: 0 })
+// Still open: nothing was finished, so nothing is credited.
+assert.deepEqual(added([chore({ date: '2026-09-11' })], '2026-09-11'), { added: 0, totalMoved: 0 })
+// Finished outside the window the grid covers, so there is no square to land on
+// — and it must not fall through to the nearest one.
+assert.deepEqual(added([chore({ done: true, completedDate: '2026-01-01' })], '2026-09-11'), { added: 0, totalMoved: 0 })
+// Two on one day are two, not one: the board counts rather than tests.
+assert.deepEqual(
+  added([chore({ done: true, completedDate: '2026-09-13' }), chore({ id: 'c2', done: true, completedDate: '2026-09-13' })], '2026-09-13'),
+  { added: 2, totalMoved: 0 },
+)
 
 await server.close()
 console.log('heatmap: ok')

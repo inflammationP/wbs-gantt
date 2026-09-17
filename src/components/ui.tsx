@@ -81,3 +81,24 @@ export function Field({ label, children }: { label: string; children: ReactNode 
     </label>
   )
 }
+
+/**
+ * A headline figure: what it counts, the count, and the line that reads it.
+ *
+ * Lifted out of `ManagePage` when the Today page's header wanted the same
+ * thing. Two copies of a card is not a layout problem, it is two answers to
+ * "what does a figure look like here" — and the second one always drifts.
+ *
+ * `value` is `font-mono` so a row of these lines its digits up, and `danger`
+ * only ever recolours the number: the sub-line carries the same news in words,
+ * because a red figure alone tells a colourblind reader nothing.
+ */
+export function Stat({ label, value, sub, danger }: { label: string; value: string; sub: string; danger?: boolean }) {
+  return (
+    <div className="bg-panel border border-border rounded-[3px] px-4 py-3">
+      <div className="text-[10px] uppercase tracking-wider text-dim">{label}</div>
+      <div className={`text-[22px] font-semibold font-mono mt-1 ${danger ? 'text-delayed' : 'text-fg'}`}>{value}</div>
+      <div className="text-[11px] text-muted">{sub}</div>
+    </div>
+  )
+}

@@ -20,6 +20,35 @@ function ask(question) {
   })
 }
 
+/**
+ * Read lines until a blank one — for text that needs more than a single line.
+ *
+ * `rl.question` deliberately stops at the first newline, which is why release
+ * notes used to be one line: pressing Enter ended the input instead of starting
+ * the next bullet, so notes could not be written as a list at all.
+ *
+ * Reading until a blank line is the familiar "type a block of text" gesture, and
+ * pressing Enter straight away still means "no notes", because the block comes
+ * back empty. Ctrl+D (Ctrl+Z then Enter on Windows) finishes early, which is the
+ * same thing.
+ */
+function askLines(prompt) {
+  return new Promise((resolve) => {
+    const rl = createInterface({ input: process.stdin, output: process.stdout })
+    process.stdout.write(prompt)
+    const lines = []
+    rl.on('line', (line) => {
+      if (line.trim() === '') {
+        rl.close()
+        return
+      }
+      lines.push(line)
+    })
+    // Also fires when stdin ends, which is the same as finishing.
+    rl.on('close', () => resolve(lines.join('\n')))
+  })
+}
+
 function run(cmd) {
   console.log(`\n> ${cmd}\n`)
   execSync(cmd, { stdio: 'inherit' })
@@ -32,7 +61,12 @@ const oldVersion = conf.version
 // 1. version + notes
 // Strip a leading "v" if the user typed it (version must be pure semver).
 const version = ((await ask(`Version [current ${oldVersion}]: `)) || oldVersion).replace(/^v/, '')
-const notes = (await ask('Release notes (enter to skip): ')) || ''
+// One line per bullet; a blank line ends the block. Markdown is fine — these go
+// into both the GitHub release body and `latest.json`, and the updater renders
+// the latter as markdown.
+const notes = await askLines(
+  'Release notes — one bullet per line, blank line to finish (Enter alone to skip):\n> ',
+)
 
 if (version !== oldVersion) {
   conf.version = version

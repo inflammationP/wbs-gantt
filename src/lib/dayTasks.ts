@@ -1,7 +1,7 @@
 import { Project, Task, TaskLog, TaskStatus } from '../types'
 import { buildChildrenMap, collectDescendants, computeWbs, deriveStatus, deriveTaskStatus, EffState } from './tree'
 import { taskProgress } from './progress'
-import { addDays, toDate } from './dates'
+import { addDays, toDate, toISO } from './dates'
 
 export interface DayEffState {
   progress: number | null
@@ -95,6 +95,23 @@ function isStrictLeaf(task: Task, children: Map<string | null, Task[]>): boolean
 }
 
 /**
+ * Whether a strict task has come due on `day` — it has begun, and that is all.
+ *
+ * Deliberately *not* `activeOnDay`, which additionally asks whether the window
+ * still covers the day. That upper bound is right for "what is scheduled today"
+ * and wrong for "what owes a log today": a strict task that ran out of time
+ * unfinished does not stop needing a log the moment its end date passes. It is
+ * precisely then that it becomes the most urgent thing on the board, and a
+ * backlog that stops being counted is a backlog that gets ignored.
+ *
+ * So the start is the only bound that survives. A task that has not begun owes
+ * nothing yet, and one with no start at all is not scheduled work.
+ */
+function hasComeDue(task: Task, day: string): boolean {
+  return task.startDate != null && task.startDate <= day
+}
+
+/**
  * Progress and status as of `day`, mirroring `effectiveStates` but with the day
  * as a parameter instead of the hardcoded present. Without this every past day
  * would render today's numbers.
@@ -132,9 +149,20 @@ export function dayStates(tasks: Task[], logs: TaskLog[], day: string): Map<stri
   return cache
 }
 
-/** Progress as of the day *before* `day`. */
+/**
+ * Progress as of the day *before* `day` — i.e. "was this already finished when
+ * the day began".
+ *
+ * The logs are clipped, not merely asked about. `taskProgress` takes the latest
+ * log in the array it is handed and pays no attention to `onDate` for a strict
+ * task carrying a target, so handing it a list that still contains today's log
+ * and asking about yesterday would let a log written *today* decide what was
+ * true yesterday — evicting a task from the day the very log that completed it
+ * arrived, which is the regression this function exists to prevent.
+ */
 function progressBefore(task: Task, clipped: TaskLog[], day: string): number {
-  return taskProgress(task, clipped, addDays(toDate(day), -1)) ?? 0
+  const before = addDays(toDate(day), -1)
+  return taskProgress(task, logsUpTo(clipped, toISO(before)), before) ?? 0
 }
 
 /** One strict leaf that owed a log on a day, and whether it got one. */
@@ -152,9 +180,10 @@ export interface LogObligation {
  * list disagreeing with the ring printed beside it.
  *
  * The conditions are, in order: a strict leaf (`strictProgress` is inert on a
- * parent — its progress is the average of its children's); scheduled over `day`;
+ * parent — its progress is the average of its children's); *come due* (which,
+ * unlike `activeOnDay`, keeps an overdue task on the list — see `hasComeDue`);
  * not paused that day; not already finished when the day began; and not already
- * logged. That fourth one is why a completed task never comes back to nag.
+ * logged. That fourth one is why a finished task never comes back to nag.
  */
 export function strictLogObligations(tasks: Task[], logs: TaskLog[], day: string): LogObligation[] {
   const clipped = logsUpTo(logs, day)
@@ -163,7 +192,7 @@ export function strictLogObligations(tasks: Task[], logs: TaskLog[], day: string
   const owed: LogObligation[] = []
   for (const t of tasks) {
     if (!isStrictLeaf(t, children)) continue
-    if (!activeOnDay(t, day)) continue
+    if (!hasComeDue(t, day)) continue
     // Paused work is not the day's work, so it owes no log.
     if (isPausedOnDay(t, day)) continue
     // A task already finished when the day started owes no log either — tested
@@ -331,9 +360,10 @@ export function daySummary(tasks: Task[], logs: TaskLog[], projects: Project[], 
     const active = activeOnDay(t, day)
     const strict = isStrictLeaf(t, children)
     // A strict task that ran out of window without finishing drops off its own
-    // schedule the next day, which would hide the most urgent work of all. It
-    // is listed with an overdue badge but never counted in the ring — the ring
-    // measures the day's scheduled logging, not the backlog.
+    // schedule, which would hide the most urgent work of all. It is listed with
+    // an overdue badge — and, since `hasComeDue` keeps it owing a log, it is
+    // counted in the ring and badged "No log" like any other outstanding task.
+    // The two agree because they are the same question asked twice.
     const overdue = !active && strict && st.status === 'delayed'
     if (!active && !overdue) continue
     rows.push({

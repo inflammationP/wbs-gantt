@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { GanttPage } from './pages/GanttPage'
+import { TodayPage } from './pages/TodayPage'
 import { CalendarPage } from './pages/CalendarPage'
 import { LogsPage } from './pages/LogsPage'
 import { ManagePage } from './pages/ManagePage'
@@ -46,6 +47,7 @@ export default function App() {
           just told the user to open. Anchored here, it stops where they begin. */}
       <main className="relative flex-1 flex flex-col min-w-0 overflow-hidden">
         {view === 'gantt' && <GanttPage />}
+        {view === 'today' && <TodayPage />}
         {view === 'logs' && <LogsPage />}
         {view === 'manage' && <ManagePage />}
         {view === 'calendar' && <CalendarPage />}

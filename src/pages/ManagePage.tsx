@@ -9,6 +9,7 @@ import { formatShortDate } from '../lib/i18n'
 import { useLang, useT } from '../lib/useT'
 import { computeWbs, effectiveStates } from '../lib/tree'
 import { useDialogs } from '../components/dialogs'
+import { Stat } from '../components/ui'
 import { CompletionHeatmap, YEAR_WEEKS } from '../components/CompletionHeatmap'
 
 // Dashboard, Tasks, Projects and Statistics used to be four separate pages that
@@ -260,16 +261,6 @@ export function ManagePage() {
         </div>
       </div>
       {dialogs}
-    </div>
-  )
-}
-
-function Stat({ label, value, sub, danger }: { label: string; value: string; sub: string; danger?: boolean }) {
-  return (
-    <div className="bg-panel border border-border rounded-[3px] px-4 py-3">
-      <div className="text-[10px] uppercase tracking-wider text-dim">{label}</div>
-      <div className={`text-[22px] font-semibold font-mono mt-1 ${danger ? 'text-delayed' : 'text-fg'}`}>{value}</div>
-      <div className="text-[11px] text-muted">{sub}</div>
     </div>
   )
 }

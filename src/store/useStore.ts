@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { create } from 'zustand'
-import { AppView, Project, Task, TaskLog, TaskPriority, TaskType, ViewMode } from '../types'
+import { AppView, Chore, Project, Task, TaskLog, TaskPriority, TaskType, ViewMode } from '../types'
 import { todayISO, addUnitISO, Unit, addDays, diffDays, toDate, toISO } from '../lib/dates'
 import { timelineRange, DateRange } from '../lib/timeline'
 import { buildRows, collectDescendants, hasChildren, syncParentEnds, todoCascadeIds, todoGroupIds, Row } from '../lib/tree'
@@ -60,6 +60,8 @@ interface State {
   projects: Project[]
   tasks: Task[]
   logs: TaskLog[]
+  // Chores live outside the three above on purpose — see `Chore` in types.ts.
+  chores: Chore[]
   activeView: AppView
   selectedTaskId: string | null
   selectedProjectId: string | null
@@ -129,6 +131,11 @@ interface State {
   setTaskTodo: (id: string) => void
   startTodoTasks: (entries: StartTodoInput[]) => void
 
+  addChore: (title: string, date: string) => void
+  updateChore: (id: string, patch: Partial<Chore>) => void
+  toggleChore: (id: string) => void
+  deleteChore: (id: string) => void
+
   syncParentEnds: () => void
 
   importData: (data: PersistedData) => void
@@ -152,7 +159,9 @@ function uid(): string {
 
 const loaded = loadData()
 const initial = loaded ?? buildSeed()
-if (!loaded) saveData({ projects: initial.projects, tasks: initial.tasks, logs: initial.logs })
+if (!loaded) {
+  saveData({ projects: initial.projects, tasks: initial.tasks, logs: initial.logs, chores: initial.chores })
+}
 
 const loadedPrefs = loadPrefs()
 // Heal a missing update anchor exactly once, and write it back.
@@ -229,6 +238,7 @@ export const useStore = create<State>()((set) => ({
   projects: initial.projects,
   tasks: initial.tasks,
   logs: initial.logs,
+  chores: initial.chores,
   activeView: 'gantt',
   selectedTaskId: null,
   selectedProjectId: null,
@@ -525,6 +535,34 @@ export const useStore = create<State>()((set) => ({
       }
     }),
 
+  addChore: (title, date) => {
+    const now = new Date().toISOString()
+    set((s) => ({
+      chores: [
+        ...s.chores,
+        { id: uid(), title, note: '', date, done: false, completedDate: null, createdAt: now, updatedAt: now },
+      ],
+    }))
+  },
+  updateChore: (id, patch) =>
+    set((s) => ({
+      chores: s.chores.map((c) =>
+        c.id === id ? { ...c, ...patch, updatedAt: new Date().toISOString() } : c,
+      ),
+    })),
+  toggleChore: (id) =>
+    set((s) => ({
+      chores: s.chores.map((c) => {
+        if (c.id !== id) return c
+        const done = !c.done
+        // `completedDate` moves with the flag in both directions. It is what the
+        // heatmap counts, so an uncheck that left it behind would keep a day
+        // credited for work that was put back.
+        return { ...c, done, completedDate: done ? todayISO() : null, updatedAt: new Date().toISOString() }
+      }),
+    })),
+  deleteChore: (id) => set((s) => ({ chores: s.chores.filter((c) => c.id !== id) })),
+
   syncParentEnds: () =>
     set((s) => {
       const next = syncParentEnds(s.tasks, s.logs)
@@ -532,7 +570,15 @@ export const useStore = create<State>()((set) => ({
     }),
 
   importData: (data) =>
-    set({ projects: data.projects, tasks: data.tasks, logs: data.logs ?? [], selectedTaskId: null, selectedProjectId: null, projectFilter: 'all' }),
+    set({
+      projects: data.projects,
+      tasks: data.tasks,
+      logs: data.logs ?? [],
+      chores: data.chores ?? [],
+      selectedTaskId: null,
+      selectedProjectId: null,
+      projectFilter: 'all',
+    }),
 
   dismissGuide: () => {
     set({ guideDismissed: true })
@@ -639,10 +685,15 @@ export const useStore = create<State>()((set) => ({
   closeNag: () => set({ nagOpen: false }),
 }))
 
-// Persist data (only) to localStorage whenever projects/tasks change.
+// Persist data (only) to localStorage whenever projects/tasks/logs/chores change.
 useStore.subscribe((state, prev) => {
-  if (state.projects !== prev.projects || state.tasks !== prev.tasks || state.logs !== prev.logs) {
-    saveData({ projects: state.projects, tasks: state.tasks, logs: state.logs })
+  if (
+    state.projects !== prev.projects ||
+    state.tasks !== prev.tasks ||
+    state.logs !== prev.logs ||
+    state.chores !== prev.chores
+  ) {
+    saveData({ projects: state.projects, tasks: state.tasks, logs: state.logs, chores: state.chores })
   }
 })
 
