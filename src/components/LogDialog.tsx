@@ -13,6 +13,14 @@ import { useT } from '../lib/useT'
 // stylesheet — swapping the token out is explicit about which one is in force.
 const errCls = inputCls.replace('border-border', 'border-delayed')
 
+// The same trick for the same reason: `inputCls` carries `h-8`, which suits a
+// one-line input, and a textarea has to say its own height. Outweighing it does
+// not work — both rules land in one layer, and Tailwind emits them in *name*
+// order, where `h-56` comes before `h-8`, so the shorter one wins. The `h-32`
+// this replaced had that bug too and never applied: the box was 32px tall the
+// whole time, which is what "the log editor did not get any bigger" was.
+const areaCls = inputCls.replace('h-8', '')
+
 const clampPct = (n: number) => Math.max(0, Math.min(100, n))
 
 /** A half-typed number — `-`, `1.` — is not a number yet, and not 0 either. */
@@ -306,7 +314,7 @@ function LogForm({
           // Tall on purpose: a day's entry now carries everything written to it
           // that day, the divider lines included, so the box has to show a block
           // of text rather than a couple of lines of it.
-          className={`${inputCls} h-56 py-2 resize-none`}
+          className={`${areaCls} h-56 resize-none`}
           value={content}
           onChange={(e) => setContent(e.target.value)}
           onKeyDown={onLogKeyDown}

@@ -469,7 +469,11 @@ export const useStore = create<State>()((set, get) => ({
           id,
           taskId: input.taskId,
           date: input.date,
-          content: input.content,
+          // The first write is stamped like every later one, so the rule reads
+          // as "each write is preceded by its time" rather than "each write
+          // *after the first*" — and so a day's entry always opens with when it
+          // was written, not just where it was added to.
+          content: `${editDivider(new Date())}\n${input.content}`,
           targetProgress: input.targetProgress ?? null,
           createdAt: now,
           updatedAt: now,
