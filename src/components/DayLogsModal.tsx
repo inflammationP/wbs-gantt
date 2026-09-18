@@ -1,6 +1,6 @@
 import { Pencil, Trash2 } from 'lucide-react'
 import { Modal } from './ui'
-import { parseLogContent } from '../lib/logs'
+import { LogLines } from './LogLines'
 import { toDate } from '../lib/dates'
 import { formatLongDate } from '../lib/i18n'
 import { useLang, useT } from '../lib/useT'
@@ -48,12 +48,7 @@ export function DayLogsModal({
                   <div key={log.id} className="border border-border rounded-lg p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
-                        {parseLogContent(log.content).map((it, i) => (
-                          <div key={i} className="flex items-start gap-1.5 text-[12px] text-muted" style={{ paddingLeft: it.depth * 16 }}>
-                            <span className="text-dim shrink-0">·</span>
-                            <span className="whitespace-pre-wrap break-words">{it.text}</span>
-                          </div>
-                        ))}
+                        <LogLines content={log.content} />
                         {log.targetProgress != null && (
                           <div className="text-[11px] text-dim mt-1.5">{t('common.targetProgress', { percent: log.targetProgress })}</div>
                         )}

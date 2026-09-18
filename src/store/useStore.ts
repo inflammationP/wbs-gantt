@@ -5,6 +5,7 @@ import { todayISO, addUnitISO, Unit, addDays, diffDays, toDate, toISO } from '..
 import { timelineRange, DateRange } from '../lib/timeline'
 import { buildRows, collectDescendants, hasChildren, syncParentEnds, todoCascadeIds, todoGroupIds, Row } from '../lib/tree'
 import { loadData, saveData, loadPrefs, savePrefs, PersistedData, Prefs } from './storage'
+import { editDivider } from '../lib/logs'
 import { applyLang, Lang } from '../lib/i18n'
 import { applyTheme, ThemeId } from '../lib/theme'
 import { buildSeed } from '../lib/seed'
@@ -130,6 +131,7 @@ interface State {
 
   setTaskTodo: (id: string) => void
   startTodoTasks: (entries: StartTodoInput[]) => void
+  toggleTaskDay: (id: string, day: string) => void
 
   addChore: (title: string, date: string) => void
   updateChore: (id: string, patch: Partial<Chore>) => void
@@ -234,7 +236,7 @@ function maybeNag(): void {
   persistPrefs()
 }
 
-export const useStore = create<State>()((set) => ({
+export const useStore = create<State>()((set, get) => ({
   projects: initial.projects,
   tasks: initial.tasks,
   logs: initial.logs,
@@ -342,6 +344,7 @@ export const useStore = create<State>()((set) => ({
         startDate: isTodo ? null : input.startDate,
         endDate: isTodo || isLT ? null : input.endDate,
         strictProgress: isTodo || isLT ? false : (input.strictProgress ?? false),
+        confirmedDays: [],
         paused: false,
         pauseDate: null,
         pauses: [],
@@ -423,9 +426,42 @@ export const useStore = create<State>()((set) => ({
       }
     }),
 
+  /**
+   * Write a log — or add to the one this task already has for that day.
+   *
+   * A day is one entry, not a stack of them. Coming back to a task you already
+   * wrote up today used to leave two rows wearing the same date, which then read
+   * as two days' work in the history, counted twice wherever a day is counted,
+   * and left "which of these is today's number" to the order they happened to be
+   * added in. The new text is appended to the entry that is already there and
+   * the fresh target replaces the old one, because it is the later statement of
+   * the same day.
+   *
+   * Merging here rather than in the dialog: this is the only door a log comes
+   * through, so the overdue "mark as completed" path gets it too.
+   */
   addLog: (input) => {
-    const id = uid()
     const now = new Date().toISOString()
+    const existing = get().logs.find((l) => l.taskId === input.taskId && l.date === input.date)
+    if (existing) {
+      set((s) => ({
+        logs: s.logs.map((l) =>
+          l.id === existing.id
+            ? {
+                ...l,
+                content: `${l.content}\n${editDivider(new Date())}\n${input.content}`,
+                // A null says nothing, so it must not wipe a number an earlier
+                // write for the day put there.
+                targetProgress: input.targetProgress ?? l.targetProgress,
+                updatedAt: now,
+              }
+            : l,
+        ),
+      }))
+      return existing.id
+    }
+
+    const id = uid()
     set((s) => ({
       logs: [
         ...s.logs,
@@ -550,6 +586,22 @@ export const useStore = create<State>()((set) => ({
         c.id === id ? { ...c, ...patch, updatedAt: new Date().toISOString() } : c,
       ),
     })),
+  // The one write a simplified task's progress ever gets: this day happened, or
+  // it didn't. A day can be ticked after the fact — that is how a missed one is
+  // backfilled from the day panel — but nothing here takes a number.
+  toggleTaskDay: (id, day) =>
+    set((s) => ({
+      tasks: s.tasks.map((t) => {
+        if (t.id !== id) return t
+        const days = t.confirmedDays ?? []
+        return {
+          ...t,
+          confirmedDays: days.includes(day) ? days.filter((d) => d !== day) : [...days, day],
+          updatedAt: new Date().toISOString(),
+        }
+      }),
+    })),
+
   toggleChore: (id) =>
     set((s) => ({
       chores: s.chores.map((c) => {

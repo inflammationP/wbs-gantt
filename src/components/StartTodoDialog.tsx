@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Modal, Field, inputCls } from './ui'
+import { LogOptOutDialog } from './LogOptOutDialog'
 import { useStore } from '../store/useStore'
 import { Task, TaskPriority } from '../types'
 import { PRIORITY_META, PRIORITY_ORDER, sig } from '../lib/ui'
@@ -40,13 +41,14 @@ export function StartTodoDialog({ taskIds, onClose }: Props) {
     Object.fromEntries(
       targets.map((t) => [
         t.id,
-        { startDate: todayISO(), endDate: todayISO(), strictProgress: false, priority: 'medium' as TaskPriority },
+        { startDate: todayISO(), endDate: todayISO(), strictProgress: true, priority: 'medium' as TaskPriority },
       ]),
     ),
   )
   const [activeId, setActiveId] = useState(() => targets[0]?.id ?? '')
   // Tabs the user has moved past with "Next", so it's clear which ones are done.
   const [visited, setVisited] = useState<Set<string>>(new Set())
+  const [optOutAsk, setOptOutAsk] = useState(false)
 
   const active = targets.find((t) => t.id === activeId) ?? targets[0]
 
@@ -128,18 +130,6 @@ export function StartTodoDialog({ taskIds, onClose }: Props) {
               </Field>
             </div>
 
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="start-strict"
-                checked={form.strictProgress}
-                onChange={(e) => set({ strictProgress: e.target.checked })}
-                className="accent-accent"
-              />
-              <label htmlFor="start-strict" className="text-[12px] text-fg cursor-pointer">
-                {t('task.strictProgress')}
-              </label>
-            </div>
           </>
         )}
 
@@ -148,6 +138,24 @@ export function StartTodoDialog({ taskIds, onClose }: Props) {
             {PRIORITY_ORDER.map((p) => <option key={p} value={p}>{t(PRIORITY_META[p].labelKey)}</option>)}
           </select>
         </Field>
+
+        {/* Same opt-out as `TaskDialog`, in the same place at the end. A to-do
+            with subtasks is skipped: its own progress is the children's average,
+            so there is no log obligation to be released from. */}
+        {!activeHasKids && (
+          <div className="border-t border-line pt-3 flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="start-no-logs"
+              checked={!form.strictProgress}
+              onChange={(e) => (e.target.checked ? setOptOutAsk(true) : set({ strictProgress: true }))}
+              className="accent-accent"
+            />
+            <label htmlFor="start-no-logs" className="text-[12px] text-fg cursor-pointer">
+              {t('task.strictProgress')}
+            </label>
+          </div>
+        )}
 
         <div className="flex items-center justify-end gap-2 pt-1">
           {/* Walking the tabs one at a time reads better than a wall of fields,
@@ -169,6 +177,16 @@ export function StartTodoDialog({ taskIds, onClose }: Props) {
           )}
         </div>
       </div>
+
+      {optOutAsk && (
+        <LogOptOutDialog
+          onBack={() => setOptOutAsk(false)}
+          onConfirm={() => {
+            set({ strictProgress: false })
+            setOptOutAsk(false)
+          }}
+        />
+      )}
     </Modal>
   )
 }

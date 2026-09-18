@@ -1,11 +1,16 @@
 /**
- * The one check on what owes a log on a day, run with
- * `node scripts/check-day-obligations.mjs`.
+ * The one check on what owes a log on a day, and on the order the day's list
+ * comes out in — run with `node scripts/check-day-obligations.mjs`.
  *
  * `strictLogObligations` is the single rule behind three surfaces — the day's
  * coverage ring, the Calendar's cell shading, and the task panel's "still to
  * log" list — so a change here moves all three at once, silently, and the
  * disagreement would only ever show up as a number that looks slightly off.
+ *
+ * `daySummary` is checked here too because the order it returns *is* the day's
+ * list: a tree walk that quietly stopped nesting, or stopped hoisting the
+ * siblings that owe a log, would look like nothing at all until someone
+ * noticed the list reading wrong.
  *
  * No framework, nothing mocked: `src/lib/dayTasks.ts` is loaded straight from
  * source by Vite, the same way the other checks load theirs.
@@ -14,7 +19,7 @@ import assert from 'node:assert/strict'
 import { createServer } from 'vite'
 
 const server = await createServer({ server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' })
-const { strictLogObligations } = await server.ssrLoadModule('/src/lib/dayTasks.ts')
+const { strictLogObligations, daySummary } = await server.ssrLoadModule('/src/lib/dayTasks.ts')
 const { taskProgress } = await server.ssrLoadModule('/src/lib/progress.ts')
 
 const TODAY = '2026-09-15'
@@ -23,7 +28,7 @@ const task = (over) => ({
   id: 'a', name: 'a', description: '', parentId: null, projectId: 'p',
   type: 'phase', isTodo: false,
   startDate: '2026-09-01', endDate: '2026-09-20',
-  strictProgress: true, paused: false, pauseDate: null, pauses: [],
+  strictProgress: true, confirmedDays: [], paused: false, pauseDate: null, pauses: [],
   priority: null, tags: [], dependencies: [],
   createdAt: '', updatedAt: '',
   ...over,
@@ -91,6 +96,32 @@ assert.deepEqual(owes([task({ strictProgress: false })], []), [])
 const stated = [log('a', '2026-09-10', 100), log('a', '2026-09-12')]
 assert.deepEqual(owes([task({})], stated, '2026-09-20'), [])
 assert.equal(taskProgress(task({}), stated, new Date(2026, 8, 20)), 100)
+
+// --- the order the day's list comes out in ---
+
+const PROJECTS = [{ id: 'p', name: 'p', color: '#888', description: '' }]
+/** The day's task ids, in the order the panel renders them. */
+const list = (tasks, day = TODAY) => daySummary(tasks, [], PROJECTS, day, day).all.map((r) => r.task.id)
+
+// A child follows its own parent, and among siblings the ones that owe a log
+// come first. The names are picked so that the sibling without the obligation
+// would win on WBS alone — `alpha` is numbered 1.1 and `zebra` 1.2 — which
+// makes this an assert about the obligation rule rather than about the
+// numbering happening to agree with it.
+const tree = [
+  task({ id: 'a' }),
+  task({ id: 'zebra', parentId: 'a', strictProgress: true }),
+  task({ id: 'alpha', parentId: 'a', strictProgress: false }),
+]
+assert.deepEqual(list(tree), ['a', 'zebra', 'alpha'])
+
+// The sibling order is per group, not per list: below the root, `a`'s children
+// keep their own order even though other rows outrank them on status.
+assert.deepEqual(list([...tree, task({ id: 'z', endDate: '2026-09-14' })]), ['z', 'a', 'zebra', 'alpha'])
+
+// A task whose parent is not scheduled that day does not wait for it: the list
+// is what is on the day, and it becomes a root there.
+assert.deepEqual(list([task({ id: 'b', parentId: 'not-scheduled-today', strictProgress: true })]), ['b'])
 
 await server.close()
 console.log('day obligations: ok')

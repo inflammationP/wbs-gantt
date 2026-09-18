@@ -131,7 +131,9 @@ export function LogsPage() {
                 const p = task ? projects.find((x) => x.id === task.projectId) : null
                 const items = tlogs
                   .flatMap((l) => parseLogContent(l.content))
-                  .filter((it) => it.depth === 0)
+                  // A divider is punctuation, not a line of the entry: letting
+                  // one through would spend a preview slot saying nothing.
+                  .filter((it) => it.kind === 'item' && it.depth === 0)
                   .slice(0, 2)
                 return { taskId, name: task?.name ?? t('common.unknownTask'), color: p?.color, items }
               })

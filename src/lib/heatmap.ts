@@ -67,7 +67,14 @@ function dayTallies(logs: TaskLog[], today: string, scope: Task[], days: string[
     for (const t of scope) {
       if (!activeOnDay(t, day) || isPausedOnDay(t, day)) continue
       total++
-      const hit = t.strictProgress ? logged.get(t.id)?.has(day) === true : day < today
+      // Both kinds of task are done on a day because a person said so: a log for
+      // the strict ones, a tick for the rest. The plain case used to read
+      // `day < today` — the calendar crediting every elapsed day to a task
+      // nobody had touched, which flattened this whole board into one shade on
+      // any board carrying a few of them.
+      const hit = t.strictProgress
+        ? logged.get(t.id)?.has(day) === true
+        : (t.confirmedDays ?? []).includes(day)
       if (hit) done++
     }
     out.set(day, { total, done })

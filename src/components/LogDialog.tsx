@@ -162,10 +162,37 @@ function LogForm({
   const [content, setContent] = useState(existing?.content ?? '')
   const [error, setError] = useState<'missing' | 'backward' | null>(null)
 
-  // The task's progress as of the day *before* this log — what "increase" is
-  // measured from. Clipped to the previous day and to logs other than the one
-  // being edited, so pushing the date forward can't make a log its own baseline.
+  // The number the two boxes are measured from.
+  //
+  // Normally it is the task's progress at the start of this log's day — the
+  // delta has to mean "how much since that morning" — clipped to the previous
+  // day and to logs other than the one being edited, so pushing the date forward
+  // cannot make a log its own baseline.
+  //
+  // A task that states no progress anywhere is the exception, and it is not a
+  // small one: those are the logs written before the fields were mandatory, so
+  // their number is whatever the retired logged-days rule derives. For them the
+  // day-start baseline is a fiction — it can read 0% while the task reads 17%,
+  // and stating a value on any one entry (the oldest included) becomes the whole
+  // task's progress, which lets it be set to 0. So the boxes are held to where
+  // the task reads *now* instead. That also makes the line under the boxes true,
+  // which it was not: it said 0% next to a task wearing 17%.
   const base = useMemo(() => {
+    if (!logs.some((l) => l.taskId === task.id && l.targetProgress != null)) {
+      return taskProgress(task, logs, new Date()) ?? 0
+    }
+    // Writing another block into a day that already has one. What this write
+    // replaces is *that* entry's number, so the boxes are measured from it —
+    // otherwise the pair started at the morning's value and "add 5" to a day
+    // already sitting at 35 landed the task on 5. Goes for a past day too, where
+    // the panel's "write on this day" merges the same way.
+    if (!existing && date) {
+      const sameDay = logs.filter((l) => l.taskId === task.id && l.date === date)
+      // The last one, which is the one `taskProgress` would count were the day
+      // somehow carrying more than one entry.
+      const stated = sameDay.length ? sameDay[sameDay.length - 1].targetProgress : null
+      if (stated != null) return stated
+    }
     if (!date) return 0
     const before = addDays(toDate(date), -1)
     const prior = logs.filter((l) => l.id !== existing?.id && l.date <= toISO(before))
@@ -276,7 +303,10 @@ function LogForm({
       <Field label={t('log.label')}>
         <textarea
           ref={taRef}
-          className={`${inputCls} h-32 py-2 resize-none`}
+          // Tall on purpose: a day's entry now carries everything written to it
+          // that day, the divider lines included, so the box has to show a block
+          // of text rather than a couple of lines of it.
+          className={`${inputCls} h-56 py-2 resize-none`}
           value={content}
           onChange={(e) => setContent(e.target.value)}
           onKeyDown={onLogKeyDown}

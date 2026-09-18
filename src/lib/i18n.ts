@@ -206,7 +206,7 @@ const en = {
     'This is a to-do: unscheduled work. It sits last among its siblings inside a {toDos} folder until you give it a schedule with {startTask} in the detail panel.',
   'task.endDateLocked':
     'The end date is decided by the subtask that ends last — change that subtask’s end date instead.',
-  'task.strictProgress': 'Strict progress (progress only advances via daily logs)',
+  'task.strictProgress': 'Turn off daily logs (not recommended)',
   'task.overdueMark': 'This task is already overdue — mark as',
   'task.tagsPlaceholder': 'study, health',
   'task.tagsLabel': 'Tags (comma separated)',
@@ -217,11 +217,27 @@ const en = {
   // The parent's reminder. Names only — what is missing, not what was written.
   'task.pendingLogs': 'Still to log',
   'task.progressMode': 'Progress mode',
-  'task.modeStrict': 'Strict (log-based)',
-  'task.modeAuto': 'Auto (date-based)',
+  'task.modeStrict': 'Log-based',
+  'task.modeAuto': 'Simplified (ticked per day)',
   // A parent's progress is the average of its children's, so neither of the two
   // above applies to it — see `isStrictLeaf`.
   'task.modeRolledUp': 'From subtasks',
+
+  // The dialog that stands between the checkbox and a task that stops owing
+  // logs. Written in the emphasis markup `lib/emphasis.ts` parses — asterisks
+  // for bold, slashes for size, the count of slashes being the degree.
+  'optOut.title': 'Go without log supervision?',
+  'optOut.p1':
+    'Without the log system this task will *keep no history at all*, and the Logs page will not manage it.',
+  'optOut.p2':
+    'It will use a *deliberately crude* way of counting progress: each day you only have to *click a button by hand* to confirm you did it, and the system then accumulates progress as elapsed days ÷ total days. No click, no accumulation. If you miss a day, later daily reports will remind you, and you can leave it for now or put the confirmation in — which is one more click.',
+  'optOut.p3':
+    'This also means the task */may not reflect its real progress*/, and the supervision over whether you did a given day’s work is */close to zero*/. **//Please make sure you have enough self-discipline to go without the log system’s supervision**//.',
+  'optOut.back': 'Back',
+  'optOut.confirm': 'Turn logs off anyway',
+
+  // The tick that stands in for a log on a simplified task.
+  'day.tick': 'Mark this day as done',
   'task.noSchedule':
     'No schedule yet. Give it dates, a priority and a progress mode when you start it.',
   'task.pausedNote': {
@@ -284,31 +300,35 @@ const en = {
   'calendar.dueCount': { one: '{count} due', other: '{count} due' },
   'calendar.startingCount': { one: '{count} starting', other: '{count} starting' },
   'calendar.coverage.future': 'not yet due',
-  'calendar.coverage.clear': 'no strict work scheduled',
-  'calendar.coverage.partial': '{count} of {total} strict tasks logged',
-  'calendar.coverage.full': 'all {count} strict tasks logged',
+  'calendar.coverage.clear': 'no logs due',
+  'calendar.coverage.partial': '{count} of {total} logs written',
+  'calendar.coverage.full': 'all {count} logs written',
   'calendar.more': '+{count} more',
   'calendar.milestoneTitle': '{kind}{strict} — {name}{logged}',
   'calendar.milestone.due': 'Due',
   'calendar.milestone.starts': 'Starts',
-  'calendar.milestone.strict': ' · strict',
+  'calendar.milestone.strict': ' *',
   'calendar.milestone.logged': ' · logged this day',
 
   // --- day detail ---
-  'day.strictLogs': 'Strict logs',
+  //
+  // Nothing in here calls a task "strict" any more. The division the interface
+  // shows is not between two kinds of task — it is between the tasks that owe a
+  // log and the rest, and that is said with a `*` on the row plus the one line
+  // of legend under the list (`day.logMark`), not by naming the kind.
+  'day.strictLogs': 'Logs',
   'day.notYetDue': 'Not yet due',
-  'day.noStrictScheduled': 'No strict work scheduled',
-  'day.allLogged': 'All strict work logged',
+  'day.noStrictScheduled': 'No logs due',
+  'day.allLogged': 'Everything logged',
   'day.nothingLogged': 'Nothing logged yet',
   'day.stillMissing': { one: '{count} still missing', other: '{count} still missing' },
-  'day.noStrictTasksScheduled': 'No strict tasks scheduled',
-  'day.ringPartial': '{count} of {total} strict tasks logged',
+  'day.noStrictTasksScheduled': 'No logs due',
+  'day.ringPartial': '{count} of {total} logs written',
   'day.taskCount': { one: '{count} task on this day', other: '{count} tasks on this day' },
-  'day.tasksBreakdown': '{strict} strict · {other} other',
-  'day.strictTasks': 'Strict tasks',
-  'day.otherTasks': 'Other tasks',
-  'day.noStrictOnDay': 'No strict tasks scheduled on this day.',
-  'day.nothingElse': 'Nothing else scheduled on this day.',
+  'day.tasksBreakdown': '{strict} with logs · {other} other',
+  'day.taskList': 'Tasks',
+  'day.nothingScheduled': 'Nothing scheduled on this day.',
+  'day.logMark': 'A * marks a task that owes a daily log — its progress moves on those entries alone.',
   'day.readLogs': 'Read this day’s logs',
   'day.readLogsCount': 'Read this day’s logs ({count})',
   'day.noLog': 'No log',
@@ -473,11 +493,11 @@ const en = {
   'guide.explain.strict.title': 'Strict and non-strict: where progress comes from',
   'guide.explain.strict.p1': 'The difference is where the number comes from, not how it is drawn.',
   'guide.explain.strict.p2':
-    'An ordinary task follows the calendar: the share of its window that has elapsed is its progress. A task that has not started reads 0%, and a window that has closed reads 100% of its own accord — you need do nothing for it to move.',
+    'A simplified task counts the days you tick off. On a day you did the work you click its box once, and a day you did not tick counts for nothing, however long ago its window closed. A window that closes without every day ticked reads late, not done.',
   'guide.explain.strict.p3':
     'A strict task counts only logs. With no log at all it stays at 0%, long after its window has closed. Once there are logs, one of two things decides the number: the latest log that carries a target progress is taken at its word; if none carries one, progress accrues as logged days ÷ the window’s days — so a day you skip is a day genuinely lost.',
   'guide.explain.strict.p4':
-    'That is what a strict task is for: progress that reports what you actually did, instead of letting the calendar finish the work on your behalf.',
+    'That is what a strict task is for: a progress figure that carries a reason beside it, rather than a bare number.',
   'guide.explain.tour.title': 'A look around',
   'guide.explain.tour.intro':
     'These four pages all read the board you have just built, so there is something to see on each of them even while it is still small. One line on each:',
@@ -627,7 +647,7 @@ const zh: Dict = {
   'task.todoNote':
     '这是一项待办：尚未排期的工作。它会排在同级任务末尾的 {toDos} 文件夹中，直到你在详情面板里用 {startTask} 为它安排时间。',
   'task.endDateLocked': '结束日期由最晚结束的子任务决定，请改为修改那个子任务的结束日期。',
-  'task.strictProgress': '严格进度（进度仅通过每日日志推进）',
+  'task.strictProgress': '取消日志限制（不推荐）',
   'task.overdueMark': '该任务已逾期 —— 标记为',
   'task.tagsPlaceholder': '学习, 健康',
   'task.tagsLabel': '标签（用逗号分隔）',
@@ -637,9 +657,20 @@ const zh: Dict = {
   'task.noSubtasks': '暂无子任务。',
   'task.pendingLogs': '今日待填',
   'task.progressMode': '进度模式',
-  'task.modeStrict': '严格（按日志推进）',
-  'task.modeAuto': '自动（按日期推进）',
+  'task.modeStrict': '按日志推进',
+  'task.modeAuto': '简化（按每日确认）',
   'task.modeRolledUp': '由子任务汇总',
+
+  'optOut.title': '确定不要日志监督吗？',
+  'optOut.p1': '脱离日志系统则该任务将*不会拥有历史日志*，且不会在 log 页面里被统一管理。',
+  'optOut.p2':
+    '本任务将采用一种*极度简化*的进度计算方式，即每日只需要*手动点击按钮*来确认完成，然后系统自动按已过日期 ÷ 总日期进行进度累计，否则不予累计进度。如果你有某日忘了点按钮，则会在以后的日报里对你进行提醒，你可以按实际需求暂时忽略／将确认补上，也就是再点一下按钮的事。',
+  'optOut.p3':
+    '这也就意味着，本任务可能将*/无法精确反应任务实际进度*/，且确认某日本任务完成的*/监督力度几乎为 0 */。**//请确保你有足够的自律能力脱离日志系统监督**//。',
+  'optOut.back': '返回',
+  'optOut.confirm': '仍要取消',
+
+  'day.tick': '把这一天标记为完成',
   'task.noSchedule': '尚未排期。开始这项任务时，再为它设定日期、优先级和进度模式。',
   'task.pausedNote': {
     one: '已暂停。开始于 {start} · 暂停于 {paused} · 已过去 {count} 天。',
@@ -688,30 +719,29 @@ const zh: Dict = {
   'calendar.dueCount': { one: '{count} 项到期', other: '{count} 项到期' },
   'calendar.startingCount': { one: '{count} 项开始', other: '{count} 项开始' },
   'calendar.coverage.future': '尚未到期',
-  'calendar.coverage.clear': '没有严格任务',
-  'calendar.coverage.partial': '已记录 {count}/{total} 项严格任务',
-  'calendar.coverage.full': '{count} 项严格任务已全部记录',
+  'calendar.coverage.clear': '没有日志义务',
+  'calendar.coverage.partial': '已记录 {count}/{total} 项日志',
+  'calendar.coverage.full': '{count} 项日志已全部记录',
   'calendar.more': '还有 {count} 项',
   'calendar.milestoneTitle': '{kind}{strict} —— {name}{logged}',
   'calendar.milestone.due': '到期',
   'calendar.milestone.starts': '开始',
-  'calendar.milestone.strict': ' · 严格',
+  'calendar.milestone.strict': ' *',
   'calendar.milestone.logged': ' · 当天已记录',
 
-  'day.strictLogs': '严格日志',
+  'day.strictLogs': '日志',
   'day.notYetDue': '尚未到期',
-  'day.noStrictScheduled': '没有严格任务排期',
-  'day.allLogged': '严格任务已全部记录',
+  'day.noStrictScheduled': '当天没有日志义务',
+  'day.allLogged': '该写的都写了',
   'day.nothingLogged': '尚未记录任何日志',
   'day.stillMissing': { one: '还差 {count} 项', other: '还差 {count} 项' },
-  'day.noStrictTasksScheduled': '当天没有严格任务',
-  'day.ringPartial': '已记录 {count}/{total} 项严格任务',
+  'day.noStrictTasksScheduled': '当天没有日志义务',
+  'day.ringPartial': '已记录 {count}/{total} 项日志',
   'day.taskCount': { one: '当天有 {count} 项任务', other: '当天有 {count} 项任务' },
-  'day.tasksBreakdown': '{strict} 严格 · {other} 其他',
-  'day.strictTasks': '严格任务',
-  'day.otherTasks': '其他任务',
-  'day.noStrictOnDay': '当天没有排期的严格任务。',
-  'day.nothingElse': '当天没有其他安排。',
+  'day.tasksBreakdown': '{strict} 有日志 · {other} 其他',
+  'day.taskList': '任务清单',
+  'day.nothingScheduled': '当天没有排期。',
+  'day.logMark': '带 * 的任务有日志义务 —— 它的进度只由日志推进。',
   'day.readLogs': '查看当天的日志',
   'day.readLogsCount': '查看当天的日志（{count}）',
   'day.noLog': '未填日志',
@@ -847,11 +877,11 @@ const zh: Dict = {
   'guide.explain.strict.title': '严格与非严格：进度从哪来',
   'guide.explain.strict.p1': '差别在于这个数字从哪来，而不在于它怎么画。',
   'guide.explain.strict.p2':
-    '普通任务看日历：窗口过去了多少比例，进度就是多少。还没开始的任务读 0%，窗口一结束就自己读满 100% —— 你什么都不用做，它也会动。',
+    '简化任务数的是你点过的天。哪一天做了，就在那天点一次框；没点的日子一分不算，窗口过去多久都一样。窗口走完还没点满，它读作逾期，而不是完成。',
   'guide.explain.strict.p3':
     '严格任务只认日志。一条日志都没有，它就一直是 0%，哪怕窗口早就过去了。有了日志之后，两种情况决定这个数字：最新一条日志填了目标进度，就以它为准；一条都没填，就按「写过日志的天数 ÷ 窗口总天数」累积 —— 所以漏掉一天，就是实打实地少一格。',
   'guide.explain.strict.p4':
-    '这就是严格任务的意义：让进度如实反映你做了什么，而不是让日历替你干完。',
+    '这就是严格任务的意义：进度旁边带着一句「为什么」，而不只是一个数字。',
   'guide.explain.tour.title': '逛一圈',
   'guide.explain.tour.intro':
     '这四个页面读的都是你刚建起来的看板 —— 就算它还很小，每个页面上也有东西可看。各一句：',
@@ -1005,7 +1035,7 @@ const fr: Dict = {
     'Ceci est une tâche à faire : du travail non planifié. Elle se place en dernier parmi ses voisines, dans un dossier {toDos}, jusqu’à ce que vous lui donniez un planning avec {startTask} dans le panneau de détail.',
   'task.endDateLocked':
     'La date de fin est déterminée par la sous-tâche qui se termine le plus tard — modifiez plutôt la date de fin de cette sous-tâche.',
-  'task.strictProgress': 'Avancement strict (l’avancement ne progresse que via les journaux quotidiens)',
+  'task.strictProgress': 'Désactiver les journaux (non recommandé)',
   'task.overdueMark': 'Cette tâche est déjà en retard — la marquer comme',
   'task.tagsPlaceholder': 'étude, santé',
   'task.tagsLabel': 'Étiquettes (séparées par des virgules)',
@@ -1015,9 +1045,21 @@ const fr: Dict = {
   'task.noSubtasks': 'Aucune sous-tâche.',
   'task.pendingLogs': 'Reste à journaliser',
   'task.progressMode': 'Mode d’avancement',
-  'task.modeStrict': 'Strict (par journaux)',
-  'task.modeAuto': 'Automatique (par dates)',
+  'task.modeStrict': 'Par journaux',
+  'task.modeAuto': 'Simplifié (coché au jour le jour)',
   'task.modeRolledUp': 'D’après les sous-tâches',
+
+  'optOut.title': 'Se passer de la supervision des journaux ?',
+  'optOut.p1':
+    'Sans le système de journaux, cette tâche *ne conservera aucun historique* et ne sera pas gérée dans la page Journaux.',
+  'optOut.p2':
+    'Elle utilisera une manière *délibérément rudimentaire* de compter l’avancement : chaque jour, il vous suffit de *cliquer un bouton à la main* pour confirmer que vous l’avez faite, et le système cumule alors l’avancement selon jours écoulés ÷ jours au total. Pas de clic, pas de cumul. Si vous oubliez un jour, les rapports quotidiens suivants vous le rappelleront : vous pouvez le laisser de côté ou remettre la confirmation, ce qui est un clic de plus.',
+  'optOut.p3':
+    'Cela signifie aussi que la tâche */risque de ne pas refléter son avancement réel*/, et que la supervision de la réalisation d’un jour donné est */proche de zéro*/. **//Assurez-vous d’avoir assez de discipline pour vous passer de la supervision des journaux**//.',
+  'optOut.back': 'Retour',
+  'optOut.confirm': 'Désactiver quand même',
+
+  'day.tick': 'Marquer ce jour comme fait',
   'task.noSchedule':
     'Pas encore planifiée. Donnez-lui des dates, une priorité et un mode d’avancement au moment de la démarrer.',
   'task.pausedNote': {
@@ -1068,30 +1110,29 @@ const fr: Dict = {
   'calendar.dueCount': { one: '{count} échéance', other: '{count} échéances' },
   'calendar.startingCount': { one: '{count} début', other: '{count} débuts' },
   'calendar.coverage.future': 'pas encore échu',
-  'calendar.coverage.clear': 'aucune tâche stricte prévue',
-  'calendar.coverage.partial': '{count} sur {total} tâches strictes journalisées',
-  'calendar.coverage.full': 'les {count} tâches strictes journalisées',
+  'calendar.coverage.clear': 'aucun journal à écrire',
+  'calendar.coverage.partial': '{count} journaux sur {total} écrits',
+  'calendar.coverage.full': 'les {count} journaux écrits',
   'calendar.more': '+{count} autres',
   'calendar.milestoneTitle': '{kind}{strict} — {name}{logged}',
   'calendar.milestone.due': 'Échéance',
   'calendar.milestone.starts': 'Début',
-  'calendar.milestone.strict': ' · stricte',
+  'calendar.milestone.strict': ' *',
   'calendar.milestone.logged': ' · journalisée ce jour',
 
-  'day.strictLogs': 'Journaux stricts',
+  'day.strictLogs': 'Journaux',
   'day.notYetDue': 'Pas encore échu',
-  'day.noStrictScheduled': 'Aucun travail strict prévu',
-  'day.allLogged': 'Tout le travail strict est journalisé',
+  'day.noStrictScheduled': 'Aucun journal à écrire',
+  'day.allLogged': 'Tout est journalisé',
   'day.nothingLogged': 'Rien de journalisé pour l’instant',
   'day.stillMissing': { one: '{count} encore manquant', other: '{count} encore manquants' },
-  'day.noStrictTasksScheduled': 'Aucune tâche stricte prévue',
-  'day.ringPartial': '{count} sur {total} tâches strictes journalisées',
+  'day.noStrictTasksScheduled': 'Aucun journal à écrire',
+  'day.ringPartial': '{count} journaux sur {total} écrits',
   'day.taskCount': { one: '{count} tâche ce jour', other: '{count} tâches ce jour' },
-  'day.tasksBreakdown': '{strict} strictes · {other} autres',
-  'day.strictTasks': 'Tâches strictes',
-  'day.otherTasks': 'Autres tâches',
-  'day.noStrictOnDay': 'Aucune tâche stricte prévue ce jour.',
-  'day.nothingElse': 'Rien d’autre de prévu ce jour.',
+  'day.tasksBreakdown': '{strict} avec journal · {other} autres',
+  'day.taskList': 'Liste des tâches',
+  'day.nothingScheduled': 'Rien de prévu ce jour.',
+  'day.logMark': 'Un * marque une tâche qui doit un journal quotidien — son avancement n’avance que par ces entrées.',
   'day.readLogs': 'Lire les journaux du jour',
   'day.readLogsCount': 'Lire les journaux du jour ({count})',
   'day.noLog': 'Aucun journal',
@@ -1230,11 +1271,11 @@ const fr: Dict = {
   'guide.explain.strict.title': 'Stricte ou non : d’où vient l’avancement',
   'guide.explain.strict.p1': 'La différence tient à l’origine du nombre, pas à sa représentation.',
   'guide.explain.strict.p2':
-    'Une tâche ordinaire suit le calendrier : la part écoulée de sa fenêtre est son avancement. Une tâche qui n’a pas commencé affiche 0 %, et une fenêtre refermée affiche 100 % d’elle-même — vous n’avez rien à faire pour qu’elle bouge.',
+    'Une tâche simplifiée compte les jours que vous cochez. Un jour où vous l’avez faite, vous cochez sa case une fois ; un jour non coché ne compte pas, même si sa fenêtre est refermée depuis longtemps. Une fenêtre qui se referme sans tous les jours cochés se lit en retard, pas terminée.',
   'guide.explain.strict.p3':
     'Une tâche stricte ne compte que les journaux. Sans aucun journal, elle reste à 0 %, longtemps après la fermeture de sa fenêtre. Dès qu’il y en a, deux choses décident du nombre : le dernier journal portant un avancement cible fait foi ; si aucun n’en porte, l’avancement s’accumule en jours journalisés ÷ jours de la fenêtre — un jour sauté est donc un jour réellement perdu.',
   'guide.explain.strict.p4':
-    'C’est là l’objet d’une tâche stricte : un avancement qui dit ce que vous avez réellement fait, au lieu de laisser le calendrier terminer le travail à votre place.',
+    'C’est là l’objet d’une tâche stricte : un avancement accompagné d’une raison, et pas seulement d’un nombre.',
   'guide.explain.tour.title': 'Un tour rapide',
   'guide.explain.tour.intro':
     'Ces quatre pages lisent toutes le tableau que vous venez de bâtir : il y a donc quelque chose à voir sur chacune, même réduite. Une ligne pour chacune :',

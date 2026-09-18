@@ -6,8 +6,10 @@
  * source by Vite (which is the only reason a `.ts` file with type-only imports
  * can be loaded outside the browser at all). Each case is one clause of the rule
  * the task panel's heatmap and Manage's overview both read: a day is done when
- * every task scheduled for it was finished — logged, for a strict task, elapsed
- * for any other.
+ * every task scheduled for it was finished — logged, for a strict task, ticked
+ * off by hand for any other. Both kinds are done because a person said so; the
+ * plain one used to be done by the calendar, which lit up every day that had
+ * passed for a task nobody had touched.
  */
 import assert from 'node:assert/strict'
 import { createServer } from 'vite'
@@ -21,7 +23,7 @@ const task = (over) => ({
   id: 't', name: 't', description: '', parentId: null, projectId: 'p',
   type: 'phase', isTodo: false,
   startDate: '2026-09-10', endDate: '2026-09-14',
-  strictProgress: false, paused: false, pauseDate: null, pauses: [],
+  strictProgress: false, confirmedDays: [], paused: false, pauseDate: null, pauses: [],
   priority: null, tags: [], dependencies: [],
   createdAt: '', updatedAt: '',
   ...over,
@@ -47,9 +49,16 @@ const doneOn = (tasks, logs, days = WEEK) => {
   })
 }
 
-// Non-strict: the days the window has passed over, and neither the day before
-// the start nor today itself — a day is done once it is over.
-assert.deepEqual(doneOn([task({ id: 'a' })], []), ['2026-09-10', '2026-09-11', '2026-09-12', '2026-09-13', '2026-09-14'])
+// Plain: exactly the days that were ticked off, and nothing else. An untended
+// task is not a task being done, however much of its window has gone by.
+assert.deepEqual(doneOn([task({ id: 'a' })], []), [])
+assert.deepEqual(
+  doneOn([task({ id: 'a', confirmedDays: ['2026-09-11', '2026-09-13'] })], []),
+  ['2026-09-11', '2026-09-13'],
+)
+// A tick dated outside the window has no square of its own to land on, and must
+// not be credited to the nearest one either.
+assert.deepEqual(doneOn([task({ id: 'a', confirmedDays: ['2026-09-09'] })], []), [])
 
 // A window that has not opened yet: nothing is done.
 assert.deepEqual(doneOn([task({ id: 'a', startDate: '2026-09-20', endDate: '2026-09-30' })], []), [])
@@ -67,27 +76,35 @@ assert.deepEqual(
   ['2026-09-15'],
 )
 
-// A strict child alongside a non-strict one: the branch is done only on the days
-// both are — and the non-strict child is done on every day that has passed, so
-// the branch's done days are exactly the strict child's logs.
+// A strict child alongside a plain one: the branch is done only on the days both
+// are, and the two are done in different ways — the log and the tick have to
+// agree. Here the strict child logged the 10th and the 12th while the plain one
+// was ticked on the 10th and the 11th, so the 10th is the only day the whole
+// branch was done. The 11th has the tick but no log; the 12th the log but no
+// tick.
 const branch = [
   task({ id: 'a', startDate: '2026-09-10', endDate: '2026-09-14' }),
   task({ id: 'b', parentId: 'a', strictProgress: true }),
-  task({ id: 'c', parentId: 'a' }),
+  task({ id: 'c', parentId: 'a', confirmedDays: ['2026-09-10', '2026-09-11'] }),
 ]
-assert.deepEqual(doneOn(branch, [log('b', '2026-09-10'), log('b', '2026-09-12')]), ['2026-09-10', '2026-09-12'])
+assert.deepEqual(doneOn(branch, [log('b', '2026-09-10'), log('b', '2026-09-12')]), ['2026-09-10'])
 
-// Paused days are not days the task could have been done on.
+// Paused days are not days the task could have been done on, whatever the ticks
+// say: the 12th onwards is skipped out of the day altogether, so a tick left on
+// one of them lights nothing.
 assert.deepEqual(
-  doneOn([task({ id: 'a', paused: true, pauseDate: '2026-09-12' })], []),
+  doneOn(
+    [task({ id: 'a', confirmedDays: ['2026-09-10', '2026-09-11', '2026-09-12', '2026-09-13'], paused: true, pauseDate: '2026-09-12' })],
+    [],
+  ),
   ['2026-09-10', '2026-09-11'],
 )
 
-// An unresolved end (`null`) is open-ended, not never-active: the days up to
-// today still count.
+// An unresolved end (`null`) is open-ended, not never-active: a tick past the
+// window this fixture would otherwise have still lands on its own day.
 assert.deepEqual(
-  doneOn([task({ id: 'a', endDate: null })], []),
-  ['2026-09-10', '2026-09-11', '2026-09-12', '2026-09-13', '2026-09-14'],
+  doneOn([task({ id: 'a', endDate: null, confirmedDays: ['2026-09-15'] })], []),
+  ['2026-09-15'],
 )
 
 // A to-do and a long-term goal are neither of them things a day can be done
@@ -97,14 +114,14 @@ assert.deepEqual(doneOn([task({ id: 'a', type: 'long-term', endDate: null })], [
 
 // The days asked about are the only ones answered about — the heatmap's window
 // is a slice of the task, not the whole of it.
-assert.deepEqual(doneOn([task({ id: 'a' })], [], ['2026-09-11']), ['2026-09-11'])
+assert.deepEqual(doneOn([task({ id: 'a', confirmedDays: ['2026-09-11'] })], [], ['2026-09-11']), ['2026-09-11'])
 
 // The board is the same question asked of every project at once, and it answers
-// with a size rather than a yes: `a` is carried by the calendar, `b` only by its
+// with a size rather than a yes: `a` is carried by its ticks, `b` only by its
 // log, so the 11th is a two and the 12th a one — which is the shading Manage
 // draws, and the whole point of counting instead of testing.
 const boardTasks = [
-  task({ id: 'a' }),
+  task({ id: 'a', confirmedDays: ['2026-09-11', '2026-09-12'] }),
   task({ id: 'b', projectId: 'q', strictProgress: true }),
 ]
 assert.deepEqual(board(boardTasks, [log('b', '2026-09-11')]).get('2026-09-11'), { total: 2, done: 2 })
@@ -113,7 +130,10 @@ assert.deepEqual(board(boardTasks, [log('b', '2026-09-11')]).get('2026-09-12'), 
 // missing, so an empty square and a quiet day are told apart downstream.
 assert.deepEqual(board(boardTasks, []).get('2026-09-09'), { total: 0, done: 0 })
 // With only one of the two scheduled, that one alone decides the day.
-const split = [task({ id: 'a' }), task({ id: 'b', projectId: 'q', startDate: '2026-09-20', endDate: '2026-09-25' })]
+const split = [
+  task({ id: 'a', confirmedDays: ['2026-09-11'] }),
+  task({ id: 'b', projectId: 'q', startDate: '2026-09-20', endDate: '2026-09-25' }),
+]
 assert.deepEqual(board(split, []).get('2026-09-11'), { total: 1, done: 1 })
 // ...and a day still to come is scheduled without being done: it has a size,
 // but nothing has been finished on it yet.

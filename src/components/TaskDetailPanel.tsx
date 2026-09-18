@@ -4,7 +4,8 @@ import { NotebookText, Pencil, Trash2, X } from 'lucide-react'
 import { Task, TaskLog } from '../types'
 import { useStore } from '../store/useStore'
 import { computeWbs, effectiveStates, todoCascadeIds } from '../lib/tree'
-import { logsForTask, parseLogContent } from '../lib/logs'
+import { logsForTask } from '../lib/logs'
+import { LogLines } from './LogLines'
 import { hasStrictLeafUnder, pendingLogsUnder } from '../lib/dayTasks'
 import { STATUS_META, priorityMeta, sig, sigText } from '../lib/ui'
 import { diffDays, toDate } from '../lib/dates'
@@ -160,12 +161,7 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
                       <button onClick={() => deleteLog(log.id)} title={t('common.delete')} className="p-0.5 text-dim hover:text-delayed"><Trash2 size={12} /></button>
                     </div>
                   </div>
-                  {parseLogContent(log.content).map((it, i) => (
-                    <div key={i} className="flex items-start gap-1.5 text-[12px] text-muted" style={{ paddingLeft: it.depth * 16 }}>
-                      <span className="text-dim shrink-0">·</span>
-                      <span className="whitespace-pre-wrap break-words">{it.text}</span>
-                    </div>
-                  ))}
+                  <LogLines content={log.content} />
                   {log.targetProgress != null && (
                     <div className="text-[11px] text-dim mt-1">{t('common.targetProgress', { percent: log.targetProgress })}</div>
                   )}

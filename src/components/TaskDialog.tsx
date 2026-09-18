@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Modal, Field, inputCls } from './ui'
+import { LogOptOutDialog } from './LogOptOutDialog'
 import { Task, TaskPriority, TaskType } from '../types'
 import { useStore } from '../store/useStore'
 import { collectDescendants } from '../lib/tree'
@@ -31,17 +32,24 @@ export function TaskDialog({ onClose, existing, defaultParentId }: Props) {
     isTodo: existing?.isTodo ?? false,
     startDate: existing?.startDate ?? todayISO(),
     endDate: existing?.endDate ?? todayISO(),
-    strictProgress: existing?.strictProgress ?? false,
+    // Logs are the default and the checkbox below is the way out of them, so a
+    // task that has never been saved starts strict. An existing task keeps
+    // whatever it was.
+    strictProgress: existing ? existing.strictProgress : true,
     priority: (existing?.priority ?? 'medium') as TaskPriority,
     tags: existing?.tags?.join(', ') ?? '',
   }))
   const [overdueChoice, setOverdueChoice] = useState<'delayed' | 'completed'>('delayed')
+  const [optOutAsk, setOptOutAsk] = useState(false)
 
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }))
 
   const setType = (type: TaskType) => {
+    // `strictProgress` is left alone here — the payload forces it false for a
+    // long-term goal anyway, and clearing it on the way through would silently
+    // turn a task back to simplified for anyone who toggled the type and back.
     if (type === 'long-term') {
-      setForm((f) => ({ ...f, type, strictProgress: false, startDate: f.startDate || todayISO(), endDate: '' }))
+      setForm((f) => ({ ...f, type, startDate: f.startDate || todayISO(), endDate: '' }))
     } else {
       setForm((f) => ({ ...f, type, startDate: f.startDate || todayISO(), endDate: f.endDate || todayISO() }))
     }
@@ -211,20 +219,6 @@ export function TaskDialog({ onClose, existing, defaultParentId }: Props) {
               </div>
             )}
 
-            <div className={`flex items-center gap-2 ${isLT ? 'opacity-50' : ''}`}>
-              <input
-                type="checkbox"
-                id="strict-progress"
-                checked={form.strictProgress}
-                disabled={isLT}
-                onChange={(e) => set('strictProgress', e.target.checked)}
-                className="accent-accent"
-              />
-              <label htmlFor="strict-progress" className={`text-[12px] ${isLT ? 'text-dim cursor-not-allowed' : 'text-fg cursor-pointer'}`}>
-                {t('task.strictProgress')}
-              </label>
-            </div>
-
             <Field label={t('common.priority')}>
               <select className={inputCls} value={form.priority} onChange={(e) => set('priority', e.target.value as TaskPriority)}>
                 {PRIORITY_ORDER.map((p) => <option key={p} value={p}>{t(PRIORITY_META[p].labelKey)}</option>)}
@@ -250,11 +244,41 @@ export function TaskDialog({ onClose, existing, defaultParentId }: Props) {
           <textarea className={`${inputCls} h-20 py-1.5 resize-none`} value={form.description} onChange={(e) => set('description', e.target.value)} placeholder={t('common.notes')} />
         </Field>
 
+        {/* Last, and set off by a rule, because it is a way *out* of the default
+            rather than another thing to fill in. Ticking it does not take effect
+            on the spot: it opens a dialog that says what the task gives up, and
+            the flag only moves if that dialog is answered. Unticking needs no
+            such ceremony — that direction is the recommendation. */}
+        {!isTodo && !isLT && (
+          <div className="border-t border-line pt-3 flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="no-logs"
+              checked={!form.strictProgress}
+              onChange={(e) => (e.target.checked ? setOptOutAsk(true) : set('strictProgress', true))}
+              className="accent-accent"
+            />
+            <label htmlFor="no-logs" className="text-[12px] text-fg cursor-pointer">
+              {t('task.strictProgress')}
+            </label>
+          </div>
+        )}
+
         <div className="flex justify-end gap-2 pt-1">
           <button onClick={onClose} className="h-8 px-3 text-[12px] text-muted hover:text-fg border border-border rounded-[3px]">{t('common.cancel')}</button>
           <button onClick={submit} disabled={!form.name.trim()} className="h-8 px-4 text-[12px] font-medium bg-accent text-on-accent disabled:opacity-40 rounded-[3px]">{t('common.save')}</button>
         </div>
       </div>
+
+      {optOutAsk && (
+        <LogOptOutDialog
+          onBack={() => setOptOutAsk(false)}
+          onConfirm={() => {
+            set('strictProgress', false)
+            setOptOutAsk(false)
+          }}
+        />
+      )}
     </Modal>
   )
 }

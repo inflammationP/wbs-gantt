@@ -192,6 +192,10 @@ function normalize(data: PersistedData): LoadedData {
         paused: isTodo ? false : (t.paused ?? false),
         pauseDate: isTodo ? null : (t.pauseDate ?? null),
         pauses: Array.isArray(t.pauses) ? t.pauses : [],
+        // Kept through a to-do rather than cleared with the other scheduling
+        // fields: logs survive that trip too, and a task that comes back should
+        // not come back with its work forgotten.
+        confirmedDays: Array.isArray(t.confirmedDays) ? t.confirmedDays : [],
         priority: isTodo ? null : (t.priority ?? 'medium'),
       }
     }),

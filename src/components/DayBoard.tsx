@@ -68,12 +68,12 @@ export function DayBoard({ day, dayChores, layout, onAddChore }: Props) {
   const deleteLog = useStore((s) => s.deleteLog)
 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
-  const [open, setOpen] = useState({ strict: true, nonStrict: true, chores: true })
+  const [open, setOpen] = useState({ tasks: true, chores: true })
   const [logFor, setLogFor] = useState<string | null>(null)
   const [editLog, setEditLog] = useState<TaskLog | null>(null)
   const [logsOpen, setLogsOpen] = useState(false)
 
-  const summary = useMemo(() => daySummary(tasks, logs, projects, day), [tasks, logs, projects, day])
+  const summary = useMemo(() => daySummary(tasks, logs, projects, day, today), [tasks, logs, projects, day, today])
   const dayLogs = useMemo(() => logs.filter((l) => l.date === day), [logs, day])
   const projectOf = (id: string) => projects.find((p) => p.id === id)
 
@@ -106,6 +106,7 @@ export function DayBoard({ day, dayChores, layout, onAddChore }: Props) {
 
   const rowProps = {
     expanded,
+    day,
     isFuture,
     onToggle: toggle,
     onWriteLog: (id: string) => setLogFor(id),
@@ -113,34 +114,27 @@ export function DayBoard({ day, dayChores, layout, onAddChore }: Props) {
     projectName: (id: string) => projectOf(id)?.name ?? '',
   }
 
+  // One list, not two. Splitting the day into "strict" and "the rest" put the
+  // log obligations at the top, but it also meant calling every task one thing
+  // or the other — and the only difference that matters is whether a task owes a
+  // log, which the mark on the row says better than a heading can. The legend
+  // underneath is what has to carry the mark's meaning.
   const taskSections = (
-    <>
-      <Section
-        title={t('day.strictTasks')}
-        count={summary.strict.length}
-        open={open.strict}
-        onToggle={() => setOpen((o) => ({ ...o, strict: !o.strict }))}
-      >
-        {summary.strict.length === 0 ? (
-          <Empty>{t('day.noStrictOnDay')}</Empty>
-        ) : (
-          summary.strict.map((r) => <DayRowView key={r.task.id} row={r} {...rowProps} />)
-        )}
-      </Section>
-
-      <Section
-        title={t('day.otherTasks')}
-        count={summary.nonStrict.length}
-        open={open.nonStrict}
-        onToggle={() => setOpen((o) => ({ ...o, nonStrict: !o.nonStrict }))}
-      >
-        {summary.nonStrict.length === 0 ? (
-          <Empty>{t('day.nothingElse')}</Empty>
-        ) : (
-          summary.nonStrict.map((r) => <DayRowView key={r.task.id} row={r} {...rowProps} />)
-        )}
-      </Section>
-    </>
+    <Section
+      title={t('day.taskList')}
+      count={summary.all.length}
+      // Only when there is a mark to explain. A legend on a day with nothing to
+      // explain is the same mistake as a reminder that is always green.
+      hint={summary.strict.length > 0 ? t('day.logMark') : undefined}
+      open={open.tasks}
+      onToggle={() => setOpen((o) => ({ ...o, tasks: !o.tasks }))}
+    >
+      {summary.all.length === 0 ? (
+        <Empty>{t('day.nothingScheduled')}</Empty>
+      ) : (
+        summary.all.map((r) => <DayRowView key={r.task.id} row={r} {...rowProps} />)
+      )}
+    </Section>
   )
 
   const choreSection = (
@@ -274,12 +268,15 @@ export function DayBoard({ day, dayChores, layout, onAddChore }: Props) {
 function Section({
   title,
   count,
+  hint,
   open,
   onToggle,
   children,
 }: {
   title: string
   count: number
+  /** One line under the title, for what the section's contents mean. */
+  hint?: string
   open: boolean
   onToggle: () => void
   children: ReactNode
@@ -295,7 +292,14 @@ function Section({
         {title}
         <span className="font-mono normal-case tracking-normal">{count}</span>
       </button>
-      {open && <div className="mt-0.5 px-2 space-y-0.5">{children}</div>}
+      {open && (
+        <>
+          {/* Under the title, aligned with it rather than with the rows: this
+              explains the heading's subject, not any one row. */}
+          {hint && <div className="px-4 pb-1 text-[11px] text-dim">{hint}</div>}
+          <div className="mt-0.5 px-2 space-y-0.5">{children}</div>
+        </>
+      )}
     </div>
   )
 }
@@ -304,9 +308,18 @@ function Empty({ children }: { children: ReactNode }) {
   return <div className="px-2 py-1 text-[12px] text-dim">{children}</div>
 }
 
+/**
+ * How far one level of the task tree steps in.
+ *
+ * Smaller than the Gantt's 16: the day panel is 320px at its narrowest, and a
+ * deep branch there would spend a fifth of the row on indentation alone.
+ */
+const INDENT = 12
+
 function DayRowView({
   row,
   expanded,
+  day,
   isFuture,
   onToggle,
   onWriteLog,
@@ -315,6 +328,8 @@ function DayRowView({
 }: {
   row: DayRow
   expanded: Record<string, boolean>
+  /** The day this row is drawn for — the day a tick would be recorded against. */
+  day: string
   isFuture: boolean
   onToggle: (id: string) => void
   onWriteLog: (id: string) => void
@@ -322,6 +337,7 @@ function DayRowView({
   projectName: (id: string) => string
 }) {
   const t = useT()
+  const toggleTaskDay = useStore((s) => s.toggleTaskDay)
   const meta = STATUS_META[row.status]
   const isOpen = expanded[row.task.id] === true
   const finished = row.status === 'completed'
@@ -350,7 +366,8 @@ function DayRowView({
           The badges keep to the right via `ml-auto`. */}
       <div
         onClick={() => onToggle(row.task.id)}
-        className="flex items-center gap-1.5 pl-2 pr-2 h-7 rounded-[3px] hover:bg-panel2"
+        style={{ paddingLeft: 8 + row.depth * INDENT }}
+        className="flex items-center gap-1.5 pr-2 h-7 rounded-[3px] hover:bg-panel2"
       >
         <button
           aria-expanded={isOpen}
@@ -358,6 +375,14 @@ function DayRowView({
         >
           <span className="text-dim shrink-0">{isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>
           <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: sig(meta.token) }} />
+          {/* The mark for "this one owes a log", explained by the legend under
+              the list. Amber is the colour the ring above counts and the No log
+              badge wears, so it is the same signal, not a new one. */}
+          {row.strict && (
+            <span className="shrink-0 text-[12px] font-semibold text-today" aria-hidden>
+              *
+            </span>
+          )}
           <span
             className={`min-w-0 truncate text-[12px] ${struck ? 'line-through text-dim' : 'text-fg/90'}`}
             title={`${row.wbs} ${row.task.name}`}
@@ -380,6 +405,29 @@ function DayRowView({
             <NotebookText size={12} />
           </button>
         )}
+        {/* The counterpart of the log button: the one thing you can do to a
+            simplified task, and the only thing that ever moves its number.
+            Ticked by hand rather than written up, so it says done/not-done and
+            nothing else — no amount to fill in, here or anywhere. Drawn like a
+            chore's box so the two read as the same gesture. */}
+        {row.plain && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              toggleTaskDay(row.task.id, day)
+            }}
+            disabled={!row.tickable}
+            role="checkbox"
+            aria-checked={row.confirmedOnDay}
+            aria-label={t('day.tick')}
+            title={t('day.tick')}
+            className="ml-2 mt-[1px] shrink-0 w-[14px] h-[14px] rounded-[2px] border border-border grid place-items-center transition-colors disabled:opacity-40"
+            style={row.confirmedOnDay ? { background: sig('completed'), borderColor: sig('completed') } : undefined}
+          >
+            {row.confirmedOnDay && <Check size={10} strokeWidth={3} className="text-on-accent" />}
+          </button>
+        )}
+
         <span className="ml-auto shrink-0 flex items-center gap-1.5">
           {missingLog && (
             <span className="shrink-0 inline-flex items-center gap-0.5 px-1 h-4 text-[9px] font-medium rounded-[2px] bg-today/15 text-today border border-today/30">
@@ -401,7 +449,7 @@ function DayRowView({
       {/* The bar stays mounted and animates both axes, so it genuinely grows
           rightward from zero instead of appearing at full width. */}
       <div className={`overflow-hidden transition-[height] duration-300 ease-out ${isOpen ? 'h-[30px]' : 'h-0'}`}>
-        <div className="pl-8 pr-2 pt-1">
+        <div style={{ paddingLeft: 32 + row.depth * INDENT }} className="pr-2 pt-1">
           <div className="h-1.5 bg-panel2 rounded-full overflow-hidden">
             <div
               className="h-full rounded-full transition-[width] duration-300 ease-out"

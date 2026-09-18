@@ -82,7 +82,12 @@ export function deriveTaskStatus(task: Task, progress: number | null, today: str
   if (task.startDate == null && task.endDate == null) return 'not-started'
   if (progress != null && progress >= 100) return 'completed'
   if (task.startDate != null && today < task.startDate) return 'not-started'
-  if (task.type !== 'long-term' && task.strictProgress && task.endDate != null && today > task.endDate) return 'delayed'
+  // Past its end date and unfinished. Used to be gated on `strictProgress`,
+  // because a plain task's window elapsing *was* its completion — the calendar
+  // finished it, so it could never be late. A plain task now advances only when
+  // ticked off, so it can run out of window like any other. The `progress >= 100`
+  // line above still settles the finished case first.
+  if (task.type !== 'long-term' && task.endDate != null && today > task.endDate) return 'delayed'
   return 'in-progress'
 }
 

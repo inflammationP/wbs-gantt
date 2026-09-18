@@ -25,6 +25,12 @@ export interface Task {
   startDate: string | null // yyyy-MM-dd (null for long-term goals and to-dos)
   endDate: string | null // yyyy-MM-dd inclusive (null for long-term goals and to-dos)
   strictProgress: boolean // strict: progress accumulates only via daily logs
+  // The days a simplified task (`strictProgress: false`) was ticked off, which
+  // is the whole of its progress. Dates and nothing else: the point of the
+  // simplified rule is that the tick says whether you did the day's work, and no
+  // one gets to type in how much it was worth. Deliberately not a `TaskLog` —
+  // these must not turn up as history in the Logs page or the day's log count.
+  confirmedDays: string[] // yyyy-MM-dd
   paused: boolean
   pauseDate: string | null // yyyy-MM-dd, set while paused
   pauses: { pauseDate: string; resumeDate: string }[]

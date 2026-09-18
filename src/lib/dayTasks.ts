@@ -1,6 +1,6 @@
 import { Project, Task, TaskLog, TaskStatus } from '../types'
 import { buildChildrenMap, collectDescendants, computeWbs, deriveStatus, deriveTaskStatus, EffState } from './tree'
-import { taskProgress } from './progress'
+import { isPausedOnDay, taskProgress } from './progress'
 import { addDays, toDate, toISO } from './dates'
 
 export interface DayEffState {
@@ -21,14 +21,30 @@ export interface DayRow {
   progress: number | null
   status: TaskStatus
   strict: boolean
+  /** The mirror of `strict`: a simplified leaf, the row a tick box belongs on. */
+  plain: boolean
   active: boolean
   hasLog: boolean
+  /** Whether this day is already ticked off (`plain` rows only). */
+  confirmedOnDay: boolean
+  /** Whether the day can still be ticked — it happened, and the task was on. */
+  tickable: boolean
   pausedToday: boolean
   completedBefore: boolean
   overdue: boolean
 }
 
 export interface DaySummary {
+  /**
+   * Every row, in one order — the list the day actually renders.
+   *
+   * The day used to be drawn as two lists, strict and not, and the split was
+   * the whole point: it put what owed a log at the top. It is now one list with
+   * a mark on the rows that owe one, so the order has to be the single sort
+   * below rather than strict-block-then-rest, which would look arbitrary.
+   */
+  all: DayRow[]
+  /** The two halves of `all`, kept for the counts that are still asked for. */
   strict: DayRow[]
   nonStrict: DayRow[]
   ring: StrictLogRate
@@ -74,14 +90,28 @@ export function activeOnDay(task: Task, day: string): boolean {
   return task.endDate == null || day <= task.endDate
 }
 
+// `isPausedOnDay` is re-exported rather than defined here: it is a question
+// about a task's schedule, and this is where the day machinery lives, but the
+// progress denominator needs it too and this module already depends on
+// `progress.ts` — the other direction would be a cycle. Definition and rationale
+// live there.
+export { isPausedOnDay }
+
 /**
- * Whether a task was paused on `day`. Has to be day-accurate: `pauses` holds
- * past pause/resume pairs, while `paused` + `pauseDate` describe only the
- * pause that is still open.
+ * A task that keeps no log and therefore carries the simplified progress: the
+ * mirror of `isStrictLeaf` below. Its day is ticked off by hand instead of
+ * written up, so this is the predicate for "does a tick box belong on this row".
+ *
+ * Same leaf rule, and for the same reason: a parent's progress is the average of
+ * its children's, so a tick on one would be a number nothing reads.
  */
-export function isPausedOnDay(task: Task, day: string): boolean {
-  if (task.pauses.some((p) => p.pauseDate <= day && day < p.resumeDate)) return true
-  return task.paused && task.pauseDate != null && task.pauseDate <= day
+export function isNonStrictLeaf(task: Task, children: Map<string | null, Task[]>): boolean {
+  return (
+    !task.isTodo &&
+    task.type === 'phase' &&
+    !task.strictProgress &&
+    (children.get(task.id) ?? []).length === 0
+  )
 }
 
 /**
@@ -342,7 +372,13 @@ function depths(tasks: Task[]): Map<string, number> {
  * scheduled on the day is listed — long-term goals, paused tasks and completed
  * ones included; the panel decides how to mark them.
  */
-export function daySummary(tasks: Task[], logs: TaskLog[], projects: Project[], day: string): DaySummary {
+export function daySummary(
+  tasks: Task[],
+  logs: TaskLog[],
+  projects: Project[],
+  day: string,
+  today: string,
+): DaySummary {
   const clipped = logsUpTo(logs, day)
   const states = dayStates(tasks, logs, day)
   const children = buildChildrenMap(tasks)
@@ -366,12 +402,16 @@ export function daySummary(tasks: Task[], logs: TaskLog[], projects: Project[], 
     if (!st) continue
     const active = activeOnDay(t, day)
     const strict = isStrictLeaf(t, children)
-    // A strict task that ran out of window without finishing drops off its own
+    const plain = isNonStrictLeaf(t, children)
+    const pausedToday = isPausedOnDay(t, day)
+    // A task that ran out of window without finishing drops off its own
     // schedule, which would hide the most urgent work of all. It is listed with
     // an overdue badge — and, since `hasComeDue` keeps it owing a log, it is
     // counted in the ring and badged "No log" like any other outstanding task.
-    // The two agree because they are the same question asked twice.
-    const overdue = !active && strict && st.status === 'delayed'
+    // The two agree because they are the same question asked twice. A simplified
+    // task gets the same treatment now that the calendar no longer finishes it
+    // on its own.
+    const overdue = !active && (strict || plain) && st.status === 'delayed'
     if (!active && !overdue) continue
     rows.push({
       task: t,
@@ -380,9 +420,15 @@ export function daySummary(tasks: Task[], logs: TaskLog[], projects: Project[], 
       progress: st.progress,
       status: st.status,
       strict,
+      plain,
       active,
       hasLog: logged.has(t.id),
-      pausedToday: isPausedOnDay(t, day),
+      confirmedOnDay: (t.confirmedDays ?? []).includes(day),
+      // A day can be ticked while it is happening or after the fact — that is
+      // how a missed day gets backfilled — but never before it arrives, and
+      // never on a day the task was off.
+      tickable: plain && active && !pausedToday && day <= today,
+      pausedToday,
       completedBefore: progressBefore(t, clipped, day) >= 100,
       overdue,
     })
@@ -394,14 +440,51 @@ export function daySummary(tasks: Task[], logs: TaskLog[], projects: Project[], 
     a.wbs.localeCompare(b.wbs, undefined, { numeric: true }) ||
     a.task.name.localeCompare(b.task.name) ||
     a.task.id.localeCompare(b.task.id)
-  rows.sort(cmp)
+  // Siblings that owe a log come first — they are what the ring above counts,
+  // so the day's obligations stay at the top of each group without the list
+  // having to be split in two to say so.
+  const cmpSiblings = (a: DayRow, b: DayRow) => (a.strict ? 0 : 1) - (b.strict ? 0 : 1) || cmp(a, b)
+
+  // A tree, not a flat queue. Sorting the whole day by status rank read as "what
+  // do I handle first", but it scattered a task away from the parent it belongs
+  // to, and the rows have carried a `depth` that nothing used. Now a parent is
+  // followed by its own children and only siblings are ordered.
+  //
+  // A task whose parent is not on this day — the parent is done, or has not
+  // started — is a root here rather than being dropped: the list is what is
+  // scheduled for the day, and that task is.
+  const byId = new Map(rows.map((r) => [r.task.id, r]))
+  const kids = new Map<string, DayRow[]>()
+  const roots: DayRow[] = []
+  for (const r of rows) {
+    const pid = r.task.parentId
+    if (pid != null && byId.has(pid)) {
+      const list = kids.get(pid)
+      if (list) list.push(r)
+      else kids.set(pid, [r])
+    } else {
+      roots.push(r)
+    }
+  }
+
+  roots.sort(cmpSiblings)
+  const ordered: DayRow[] = []
+  const walk = (r: DayRow) => {
+    ordered.push(r)
+    const ks = kids.get(r.task.id)
+    if (!ks) return
+    ks.sort(cmpSiblings)
+    for (const k of ks) walk(k)
+  }
+  for (const r of roots) walk(r)
 
   let logCount = 0
   for (const l of logs) if (l.date === day) logCount++
 
   return {
-    strict: rows.filter((r) => r.strict),
-    nonStrict: rows.filter((r) => !r.strict),
+    all: ordered,
+    strict: ordered.filter((r) => r.strict),
+    nonStrict: ordered.filter((r) => !r.strict),
     ring: strictLogRate(tasks, logs, day),
     logCount,
   }
