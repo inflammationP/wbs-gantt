@@ -6,3 +6,6 @@ dist
 # release 脚本生成的产物 / 临时文件
 latest.json
 .release-notes.md
+
+# demo-seed 脚本生成的本地演示看板 / 不是仓库内容
+demo-board.local.json

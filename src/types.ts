@@ -67,6 +67,61 @@ export interface Chore {
   updatedAt: string
 }
 
+/**
+ * A habit — the thing you do every day, which finishing does not remove.
+ *
+ * Its own collection rather than a flag on `Chore`, because the two are governed
+ * by opposite rules. A chore has a debt: undone, it carries forward day after
+ * day, and `date` records the day it was originally meant for. A habit has no
+ * debt — skipping yesterday does not mean doing it twice today — so it neither
+ * carries nor accumulates a "how late" figure. A single `done` flag meaning both
+ * "this thing is finished" and "today's instance is finished" would put that
+ * question to every one of the twelve places that read `chore.done`.
+ *
+ * `startDate`/`endDate`/`weekdays` are load-bearing, not bookkeeping: opening
+ * the day panel on a date a month back, a habit that did not exist yet must not
+ * appear in that day's record as an unticked line, and neither must one that was
+ * never meant to run that day. "Which habits were on this day" is `runsOn` in
+ * `lib/habits.ts`, and it is the only place that answer is written down.
+ *
+ * One entry per day in `doneDays`: ticked appends, unticking removes. That array
+ * is the whole history, and while it grows with time it gains at most one entry
+ * a day, which is far lighter than a log.
+ */
+export interface Habit {
+  id: string
+  title: string
+  note: string // one line, may be empty
+  startDate: string // yyyy-MM-dd, the day it was put on; never rewritten
+  endDate: string | null // yyyy-MM-dd inclusive, null while it runs on
+  /**
+   * The days of the week it runs on, 0 = Monday … 6 = Sunday.
+   *
+   * Never empty: "every day" is stored as all seven rather than as an empty
+   * array. Empty-means-everything reads well in a filter and badly on screen —
+   * turning all seven buttons off would then mean "every day", which is the one
+   * thing the person doing it plainly does not mean. All seven is also what
+   * every habit written before this field existed is backfilled to.
+   */
+  weekdays: number[]
+  /**
+   * Suspended: off the daily list from `pauseDate` on, but still ticked in the
+   * past and still on the days it was actually run.
+   *
+   * The same three fields `Task` carries, and for the same reason rather than
+   * for symmetry. A lone `paused` boolean forgets the pause the moment it is
+   * lifted, and the days it covered then read as days the habit was skipped —
+   * the precise falsehood `runsOn` exists to prevent. `isPausedOnDay` already
+   * answers this over `[pauseDate, resumeDate)`, so there is nothing new here.
+   */
+  paused: boolean
+  pauseDate: string | null // yyyy-MM-dd, set while paused
+  pauses: { pauseDate: string; resumeDate: string }[]
+  doneDays: string[] // yyyy-MM-dd, the days it was ticked
+  createdAt: string
+  updatedAt: string
+}
+
 export interface TaskLog {
   id: string
   taskId: string

@@ -1,20 +1,23 @@
-import { Chore, Project, Task, TaskLog } from '../types'
+import { Chore, Habit, Project, Task, TaskLog } from '../types'
 import { DEFAULT_LANG, isLang, Lang } from '../lib/i18n'
 import { DEFAULT_THEME, isThemeId, ThemeId } from '../lib/theme'
+import { ALL_DAYS } from '../lib/habits'
 
 export interface PersistedData {
   projects: Project[]
   tasks: Task[]
   logs: TaskLog[]
   /**
-   * Chores, kept apart from `tasks` on purpose — see `Chore` in types.ts.
+   * Chores and habits, kept apart from `tasks` on purpose — see `Chore` and
+   * `Habit` in types.ts.
    *
    * Optional in the type, unlike the three above: every blob written before
-   * chores existed has no such field, and `normalize` is what turns that into
-   * an empty array. Declaring it required would only move the same admission
-   * to a cast at each read.
+   * chores — or before habits — has no such field, and `normalize` is what turns
+   * that into an empty array. Declaring it required would only move the same
+   * admission to a cast at each read.
    */
   chores?: Chore[]
+  habits?: Habit[]
 }
 
 /**
@@ -179,6 +182,28 @@ function normalize(data: PersistedData): LoadedData {
         completedDate: done ? (c.completedDate ?? date) : null,
       }
     }),
+    // Unlike a chore's `done`, nothing here is coerced in either direction: a
+    // habit has no finished state to keep in step with, and `doneDays` is the
+    // whole of what it knows. An empty `startDate` is left alone rather than
+    // guessed at — it makes the habit invisible until a real date is written,
+    // where inventing one would drop it into some day's record on a date nobody
+    // chose. Absent for every blob written before habits existed, which is the
+    // whole reason the field is optional in the type.
+    habits: (Array.isArray(data.habits) ? data.habits : []).map((h) => ({
+      ...h,
+      title: h.title ?? '',
+      note: h.note ?? '',
+      startDate: h.startDate ?? '',
+      endDate: h.endDate ?? null,
+      // Every habit written before this field existed ran every day, which is
+      // what all seven says. Defaulting to an empty array would read as "never"
+      // under a membership test — a silent way to delete somebody's list.
+      weekdays: Array.isArray(h.weekdays) && h.weekdays.length ? ALL_DAYS.filter((d) => h.weekdays.includes(d)) : [...ALL_DAYS],
+      paused: h.paused === true,
+      pauseDate: h.pauseDate ?? null,
+      pauses: Array.isArray(h.pauses) ? h.pauses : [],
+      doneDays: Array.isArray(h.doneDays) ? h.doneDays : [],
+    })),
     tasks: data.tasks.map((t) => {
       const isLT = t.type === 'long-term'
       const isTodo = t.isTodo === true
@@ -237,6 +262,7 @@ export function exportJson(data: PersistedData): string {
       tasks: data.tasks,
       logs: data.logs,
       chores: data.chores ?? [],
+      habits: data.habits ?? [],
     },
     null,
     2,
@@ -253,5 +279,6 @@ export function parseImport(json: string): LoadedData {
     tasks: parsed.tasks,
     logs: parsed.logs ?? [],
     chores: parsed.chores ?? [],
+    habits: parsed.habits ?? [],
   })
 }

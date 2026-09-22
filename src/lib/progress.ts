@@ -2,17 +2,32 @@ import { Task, TaskLog } from '../types'
 import { addDays, diffDays, toDate, toISO } from './dates'
 
 /**
- * Whether a task was paused on `day`.
+ * What `isPausedOnDay` needs to know: anything that can be suspended.
+ *
+ * Structural rather than `Task`, because a habit pauses by the same rules and
+ * the question is identical. Widening the parameter costs nothing at the call
+ * sites — every one of them passes a `Task`, which still satisfies this — and
+ * it beats a second copy in `lib/habits.ts` that would have to be kept in step
+ * with the half-open interval below.
+ */
+export interface Pausable {
+  paused: boolean
+  pauseDate: string | null
+  pauses: { pauseDate: string; resumeDate: string }[]
+}
+
+/**
+ * Whether something was paused on `day`.
  *
  * Lives here rather than in `dayTasks.ts` because the denominator below needs
  * it, and `dayTasks` already imports this module — the other direction would be
- * a cycle (`progress` → `dayTasks` → `tree` → `progress`). `progress.ts` reads
- * nothing but the task's own fields, so it is the end of the chain.
+ * a cycle (`progress` → `dayTasks` → `tree` → `progress`). This module reads
+ * nothing but the subject's own fields, so it is the end of the chain.
  *
  * Has to be day-accurate: `pauses` holds past pause/resume pairs, while
  * `paused` + `pauseDate` describe only the pause that is still open.
  */
-export function isPausedOnDay(task: Task, day: string): boolean {
+export function isPausedOnDay(task: Pausable, day: string): boolean {
   if (task.pauses.some((p) => p.pauseDate <= day && day < p.resumeDate)) return true
   return task.paused && task.pauseDate != null && task.pauseDate <= day
 }

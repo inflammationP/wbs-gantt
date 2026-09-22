@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { X } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { choresTouching } from '../lib/chores'
+import { habitsOn } from '../lib/habits'
 import { diffDays, toDate } from '../lib/dates'
 import { formatLongDate, formatRelativeDay } from '../lib/i18n'
 import { useLang, useT } from '../lib/useT'
@@ -18,6 +19,7 @@ export function DayDetailPanel({ day }: { day: string }) {
   const t = useT()
   const lang = useLang()
   const chores = useStore((s) => s.chores)
+  const habits = useStore((s) => s.habits)
   const setSelectedDay = useStore((s) => s.setSelectedDay)
 
   // Subscribed but never read: the heading's relative label is built from the
@@ -28,6 +30,14 @@ export function DayDetailPanel({ day }: { day: string }) {
   // A record of the day: what was put on it, and what was finished on it. Not
   // the same question the Today page asks — see `DayBoard`'s `dayChores`.
   const dayChores = useMemo(() => choresTouching(chores, day), [chores, day])
+
+  // The habits that existed by `day`, tick state and all. No callbacks are
+  // passed with them, so the section is a record here: a tick is only ever for
+  // the day that is happening, and this panel is as often as not a day that has
+  // been and gone. It is still shown — the heatmap counts those ticks, and a
+  // green square with nothing in the panel to account for it is a number the
+  // user has no way to check.
+  const dayHabits = useMemo(() => habitsOn(habits, day), [habits, day])
 
   return (
     <aside className="w-[320px] shrink-0 border-l border-border bg-panel flex flex-col overflow-hidden">
@@ -48,7 +58,7 @@ export function DayDetailPanel({ day }: { day: string }) {
         </div>
       </div>
 
-      <DayBoard day={day} dayChores={dayChores} layout="stack" />
+      <DayBoard day={day} dayChores={dayChores} habits={dayHabits} layout="stack" />
     </aside>
   )
 }

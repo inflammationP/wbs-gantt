@@ -46,10 +46,25 @@ export function addHours(d: Date, n: number): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours() + n)
 }
 
+/**
+ * The day of the week as an index, 0 = Monday … 6 = Sunday.
+ *
+ * `Date.getDay()` is Sunday-first, which nothing in this app wants: the timeline
+ * starts its weeks on Monday, `weekdayLabels` in `i18n.ts` is laid out Mon-first,
+ * and a habit's `weekdays` is a Monday-first set. Named rather than written out
+ * at each of them, because a stray `% 7` with the wrong offset shifts every
+ * label by one and reads as a translation bug.
+ *
+ * Not `weekdayMonFirst`: `i18n.ts` already has a local function by that name,
+ * and it returns the Mon-first *labels*, not an index.
+ */
+export function weekdayIndex(d: Date): number {
+  return (d.getDay() + 6) % 7
+}
+
 export function startOfWeek(d: Date): Date {
   const s = startOfDay(d)
-  const dow = (s.getDay() + 6) % 7 // Monday = 0
-  return addDays(s, -dow)
+  return addDays(s, -weekdayIndex(s))
 }
 
 export function startOfMonth(d: Date): Date {
@@ -88,7 +103,7 @@ export function isToday(d: Date): boolean {
 /** ISO-8601 week number (Monday = day 1, week 1 contains Jan 4). */
 export function isoWeekNumber(d: Date): number {
   const target = new Date(d.getFullYear(), d.getMonth(), d.getDate())
-  const dayNum = ((target.getDay() + 6) % 7) + 1 // 1=Mon .. 7=Sun
+  const dayNum = weekdayIndex(target) + 1 // 1=Mon .. 7=Sun
   target.setDate(target.getDate() + 4 - dayNum) // Thursday of this week
   const yearStart = new Date(target.getFullYear(), 0, 1)
   return Math.ceil((((target.getTime() - yearStart.getTime()) / 86400000) + 1) / 7)

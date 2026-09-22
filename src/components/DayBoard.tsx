@@ -2,9 +2,10 @@ import { useMemo, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import { Check, ChevronDown, ChevronRight, NotebookText, Pencil, ScrollText, TriangleAlert } from 'lucide-react'
 import { useStore } from '../store/useStore'
-import { Chore, TaskLog } from '../types'
+import { Chore, Habit, TaskLog } from '../types'
 import { DayRow, daySummary } from '../lib/dayTasks'
 import { carriedSince } from '../lib/chores'
+import { tickedOn } from '../lib/habits'
 import { STATUS_META, sig, sigAlpha } from '../lib/ui'
 import { addDays, toDate, toISO } from '../lib/dates'
 import { formatLongDate, formatRelativeDay } from '../lib/i18n'
@@ -13,6 +14,8 @@ import { ProgressRing } from './ProgressRing'
 import { LogDialog } from './LogDialog'
 import { DayLogsModal } from './DayLogsModal'
 import { Field, Modal, Segmented, Stat, inputCls } from './ui'
+import { useDialogs } from './dialogs'
+import { HabitDialog } from './HabitDialog'
 
 // The ring's empty track is the border token, which is what it always was —
 // `#242c35` was that token written out by hand, and stayed put when a theme
@@ -35,6 +38,17 @@ interface Props {
    */
   dayChores: Chore[]
   /**
+   * The habits to show, chosen by the caller for the same reason `dayChores` is.
+   *
+   * Unlike chores there is only one question to ask of them — `habitsOn`, which
+   * is "which of these existed by then" — so both callers pass that. What
+   * differs is the two props below, and it is the caller holding the composer
+   * that decides whether the section appears at all: the Tomorrow column has no
+   * habits to show and no way to tick one, and a column of boxes that cannot be
+   * touched reads as a list of things not done yet.
+   */
+  habits: Habit[]
+  /**
    * `stack` is the 320px day panel: ring, then strict, other and chores one
    * after another. `side` is a wide Today-page column, where the ring sits above
    * two panes — the day's tasks on the left, its chores on the right.
@@ -46,6 +60,9 @@ interface Props {
    * tick a chore is a second place for the two to disagree.
    */
   onAddChore?: (title: string) => void
+  /** Absent means habits are a record here too, on the same grounds. */
+  onAddHabit?: (title: string) => void
+  onToggleHabit?: (id: string) => void
 }
 
 /**
@@ -58,7 +75,7 @@ interface Props {
  * real difference is the arrangement and whether the chores can be touched, so
  * that is all `layout` and `onAddChore` carry.
  */
-export function DayBoard({ day, dayChores, layout, onAddChore }: Props) {
+export function DayBoard({ day, dayChores, habits, layout, onAddChore, onAddHabit, onToggleHabit }: Props) {
   const t = useT()
   const tasks = useStore((s) => s.tasks)
   const logs = useStore((s) => s.logs)
@@ -68,7 +85,7 @@ export function DayBoard({ day, dayChores, layout, onAddChore }: Props) {
   const deleteLog = useStore((s) => s.deleteLog)
 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
-  const [open, setOpen] = useState({ tasks: true, chores: true })
+  const [open, setOpen] = useState({ tasks: true, habits: true, chores: true })
   const [logFor, setLogFor] = useState<string | null>(null)
   const [editLog, setEditLog] = useState<TaskLog | null>(null)
   const [logsOpen, setLogsOpen] = useState(false)
@@ -133,6 +150,38 @@ export function DayBoard({ day, dayChores, layout, onAddChore }: Props) {
         <Empty>{t('day.nothingScheduled')}</Empty>
       ) : (
         summary.all.map((r) => <DayRowView key={r.task.id} row={r} {...rowProps} />)
+      )}
+    </Section>
+  )
+
+  const habitsDone = habits.filter((h) => tickedOn(h, day)).length
+  // Above the chores, and that is the reading order the list is meant to have:
+  // the habits are the same list tomorrow and are ticked off first thing, while
+  // the chores are the day's own errands and appear only as they come up. Shown
+  // when the caller offers a composer — which is the Today column, and it must
+  // show even at zero, or there is nowhere to add the first one — or when there
+  // is a habit to record.
+  const habitSection = (onAddHabit != null || habits.length > 0) && (
+    <Section
+      title={t('habit.section')}
+      // The fraction rather than the total: what the other sections count is how
+      // much is on the label, and here that is how much is done.
+      count={`${habitsDone}/${habits.length}`}
+      open={open.habits}
+      onToggle={() => setOpen((o) => ({ ...o, habits: !o.habits }))}
+    >
+      {onAddHabit && <HabitComposer onAdd={onAddHabit} />}
+      {habits.length === 0 ? (
+        <Empty>{t('habit.none')}</Empty>
+      ) : (
+        habits.map((h) => (
+          <HabitLine
+            key={h.id}
+            habit={h}
+            ticked={tickedOn(h, day)}
+            onToggle={onToggleHabit && (() => onToggleHabit(h.id))}
+          />
+        ))
       )}
     </Section>
   )
@@ -228,12 +277,14 @@ export function DayBoard({ day, dayChores, layout, onAddChore }: Props) {
               two words as soon as it is the unfocused column; uncapped above, it
               runs away on a wide screen and leaves the tasks ragged. */}
           <div className="w-[34%] min-w-[240px] max-w-[320px] shrink-0 border-l border-border overflow-auto">
+            {habitSection}
             {choreSection}
           </div>
         </div>
       ) : (
         <div className="flex-1 overflow-auto">
           {taskSections}
+          {habitSection}
           {choreSection}
         </div>
       )}
@@ -274,7 +325,11 @@ function Section({
   children,
 }: {
   title: string
-  count: number
+  /**
+   * A number is how many are on the label; a string is for a section whose
+   * subject is a fraction of itself — the habits' `3/5`.
+   */
+  count: number | string
   /** One line under the title, for what the section's contents mean. */
   hint?: string
   open: boolean
@@ -665,3 +720,134 @@ function ChoreDialog({ chore, onClose }: { chore: Chore; onClose: () => void }) 
     </Modal>
   )
 }
+
+/**
+ * A habit, as either a control or a record.
+ *
+ * One component for both, unlike the chore pair, because here the only
+ * difference is whether the box and the pencil are live. `onToggle` absent means
+ * the day panel is looking back at a day: the box is drawn rather than being a
+ * disabled `<input>`, which would still read as something to click and then
+ * refuse — the same choice `ChoreLine` makes. Deleting and renaming go with the
+ * pencil, so they are absent on the same days.
+ *
+ * Keeping the tick and the strike in one place is the point of not splitting it.
+ * They are what the section's `3/5` counts, and a second copy for the read-only
+ * case would be a second answer to "was this done that day" — the exact drift
+ * this file's other components are built to avoid.
+ *
+ * The pencil opens the shared `components/HabitDialog`, the same one the Manage
+ * page opens; this row only holds the delete confirmation, because a question
+ * has to outlive the dialog it was asked from.
+ */
+function HabitLine({
+  habit,
+  ticked,
+  onToggle,
+}: {
+  habit: Habit
+  /** Whether `day` — the day the board is showing — was one of its ticked days. */
+  ticked: boolean
+  onToggle?: () => void
+}) {
+  const t = useT()
+  const deleteHabit = useStore((s) => s.deleteHabit)
+  const [editing, setEditing] = useState(false)
+  const { ask, element: dialogs } = useDialogs()
+  const done = sig('completed')
+
+  const boxCls =
+    'mt-[2px] shrink-0 w-[14px] h-[14px] rounded-[2px] border border-border grid place-items-center transition-colors'
+  const boxStyle = ticked ? { background: done, borderColor: done } : undefined
+  const mark = ticked ? <Check size={10} strokeWidth={3} className="text-on-accent" /> : null
+
+  return (
+    <div
+      className={`group relative flex items-start gap-2 px-2 py-1.5 rounded-[3px] ${onToggle ? 'hover:bg-panel2' : ''}`}
+    >
+      {onToggle ? (
+        <button
+          onClick={onToggle}
+          role="checkbox"
+          aria-checked={ticked}
+          aria-label={habit.title}
+          className={boxCls}
+          style={boxStyle}
+        >
+          {mark}
+        </button>
+      ) : (
+        <span className={boxCls} style={boxStyle}>
+          {mark}
+        </span>
+      )}
+
+      <div className="min-w-0 flex-1">
+        <div className={`text-[12px] break-words ${ticked ? 'line-through text-dim' : 'text-fg/90'}`}>
+          {habit.title}
+        </div>
+        {/* The note goes on its own line rather than beside the title, for the
+            reason `ChoreRow` puts its carried badge there: the pane is only ever
+            a few hundred pixels wide, and the part being read is the name. */}
+        {habit.note && <div className="text-[11px] text-dim break-words mt-0.5">{habit.note}</div>}
+      </div>
+
+      {onToggle && (
+        <>
+          <button
+            onClick={() => setEditing(true)}
+            title={t('habit.edit')}
+            aria-label={t('habit.edit')}
+            className="shrink-0 mt-[1px] p-0.5 rounded-[3px] text-dim hover:text-fg opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+          >
+            <Pencil size={12} />
+          </button>
+
+          {editing && (
+            <HabitDialog
+              habit={habit}
+              onClose={() => setEditing(false)}
+              // The dialog closes before the question appears, so the two are
+              // never stacked. A habit is the one thing here whose deletion costs
+              // something: a chore takes at most one square off the heatmap with
+              // it, while a habit takes every day it was ever ticked.
+              onDelete={() => {
+                setEditing(false)
+                ask(t('habit.deleteAsk', { name: habit.title }), () => deleteHabit(habit.id))
+              }}
+            />
+          )}
+        </>
+      )}
+
+      {dialogs}
+    </div>
+  )
+}
+
+/** The one-line field that adds a habit. The chore composer's twin. */
+function HabitComposer({ onAdd }: { onAdd: (title: string) => void }) {
+  const t = useT()
+  const [text, setText] = useState('')
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault()
+    const title = text.trim()
+    if (!title) return
+    onAdd(title)
+    setText('')
+  }
+
+  return (
+    <form onSubmit={submit} className="px-2 pb-1.5">
+      <input
+        className={inputCls}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder={t('habit.placeholder')}
+        aria-label={t('habit.placeholder')}
+      />
+    </form>
+  )
+}
+

@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { create } from 'zustand'
-import { AppView, Chore, Project, Task, TaskLog, TaskPriority, TaskType, ViewMode } from '../types'
+import { AppView, Chore, Habit, Project, Task, TaskLog, TaskPriority, TaskType, ViewMode } from '../types'
+import { ALL_DAYS, runsOn } from '../lib/habits'
 import { todayISO, addUnitISO, Unit, addDays, diffDays, toDate, toISO } from '../lib/dates'
 import { timelineRange, DateRange } from '../lib/timeline'
 import { buildRows, collectDescendants, hasChildren, syncParentEnds, todoCascadeIds, todoGroupIds, Row } from '../lib/tree'
@@ -61,8 +62,10 @@ interface State {
   projects: Project[]
   tasks: Task[]
   logs: TaskLog[]
-  // Chores live outside the three above on purpose — see `Chore` in types.ts.
+  // Chores and habits live outside the three above on purpose — see `Chore` and
+  // `Habit` in types.ts.
   chores: Chore[]
+  habits: Habit[]
   activeView: AppView
   selectedTaskId: string | null
   selectedProjectId: string | null
@@ -138,6 +141,18 @@ interface State {
   toggleChore: (id: string) => void
   deleteChore: (id: string) => void
 
+  /**
+   * `init` carries what the editor can also set; the quick path passes a title
+   * and nothing else. Read field by field rather than spread, so a new habit
+   * cannot be born paused or pre-ticked by a caller that happened to have a
+   * whole `Habit` lying around.
+   */
+  addHabit: (title: string, init?: { note?: string; weekdays?: number[]; endDate?: string | null }) => void
+  updateHabit: (id: string, patch: Partial<Habit>) => void
+  /** No day argument on purpose — see the implementation. */
+  toggleHabit: (id: string) => void
+  deleteHabit: (id: string) => void
+
   syncParentEnds: () => void
 
   importData: (data: PersistedData) => void
@@ -162,7 +177,13 @@ function uid(): string {
 const loaded = loadData()
 const initial = loaded ?? buildSeed()
 if (!loaded) {
-  saveData({ projects: initial.projects, tasks: initial.tasks, logs: initial.logs, chores: initial.chores })
+  saveData({
+    projects: initial.projects,
+    tasks: initial.tasks,
+    logs: initial.logs,
+    chores: initial.chores,
+    habits: initial.habits,
+  })
 }
 
 const loadedPrefs = loadPrefs()
@@ -241,6 +262,7 @@ export const useStore = create<State>()((set, get) => ({
   tasks: initial.tasks,
   logs: initial.logs,
   chores: initial.chores,
+  habits: initial.habits,
   activeView: 'gantt',
   selectedTaskId: null,
   selectedProjectId: null,
@@ -619,6 +641,79 @@ export const useStore = create<State>()((set, get) => ({
     })),
   deleteChore: (id) => set((s) => ({ chores: s.chores.filter((c) => c.id !== id) })),
 
+  addHabit: (title, init) => {
+    const now = new Date().toISOString()
+    set((s) => ({
+      habits: [
+        ...s.habits,
+        {
+          id: uid(),
+          title,
+          note: init?.note ?? '',
+          startDate: todayISO(),
+          endDate: init?.endDate ?? null,
+          // A habit is born running every day, and the editor is what narrows
+          // it. `addHabit` is also the Today column's quick path — a title and
+          // Enter — where there is nothing to narrow it with.
+          weekdays: init?.weekdays?.length ? init.weekdays : [...ALL_DAYS],
+          paused: false,
+          pauseDate: null,
+          pauses: [],
+          doneDays: [],
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+    }))
+  },
+  // Patch-style rather than one action per field, for the reason `updateChore`
+  // is: the editor writes title, note, weekdays and end date together, and a
+  // setter apiece would be four chances for one of them to be forgotten.
+  updateHabit: (id, patch) =>
+    set((s) => ({
+      habits: s.habits.map((h) =>
+        h.id === id ? { ...h, ...patch, updatedAt: new Date().toISOString() } : h,
+      ),
+    })),
+  // Suspending and resuming are `lib/habits.ts`'s `pausePatch` rather than two
+  // actions here: they are edited in the same dialog as the name and the days,
+  // and an action that fired on the switch would take effect whether or not the
+  // edit was saved. Note that neither direction moves `endDate`, which is where
+  // this parts company with `resumeTask` — a task's end date is pushed out by
+  // the length of the pause because a task has progress and a window that shrank
+  // could never reach 100%. A habit has no progress, and its end date is a
+  // calendar fact ("到这天为止") rather than a budget of days to be spent.
+  //
+  // The day being ticked is never an argument, and that is the feature: a habit
+  // can only be ticked for the day that is happening. Backfilling a missed day
+  // is not something this refuses to do — it is something it cannot express, so
+  // no caller can come along later and pass a date in. `todayISO()` is read here
+  // rather than closed over so that an app left open across midnight ticks the
+  // new day, which is what the clock on the wall says.
+  toggleHabit: (id) =>
+    set((s) => ({
+      habits: s.habits.map((h) => {
+        if (h.id !== id) return h
+        const day = todayISO()
+        // A tick on a day the habit does not run is a fact the data should never
+        // learn — an ended habit, a Tuesday of a Mon/Wed/Fri one, a suspended
+        // one. `habitsOn` already keeps those off the list, so nothing in the UI
+        // can reach this branch; the guard is what keeps that from being the
+        // only thing standing between the two, and it asks the same function
+        // that decides what to show.
+        if (!runsOn(h, day)) return h
+        return {
+          ...h,
+          // Ticked days are kept in the order they were ticked. Nothing reads
+          // that order — the heatmap tests membership and `tickedOn` does too —
+          // so there is no reason to sort a list that only ever grows at the end.
+          doneDays: h.doneDays.includes(day) ? h.doneDays.filter((d) => d !== day) : [...h.doneDays, day],
+          updatedAt: new Date().toISOString(),
+        }
+      }),
+    })),
+  deleteHabit: (id) => set((s) => ({ habits: s.habits.filter((h) => h.id !== id) })),
+
   syncParentEnds: () =>
     set((s) => {
       const next = syncParentEnds(s.tasks, s.logs)
@@ -631,6 +726,7 @@ export const useStore = create<State>()((set, get) => ({
       tasks: data.tasks,
       logs: data.logs ?? [],
       chores: data.chores ?? [],
+      habits: data.habits ?? [],
       selectedTaskId: null,
       selectedProjectId: null,
       projectFilter: 'all',
@@ -741,15 +837,23 @@ export const useStore = create<State>()((set, get) => ({
   closeNag: () => set({ nagOpen: false }),
 }))
 
-// Persist data (only) to localStorage whenever projects/tasks/logs/chores change.
+// Persist data (only) to localStorage whenever projects/tasks/logs/chores/habits
+// change.
 useStore.subscribe((state, prev) => {
   if (
     state.projects !== prev.projects ||
     state.tasks !== prev.tasks ||
     state.logs !== prev.logs ||
-    state.chores !== prev.chores
+    state.chores !== prev.chores ||
+    state.habits !== prev.habits
   ) {
-    saveData({ projects: state.projects, tasks: state.tasks, logs: state.logs, chores: state.chores })
+    saveData({
+      projects: state.projects,
+      tasks: state.tasks,
+      logs: state.logs,
+      chores: state.chores,
+      habits: state.habits,
+    })
   }
 })
 

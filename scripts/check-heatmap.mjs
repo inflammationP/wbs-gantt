@@ -34,7 +34,7 @@ const log = (taskId, date) => ({ id: `${taskId}@${date}`, taskId, date, content:
 // Every clause asks about one week, so one list of days does for all of them.
 const WEEK = ['2026-09-09', '2026-09-10', '2026-09-11', '2026-09-12', '2026-09-13', '2026-09-14', '2026-09-15']
 const talliesOf = (tasks, logs, days = WEEK) => branchDayTallies(tasks, logs, TODAY, 'a', days)
-const board = (tasks, logs, days = WEEK) => boardDayTallies(tasks, logs, [], TODAY, days)
+const board = (tasks, logs, days = WEEK) => boardDayTallies(tasks, logs, [], [], TODAY, days)
 const chore = (over) => ({
   id: 'c', title: 'c', note: '', date: '2026-09-11', done: false,
   completedDate: null, createdAt: '', updatedAt: '',
@@ -149,7 +149,7 @@ assert.deepEqual(board([task({ id: 'a', paused: true, pauseDate: '2026-09-12' })
 // arithmetic that would have to be recomputed whenever the task fixtures move.
 const BOARD_LOGS = [log('b', '2026-09-11')]
 const base = board(boardTasks, BOARD_LOGS)
-const withChores = (chores, days = WEEK) => boardDayTallies(boardTasks, BOARD_LOGS, chores, TODAY, days)
+const withChores = (chores, days = WEEK) => boardDayTallies(boardTasks, BOARD_LOGS, chores, [], TODAY, days)
 /** How many the given chores add to `day`, and whether `total` moved at all. */
 const added = (chores, day) => {
   const tally = withChores(chores).get(day)
@@ -176,6 +176,50 @@ assert.deepEqual(
   added([chore({ done: true, completedDate: '2026-09-13' }), chore({ id: 'c2', done: true, completedDate: '2026-09-13' })], '2026-09-13'),
   { added: 2, totalMoved: 0 },
 )
+
+// A habit, counted once per day it was ticked. Where a chore is finished once
+// and so can put at most one on the board, a habit is finished every day — the
+// whole point of it — so its contribution is read off `doneDays` rather than
+// off a single `completedDate`.
+const habit = (over) => ({ id: 'h', title: 'h', startDate: '2026-09-09', doneDays: [], createdAt: '', updatedAt: '', ...over })
+const withHabits = (habits, days = WEEK) => boardDayTallies(boardTasks, BOARD_LOGS, [], habits, TODAY, days)
+/** How many the given habits add to `day`, and whether `total` moved at all. */
+const addedBy = (habits, day) => {
+  const tally = withHabits(habits).get(day)
+  return { added: tally.done - base.get(day).done, totalMoved: tally.total - base.get(day).total }
+}
+
+// One habit ticked once adds one to that day and nothing to any other.
+assert.deepEqual(addedBy([habit({ doneDays: ['2026-09-11'] })], '2026-09-11'), { added: 1, totalMoved: 0 })
+assert.deepEqual(addedBy([habit({ doneDays: ['2026-09-11'] })], '2026-09-12'), { added: 0, totalMoved: 0 })
+// Not ticked: nothing was done, so nothing is credited — however many days the
+// habit has been running. A habit is never "done" by having existed.
+assert.deepEqual(addedBy([habit({ startDate: '2026-01-01' })], '2026-09-11'), { added: 0, totalMoved: 0 })
+// Every ticked day counts, not just the latest: this is where a habit differs
+// from a chore, whose one `completedDate` can only ever land on one square.
+const threeDays = [habit({ doneDays: ['2026-09-10', '2026-09-12', '2026-09-14'] })]
+assert.deepEqual(addedBy(threeDays, '2026-09-10'), { added: 1, totalMoved: 0 })
+assert.deepEqual(addedBy(threeDays, '2026-09-12'), { added: 1, totalMoved: 0 })
+assert.deepEqual(addedBy(threeDays, '2026-09-14'), { added: 1, totalMoved: 0 })
+assert.deepEqual(addedBy(threeDays, '2026-09-13'), { added: 0, totalMoved: 0 })
+// A tick dated outside the window the grid covers has no square to land on —
+// the same guard a chore's completion date gets, asked once per ticked day.
+assert.deepEqual(addedBy([habit({ doneDays: ['2026-01-01'] })], '2026-09-11'), { added: 0, totalMoved: 0 })
+// Two habits ticked on one day are two, not one, and a habit ticked on the same
+// day twice is still one — `doneDays` is a set in effect, and `toggleHabit`
+// keeps it that way by removing on the second toggle.
+assert.deepEqual(
+  addedBy([habit({ doneDays: ['2026-09-13'] }), habit({ id: 'h2', doneDays: ['2026-09-13'] })], '2026-09-13'),
+  { added: 2, totalMoved: 0 },
+)
+// Habits and chores are counted side by side, each on its own terms.
+const mixed = boardDayTallies(
+  boardTasks, BOARD_LOGS,
+  [chore({ done: true, completedDate: '2026-09-13' })],
+  [habit({ doneDays: ['2026-09-13'] })],
+  TODAY, WEEK,
+)
+assert.equal(mixed.get('2026-09-13').done - base.get('2026-09-13').done, 2)
 
 await server.close()
 console.log('heatmap: ok')

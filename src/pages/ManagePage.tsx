@@ -2,19 +2,30 @@ import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { useStore } from '../store/useStore'
-import { Project, Task, TaskStatus } from '../types'
+import { Habit, Project, Task, TaskStatus } from '../types'
 import { addDays, toDate, toISO, todayISO } from '../lib/dates'
 import { PROJECT_COLORS, STATUS_META, STATUS_ORDER, priorityMeta, sig, sigText } from '../lib/ui'
-import { formatShortDate } from '../lib/i18n'
+import { formatShortDate, weekdayLabels } from '../lib/i18n'
 import { useLang, useT } from '../lib/useT'
 import { computeWbs, effectiveStates } from '../lib/tree'
+import { ALL_DAYS } from '../lib/habits'
 import { useDialogs } from '../components/dialogs'
+import { HabitDialog } from '../components/HabitDialog'
 import { Stat } from '../components/ui'
 import { CompletionHeatmap, YEAR_WEEKS } from '../components/CompletionHeatmap'
 
+/**
+ * The "creating" value of `habitEditing`.
+ *
+ * A sentinel rather than a second boolean beside a nullable habit: the dialog
+ * has exactly three states — shut, editing one, creating one — and two pieces of
+ * state would allow a fourth that means neither.
+ */
+const NEW = 'new'
+
 // Dashboard, Tasks, Projects and Statistics used to be four separate pages that
-// each re-derived the same numbers. They are one page now, in three bands:
-// overview, projects, tasks. Every figure appears exactly once.
+// each re-derived the same numbers. They are one page now: overview, heatmap,
+// daily list, projects, tasks. Every figure appears exactly once.
 export function ManagePage() {
   const t = useT()
   const lang = useLang()
@@ -22,6 +33,8 @@ export function ManagePage() {
   const tasks = useStore((s) => s.tasks)
   const projects = useStore((s) => s.projects)
   const logs = useStore((s) => s.logs)
+  const habits = useStore((s) => s.habits)
+  const deleteHabit = useStore((s) => s.deleteHabit)
   const todayStamp = useStore((s) => s.today)
   const setSelected = useStore((s) => s.setSelected)
   const setActiveView = useStore((s) => s.setActiveView)
@@ -33,6 +46,10 @@ export function ManagePage() {
   const [statusFilter, setStatusFilter] = useState<TaskStatus | 'all'>('all')
   const [editing, setEditing] = useState<string | null>(null)
   const [newName, setNewName] = useState('')
+  // The habit being edited, or `NEW` while one is being created. One piece of
+  // state rather than a boolean plus a nullable habit, so the dialog can never
+  // be open in a state that means neither.
+  const [habitEditing, setHabitEditing] = useState<Habit | typeof NEW | null>(null)
 
   const today = todayISO()
   const weekISO = toISO(addDays(new Date(), 7))
@@ -137,6 +154,32 @@ export function ManagePage() {
             {/* The whole board, a year back from today — the page is wide enough
                 for the year the panel has to truncate to five months. */}
             <CompletionHeatmap taskId={null} start={null} end={null} weeks={YEAR_WEEKS} />
+          </div>
+        </div>
+
+        {/* ---- Daily ---- */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-[14px] font-semibold text-fg">{t('habit.section')}</h2>
+            <button
+              onClick={() => setHabitEditing(NEW)}
+              className="h-8 px-3 inline-flex items-center gap-1.5 text-[12px] font-medium bg-accent text-on-accent rounded-[3px] hover:brightness-110"
+            >
+              <Plus size={14} /> {t('habit.new')}
+            </button>
+          </div>
+          {/* The whole list, including suspended items — this is the one place
+              they are still visible, which is the point of suspending rather
+              than deleting. Everywhere else a suspended habit is simply absent,
+              because everywhere else is a day it does not run on. */}
+          <div className="bg-panel border border-border rounded-[3px]">
+            {habits.length === 0 ? (
+              <div className="px-4 py-3 text-[12px] text-dim">{t('habit.none')}</div>
+            ) : (
+              habits.map((h) => (
+                <HabitRow key={h.id} habit={h} onEdit={() => setHabitEditing(h)} />
+              ))
+            )}
           </div>
         </div>
 
@@ -260,7 +303,75 @@ export function ManagePage() {
           </div>
         </div>
       </div>
+      {habitEditing && (
+        <HabitDialog
+          habit={habitEditing === NEW ? undefined : habitEditing}
+          onClose={() => setHabitEditing(null)}
+          // Closing first, then asking, so the two modals never stack — the
+          // question has to be put by something that outlives the dialog it was
+          // asked from, which is why it is held here and not inside it.
+          onDelete={
+            habitEditing === NEW
+              ? undefined
+              : () => {
+                  const h = habitEditing
+                  setHabitEditing(null)
+                  ask(t('habit.deleteAsk', { name: h.title }), () => deleteHabit(h.id))
+                }
+          }
+        />
+      )}
       {dialogs}
+    </div>
+  )
+}
+
+/**
+ * One habit in the Manage page's list: what it is, when it runs, and a way in.
+ *
+ * No delete button of its own. Deleting lives in the editor, which the pencil
+ * opens — one destructive path with one confirmation, rather than a second one
+ * on the row that would have to be kept saying the same thing.
+ *
+ * The only place a suspended habit is ever listed. Everywhere else it is simply
+ * absent, because everywhere else answers "what does this day hold" and a
+ * suspended habit holds none of them.
+ */
+function HabitRow({ habit, onEdit }: { habit: Habit; onEdit: () => void }) {
+  const t = useT()
+  const lang = useLang()
+  const labels = weekdayLabels(lang)
+  const everyDay = habit.weekdays.length === ALL_DAYS.length
+
+  return (
+    <div className="flex items-start gap-3 px-4 py-2.5 border-b border-border last:border-b-0">
+      <div className="min-w-0 flex-1">
+        <div className={`text-[13px] ${habit.paused ? 'text-dim' : 'text-fg'}`}>{habit.title}</div>
+        <div className="flex items-center gap-2 mt-0.5 text-[11px] text-dim">
+          <span className="shrink-0">
+            {everyDay ? t('habit.everyDay') : habit.weekdays.map((d) => labels[d]).join(' · ')}
+          </span>
+          {habit.endDate && (
+            <span className="shrink-0 font-mono">
+              {t('habit.endDate')} {formatShortDate(lang, toDate(habit.endDate))}
+            </span>
+          )}
+          {habit.note && <span className="min-w-0 truncate">{habit.note}</span>}
+          {habit.paused && (
+            <span className="shrink-0 px-1 h-4 inline-flex items-center text-[9px] font-medium rounded-[2px] bg-paused/15 text-paused border border-paused/30">
+              {t('habit.paused')}
+            </span>
+          )}
+        </div>
+      </div>
+      <button
+        onClick={onEdit}
+        title={t('common.edit')}
+        aria-label={t('common.edit')}
+        className="shrink-0 mt-0.5 p-1 text-dim hover:text-fg"
+      >
+        <Pencil size={13} />
+      </button>
     </div>
   )
 }

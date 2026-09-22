@@ -1,4 +1,4 @@
-import { Chore, Task, TaskLog } from '../types'
+import { Chore, Habit, Task, TaskLog } from '../types'
 import { buildChildrenMap, collectDescendants } from './tree'
 import { activeOnDay, isPausedOnDay } from './dayTasks'
 
@@ -98,11 +98,12 @@ export function branchDayTallies(
 
 /**
  * A day's tally for the whole board — every scheduled leaf in every project,
- * plus every chore ticked off. Manage's overview reads this.
+ * plus every chore ticked off and every habit ticked that day. Manage's overview
+ * reads this.
  *
- * Chores are counted here and only here. `branchDayTallies` is a view down one
- * branch of the task tree, and a chore belongs to no branch — it is not a task,
- * has no project and no parent — so there is nothing to scope one to.
+ * Chores and habits are counted here and only here. `branchDayTallies` is a view
+ * down one branch of the task tree, and neither belongs to a branch — they are
+ * not tasks, have no project and no parent — so there is nothing to scope one to.
  *
  * A chore is credited to the day it was **ticked**, not the day it was written
  * for. Chores carry their original day through a slip, so counting by `date`
@@ -111,12 +112,28 @@ export function branchDayTallies(
  *
  * Only `done` moves; `total` stays with the scheduled leaves. The board shades
  * by `done` alone, and giving chores a `total` would mean inventing an answer to
- * "which day was this chore scheduled for" that nothing asks.
+ * "which day was this chore scheduled for" that nothing asks. A habit *does*
+ * have a real total — the days it was set to run on — and it is left out all the
+ * same: the two would then be shading the same square against two different
+ * denominators, and the habit's is the narrower one.
+ *
+ * A habit is counted once per ticked day where a chore is counted at most once,
+ * the difference being that a chore is finished once and a habit is finished
+ * every day it runs. Its ticks are read straight off `doneDays`, which is
+ * already a list of days, so there is no `date`/`completedDate` distinction to
+ * get wrong here: the day a habit was ticked is the day it belongs to, and a
+ * habit cannot be ticked for any other day (`runsOn` gates the write).
+ *
+ * The loop below needs no weekday or end-date test. `doneDays` can only hold
+ * days the habit actually ran on, so there is no such thing as a tick on a
+ * Tuesday of a Mon/Wed/Fri habit to filter out — and no square to credit for a
+ * day the habit was suspended, since no tick could have been recorded under one.
  */
 export function boardDayTallies(
   tasks: Task[],
   logs: TaskLog[],
   chores: Chore[],
+  habits: Habit[],
   today: string,
   days: string[],
 ): Map<string, DayTally> {
@@ -126,6 +143,15 @@ export function boardDayTallies(
     // no square to land on, and must not fall through to one.
     const hit = c.completedDate !== null ? out.get(c.completedDate) : undefined
     if (hit) hit.done++
+  }
+  for (const h of habits) {
+    // The same window guard, asked once per ticked day rather than once per
+    // habit: this is the only tally in the file whose subject can have more than
+    // one day to its name.
+    for (const day of h.doneDays) {
+      const hit = out.get(day)
+      if (hit) hit.done++
+    }
   }
   return out
 }
