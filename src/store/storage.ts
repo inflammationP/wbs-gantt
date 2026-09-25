@@ -70,6 +70,14 @@ export interface Prefs {
    */
   guideDone: string[]
   /**
+   * The "create as to-do" note has been read and acknowledged.
+   *
+   * A preference for the same reason `guideDismissed` is one: the note explains
+   * a feature rather than recording work, and a flag filed with the data would
+   * come back the moment someone imported a board.
+   */
+  todoNoteDismissed: boolean
+  /**
    * When the app last successfully reached GitHub, as an ISO instant.
    *
    * This is the anchor for the "it has been a while" nag. `null` means we have
@@ -105,6 +113,7 @@ export const DEFAULT_PREFS: Prefs = {
   theme: DEFAULT_THEME,
   guideDismissed: false,
   guideDone: [],
+  todoNoteDismissed: false,
   updateAnchorAt: null,
   nagShownAt: null,
   updateSnoozeUntil: null,
@@ -137,6 +146,10 @@ export function loadPrefs(): Prefs {
       guideDone: Array.isArray(parsed.guideDone)
         ? parsed.guideDone.filter((s): s is string => typeof s === 'string')
         : DEFAULT_PREFS.guideDone,
+      todoNoteDismissed:
+        typeof parsed.todoNoteDismissed === 'boolean'
+          ? parsed.todoNoteDismissed
+          : DEFAULT_PREFS.todoNoteDismissed,
       updateAnchorAt: isInstant(parsed.updateAnchorAt)
         ? parsed.updateAnchorAt
         : DEFAULT_PREFS.updateAnchorAt,

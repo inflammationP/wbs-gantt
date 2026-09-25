@@ -58,13 +58,20 @@ export function GanttPage() {
   // the axis itself have to agree, and this is the one place both can reach.
   const range = useTimelineRange(viewMode, Math.max(0, viewportW))
 
-  const [dialog, setDialog] = useState<{ mode: 'create' | 'edit'; task?: Task; parentId?: string | null } | null>(null)
+  const [dialog, setDialog] = useState<{
+    mode: 'create' | 'edit'
+    task?: Task
+    parentId?: string | null
+    projectId?: string
+    isTodo?: boolean
+  } | null>(null)
   const [menu, setMenu] = useState<MenuState | null>(null)
   const [logDialog, setLogDialog] = useState<{ taskId: string; existing?: TaskLog | null } | null>(null)
   const [todoSel, setTodoSel] = useState<Set<string>>(new Set())
   const [startTodo, setStartTodo] = useState<string[] | null>(null)
 
-  const openCreate = (parentId?: string | null) => setDialog({ mode: 'create', parentId })
+  const openCreate = (parentId?: string | null, projectId?: string, isTodo?: boolean) =>
+    setDialog({ mode: 'create', parentId, projectId, isTodo })
   const openEdit = (row: RowTask) => setDialog({ mode: 'edit', task: row.task })
   const openLog = (row: RowTask) => setLogDialog({ taskId: row.id })
 
@@ -143,7 +150,10 @@ export function GanttPage() {
           <option value="all">{t('sidebar.allProjects')}</option>
           {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
-        <button onClick={() => openCreate(null)} className="h-7 px-3 inline-flex items-center gap-1.5 text-[12px] font-medium bg-accent text-on-accent rounded-[3px] hover:brightness-110">
+        {/* The toolbar sits in whatever the filter put on screen, so a task made
+            here belongs to the project being looked at. "All projects" has no
+            such context and leaves the choice to the dialog. */}
+        <button onClick={() => openCreate(null, projectFilter === 'all' ? undefined : projectFilter)} className="h-7 px-3 inline-flex items-center gap-1.5 text-[12px] font-medium bg-accent text-on-accent rounded-[3px] hover:brightness-110">
           <Plus size={14} /> {t('gantt.newTask')}
         </button>
       </div>
@@ -155,7 +165,7 @@ export function GanttPage() {
           menu={menu}
           onClose={() => setMenu(null)}
           onAddChild={(r) => openCreate(r.id)}
-          onAddSibling={(r) => openCreate(r.task.parentId)}
+          onAddSibling={(r) => openCreate(r.task.parentId, r.task.projectId, r.task.isTodo)}
           onEdit={(r) => openEdit(r)}
           onWriteLog={openLog}
           onOutdent={(r) => setTaskParent(r.id, null)}
@@ -163,7 +173,15 @@ export function GanttPage() {
         />
       )}
 
-      {dialog && <TaskDialog onClose={() => setDialog(null)} existing={dialog.task} defaultParentId={dialog.parentId} />}
+      {dialog && (
+        <TaskDialog
+          onClose={() => setDialog(null)}
+          existing={dialog.task}
+          defaultParentId={dialog.parentId}
+          defaultProjectId={dialog.projectId}
+          defaultIsTodo={dialog.isTodo}
+        />
+      )}
 
       {logDialog && <LogDialog taskId={logDialog.taskId} existing={logDialog.existing} onClose={() => setLogDialog(null)} />}
 

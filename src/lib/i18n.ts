@@ -92,6 +92,9 @@ const en = {
   'common.edit': 'Edit',
   'common.close': 'Close',
   'common.ok': 'OK',
+  // Acknowledging an explanation, which is a different act from confirming a
+  // question — and this one is remembered, so it says so.
+  'common.gotIt': 'Got it',
   'common.confirm': 'Confirm',
   'common.confirmTitle': 'Please confirm',
   'common.noticeTitle': 'Notice',
@@ -201,7 +204,7 @@ const en = {
   'task.namePlaceholder': 'Task name',
   'task.parent': 'Parent',
   'task.topLevel': '— Top level —',
-  'task.createAsTodo': 'Create as to-do — no dates, priority or progress mode needed',
+  'task.createAsTodo': 'Create as to-do',
   'task.todoNote':
     'This is a to-do: unscheduled work. It sits last among its siblings inside a {toDos} folder until you give it a schedule with {startTask} in the detail panel.',
   'task.endDateLocked':
@@ -555,6 +558,7 @@ const zh: Dict = {
   'common.edit': '编辑',
   'common.close': '关闭',
   'common.ok': '确定',
+  'common.gotIt': '我知道了',
   'common.confirm': '确认',
   'common.confirmTitle': '请确认',
   'common.noticeTitle': '提示',
@@ -658,7 +662,7 @@ const zh: Dict = {
   'task.namePlaceholder': '任务名称',
   'task.parent': '父任务',
   'task.topLevel': '— 顶层 —',
-  'task.createAsTodo': '创建为待办 —— 无需日期、优先级或进度模式',
+  'task.createAsTodo': '创建为待办',
   'task.todoNote':
     '这是一项待办：尚未排期的工作。它会排在同级任务末尾的 {toDos} 文件夹中，直到你在详情面板里用 {startTask} 为它安排时间。',
   'task.endDateLocked': '结束日期由最晚结束的子任务决定，请改为修改那个子任务的结束日期。',
@@ -950,6 +954,7 @@ const fr: Dict = {
   'common.edit': 'Modifier',
   'common.close': 'Fermer',
   'common.ok': 'OK',
+  'common.gotIt': 'Compris',
   'common.confirm': 'Confirmer',
   'common.confirmTitle': 'Confirmation',
   'common.noticeTitle': 'Information',
@@ -1060,7 +1065,7 @@ const fr: Dict = {
   'task.namePlaceholder': 'Nom de la tâche',
   'task.parent': 'Parent',
   'task.topLevel': '— Niveau supérieur —',
-  'task.createAsTodo': 'Créer comme tâche à faire — aucune date, priorité ni mode d’avancement',
+  'task.createAsTodo': 'Créer comme tâche à faire',
   'task.todoNote':
     'Ceci est une tâche à faire : du travail non planifié. Elle se place en dernier parmi ses voisines, dans un dossier {toDos}, jusqu’à ce que vous lui donniez un planning avec {startTask} dans le panneau de détail.',
   'task.endDateLocked':

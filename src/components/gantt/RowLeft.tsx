@@ -12,7 +12,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { Row, RowTask, RowTodoGroup } from '../../lib/tree'
-import { STATUS_META, sig, sigAlpha, sigText } from '../../lib/ui'
+import { STATUS_META, priorityWash, sig, sigAlpha, sigText } from '../../lib/ui'
 import { useStore } from '../../store/useStore'
 import { useT } from '../../lib/useT'
 import { useDialogs } from '../dialogs'
@@ -84,6 +84,8 @@ export function RowLeft({ row, todo, onAddChild, onEdit, onContext }: Props) {
 
   const isTodo = row.task.isTodo
   const meta = STATUS_META[row.eff.status]
+  // Set only on the first to-do of an open to-do folder — see `visitGroup`.
+  const group = row.todoGroup
   const checked = todo.selected.has(row.id)
   // Identity, not status: tasks from several projects share this column, and the
   // project is what the tree can't otherwise show.
@@ -102,15 +104,39 @@ export function RowLeft({ row, todo, onAddChild, onEdit, onContext }: Props) {
   return (
     <>
     <div
-      className={`h-full flex items-stretch text-[12px] group cursor-pointer ${
+      className={`relative h-full flex items-stretch text-[12px] group cursor-pointer ${
         selected ? 'bg-accent/10' : 'hover:bg-panel2/60'
       }`}
+      // Priority as a band off the row's own left edge — the canvas's edge,
+      // before the indent, the chevron and the WBS number — so the washes line
+      // up down the column however deep their tasks sit. `priorityWash` holds
+      // the rest of the why.
+      style={{ backgroundImage: priorityWash(row.task.priority) }}
       onClick={() => setSelected(row.id)}
       onContextMenu={(e) => {
         e.preventDefault()
         onContext(e, row)
       }}
     >
+      {/* The mark of an open to-do folder, pinned to that same left edge. It
+          sits over the indentation rather than in front of the name, because it
+          belongs to the column — and to the rows under it — rather than to any
+          one row's text; absolutely placed, so nothing shifts. The dashed ring
+          in the glyph slot below still says the row itself is a to-do. */}
+      {group && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            toggleExpanded(group.id, false)
+          }}
+          title={t('common.collapse')}
+          aria-label={t('common.collapse')}
+          className="absolute left-0 top-1/2 -translate-y-1/2 z-10 w-5 h-5 grid place-items-center rounded-[3px] hover:bg-todo/15"
+          style={{ color: sig('todo') }}
+        >
+          <FolderOpen size={12} />
+        </button>
+      )}
       {/* hierarchy indent — shifts chevron + WBS + name as a unit */}
       <div className="shrink-0" style={{ width: row.depth * INDENT }} />
       {/* chevron */}
@@ -181,7 +207,11 @@ export function RowLeft({ row, todo, onAddChild, onEdit, onContext }: Props) {
           </button>
         )}
         <div className={`flex items-center gap-0.5 transition-opacity ${selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-          <button onClick={(e) => { e.stopPropagation(); onAddChild(row) }} title={t('task.addSubtask')} className="p-1 text-dim hover:text-fg"><Plus size={13} /></button>
+          {/* No "+" on a to-do: it can't be a parent, and a dialog that opened
+              on it would have to show "top level" while pointing at the to-do. */}
+          {!isTodo && (
+            <button onClick={(e) => { e.stopPropagation(); onAddChild(row) }} title={t('task.addSubtask')} className="p-1 text-dim hover:text-fg"><Plus size={13} /></button>
+          )}
           <button onClick={(e) => { e.stopPropagation(); onEdit(row) }} title={t('common.edit')} className="p-1 text-dim hover:text-fg"><Pencil size={13} /></button>
           <button onClick={handleDelete} title={t('common.delete')} className="p-1 text-dim hover:text-delayed"><Trash2 size={13} /></button>
         </div>

@@ -4,7 +4,7 @@ import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { Habit, Project, Task, TaskStatus } from '../types'
 import { addDays, toDate, toISO, todayISO } from '../lib/dates'
-import { PROJECT_COLORS, STATUS_META, STATUS_ORDER, priorityMeta, sig, sigText } from '../lib/ui'
+import { PROJECT_COLORS, STATUS_META, STATUS_ORDER, priorityMeta, priorityWash, sig, sigText } from '../lib/ui'
 import { formatShortDate, weekdayLabels } from '../lib/i18n'
 import { useLang, useT } from '../lib/useT'
 import { computeWbs, effectiveStates } from '../lib/tree'
@@ -287,8 +287,11 @@ export function ManagePage() {
             {filtered.map((task) => {
               const meta = STATUS_META[eff.get(task.id)?.status ?? 'not-started']
               const prio = priorityMeta(task.priority)
+              // The priority wash goes on the row rather than on the name's
+              // cell, so it starts at the table's left edge exactly as it starts
+              // at the Gantt's — see `priorityWash`.
               return (
-                <button key={task.id} onClick={() => setSelected(task.id)} className="grid grid-cols-[70px_1fr_120px_120px_90px_90px_130px_100px] px-3 h-9 items-center text-[12px] border-b border-line last:border-0 hover:bg-panel2 text-left w-full">
+                <button key={task.id} onClick={() => setSelected(task.id)} style={{ backgroundImage: priorityWash(task.priority) }} className="grid grid-cols-[70px_1fr_120px_120px_90px_90px_130px_100px] px-3 h-9 items-center text-[12px] border-b border-line last:border-0 hover:bg-panel2 text-left w-full">
                   <span className="font-mono text-[11px] text-dim">{wbs.get(task.id) ?? ''}</span>
                   <span className="truncate text-fg/90">{task.name}</span>
                   <span className="text-muted truncate">{projectName(task.projectId)}</span>

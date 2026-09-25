@@ -131,6 +131,36 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, onAddHabi
     projectName: (id: string) => projectOf(id)?.name ?? '',
   }
 
+  // The day opens at the first level: a parent is followed by its own children,
+  // and those children are what the row's chevron unfolds. The whole tree at
+  // once is the project's decomposition, which is a Gantt question — here the
+  // list is what the day is made of, and a three-level branch buries the rest of
+  // the day underneath one project.
+  //
+  // A row is drawn when every row it hangs from is open, which one pass with the
+  // ancestor chain answers: the list is pre-order, so the chain of the row being
+  // considered is exactly what is left of the stack once it has been trimmed
+  // back to that row's parent. A row whose parent is not on this day — finished,
+  // or not started — is its own root and stays visible whatever is open, which
+  // is the same rule `daySummary` used when it placed it at the top of the list.
+  const { rows: visibleRows, parents } = useMemo(() => {
+    const byId = new Map(summary.all.map((r) => [r.task.id, r]))
+    const out: DayRow[] = []
+    const parents = new Set<string>()
+    const chain: DayRow[] = []
+    for (const r of summary.all) {
+      const pid = r.task.parentId
+      if (pid == null || !byId.has(pid)) chain.length = 0
+      else {
+        parents.add(pid)
+        while (chain.length && chain[chain.length - 1].task.id !== pid) chain.pop()
+      }
+      if (chain.every((a) => expanded[a.task.id] === true)) out.push(r)
+      chain.push(r)
+    }
+    return { rows: out, parents }
+  }, [summary.all, expanded])
+
   // One list, not two. Splitting the day into "strict" and "the rest" put the
   // log obligations at the top, but it also meant calling every task one thing
   // or the other — and the only difference that matters is whether a task owes a
@@ -139,6 +169,8 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, onAddHabi
   const taskSections = (
     <Section
       title={t('day.taskList')}
+      // The day's own count, not the number of rows drawn: the heading says how
+      // much is on the day, and the chevrons say how it unfolds.
       count={summary.all.length}
       // Only when there is a mark to explain. A legend on a day with nothing to
       // explain is the same mistake as a reminder that is always green.
@@ -146,10 +178,10 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, onAddHabi
       open={open.tasks}
       onToggle={() => setOpen((o) => ({ ...o, tasks: !o.tasks }))}
     >
-      {summary.all.length === 0 ? (
+      {visibleRows.length === 0 ? (
         <Empty>{t('day.nothingScheduled')}</Empty>
       ) : (
-        summary.all.map((r) => <DayRowView key={r.task.id} row={r} {...rowProps} />)
+        visibleRows.map((r) => <DayRowView key={r.task.id} row={r} hasKids={parents.has(r.task.id)} {...rowProps} />)
       )}
     </Section>
   )
@@ -373,6 +405,7 @@ const INDENT = 12
 
 function DayRowView({
   row,
+  hasKids,
   expanded,
   day,
   isFuture,
@@ -382,6 +415,13 @@ function DayRowView({
   projectName,
 }: {
   row: DayRow
+  /**
+   * Whether this row is hiding rows of its own. Every row carries the chevron —
+   * it is also how the progress bar is unfolded — so without a difference in
+   * weight a collapsed parent looks exactly like a leaf, and its branch looks
+   * like it is gone.
+   */
+  hasKids: boolean
   expanded: Record<string, boolean>
   /** The day this row is drawn for — the day a tick would be recorded against. */
   day: string
@@ -428,7 +468,9 @@ function DayRowView({
           aria-expanded={isOpen}
           className="min-w-0 flex items-center gap-1.5 text-left"
         >
-          <span className="text-dim shrink-0">{isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>
+          <span className={`shrink-0 ${hasKids ? 'text-fg/70' : 'text-dim'}`}>
+            {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+          </span>
           <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: sig(meta.token) }} />
           {/* The mark for "this one owes a log", explained by the legend under
               the list. Amber is the colour the ring above counts and the No log

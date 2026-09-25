@@ -67,6 +67,9 @@ interface State {
   chores: Chore[]
   habits: Habit[]
   activeView: AppView
+  // Bumped by `openGantt` and used as the Gantt page's React key, so clicking
+  // the nav item remounts it rather than reusing the mounted one.
+  ganttKey: number
   selectedTaskId: string | null
   selectedProjectId: string | null
   // yyyy-MM-dd of the day whose detail panel is open in the Calendar. View
@@ -87,6 +90,11 @@ interface State {
   // guide's state lives with the preferences rather than with the work data.
   guideDismissed: boolean
   guideDone: string[]
+  /**
+   * The to-do note in the task dialog has been acknowledged. A preference, not
+   * view state: it survives a reload, and it is not part of an imported board.
+   */
+  todoNoteDismissed: boolean
   // Update state. Session-only: it describes the check that just ran. The three
   // durable facts — the 30-day anchor, the nag throttle, the dismissal — are
   // preferences and live in `Prefs`.
@@ -104,6 +112,7 @@ interface State {
   setLang: (l: Lang) => void
   setTheme: (t: ThemeId) => void
   setActiveView: (v: AppView) => void
+  openGantt: () => void
   setSelected: (id: string | null) => void
   setSelectedProject: (id: string | null) => void
   setSelectedDay: (day: string | null) => void
@@ -159,6 +168,7 @@ interface State {
 
   dismissGuide: () => void
   showGuide: () => void
+  dismissTodoNote: () => void
   markGuideDone: (stepId: string) => void
 
   runUpdateCheck: () => Promise<void>
@@ -215,9 +225,26 @@ function persistPrefs(): void {
   // preference has to be named here. That is enforced rather than remembered:
   // `savePrefs` demands the full `Prefs` type, so forgetting one is a compile
   // error — as long as the field is declared required and not optional.
-  const { lang, theme, guideDismissed, guideDone, updateAnchorAt, nagShownAt, updateSnoozeUntil } =
-    useStore.getState()
-  savePrefs({ lang, theme, guideDismissed, guideDone, updateAnchorAt, nagShownAt, updateSnoozeUntil })
+  const {
+    lang,
+    theme,
+    guideDismissed,
+    guideDone,
+    todoNoteDismissed,
+    updateAnchorAt,
+    nagShownAt,
+    updateSnoozeUntil,
+  } = useStore.getState()
+  savePrefs({
+    lang,
+    theme,
+    guideDismissed,
+    guideDone,
+    todoNoteDismissed,
+    updateAnchorAt,
+    nagShownAt,
+    updateSnoozeUntil,
+  })
 }
 
 /** Is a snooze currently running? */
@@ -264,6 +291,7 @@ export const useStore = create<State>()((set, get) => ({
   chores: initial.chores,
   habits: initial.habits,
   activeView: 'gantt',
+  ganttKey: 0,
   selectedTaskId: null,
   selectedProjectId: null,
   selectedDay: null,
@@ -277,6 +305,7 @@ export const useStore = create<State>()((set, get) => ({
   theme: prefs.theme,
   guideDismissed: prefs.guideDismissed,
   guideDone: prefs.guideDone,
+  todoNoteDismissed: prefs.todoNoteDismissed,
   updatePhase: 'idle',
   updateInfo: null,
   updateInstalling: false,
@@ -297,6 +326,16 @@ export const useStore = create<State>()((set, get) => ({
     persistPrefs()
   },
   setActiveView: (v) => set({ activeView: v }),
+  // The nav's Gantt item is a way back to the board, not a way to resume the
+  // project you last narrowed to: it lands on the whole thing, every time —
+  // while the project rows below it (and "Open in Gantt" elsewhere) still filter.
+  openGantt: () =>
+    set((s) => ({
+      activeView: 'gantt',
+      projectFilter: 'all',
+      selectedProjectId: null,
+      ganttKey: s.ganttKey + 1,
+    })),
   setSelected: (id) => set({ selectedTaskId: id, selectedProjectId: null }),
   setSelectedProject: (id) => set({ selectedProjectId: id, selectedTaskId: null }),
   setSelectedDay: (day) => set({ selectedDay: day }),
@@ -738,6 +777,12 @@ export const useStore = create<State>()((set, get) => ({
   },
   showGuide: () => {
     set({ guideDismissed: false })
+    persistPrefs()
+  },
+  // One way, unlike the guide's pair: the note is an explanation, and a way to
+  // ask for it back would be a setting nobody would ever find.
+  dismissTodoNote: () => {
+    set({ todoNoteDismissed: true })
     persistPrefs()
   },
   markGuideDone: (stepId) => {

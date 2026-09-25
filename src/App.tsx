@@ -15,6 +15,9 @@ import { useStore } from './store/useStore'
 
 export default function App() {
   const view = useStore((s) => s.activeView)
+  // Re-keyed on every click of the nav's Gantt item, so the page remounts (and
+  // scrolls back to today) instead of resuming where it was left.
+  const ganttKey = useStore((s) => s.ganttKey)
   const selectedDay = useStore((s) => s.selectedDay)
   const selectedTaskId = useStore((s) => s.selectedTaskId)
   const selectedExists = useStore((s) => s.tasks.some((t) => t.id === s.selectedTaskId))
@@ -46,7 +49,7 @@ export default function App() {
           so a viewport-anchored card would land on top of the panel the guide
           just told the user to open. Anchored here, it stops where they begin. */}
       <main className="relative flex-1 flex flex-col min-w-0 overflow-hidden">
-        {view === 'gantt' && <GanttPage />}
+        {view === 'gantt' && <GanttPage key={ganttKey} />}
         {view === 'today' && <TodayPage />}
         {view === 'logs' && <LogsPage />}
         {view === 'manage' && <ManagePage />}

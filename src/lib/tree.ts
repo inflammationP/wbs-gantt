@@ -187,6 +187,12 @@ export interface RowTask {
   eff: EffState
   hasKids: boolean
   isLeaf: boolean
+  /**
+   * Set on the first to-do of an open folder — see `visitGroup`. The folder's
+   * line is not drawn once it is open, and this is the mark that says which rows
+   * below belong to it, and folds them again.
+   */
+  todoGroup?: { id: string; count: number }
 }
 
 // A folder-like header collecting the to-do children of one task. Synthesized by
@@ -208,13 +214,17 @@ export type Row = RowTask | RowTodoGroup
 
 export const todoGroupId = (parentId: string | null) => `todogroup:${parentId ?? 'root'}`
 
-// Every folder key implied by the current tasks: each parent that has at least
-// one to-do child, plus the synthetic root group. Used by expand/collapse all,
+// Every folder key implied by the current tasks: each parent with two or more
+// to-do children, plus the synthetic root group. Used by expand/collapse all,
 // which can't discover these ids by walking tasks alone.
+//
+// A lone to-do has no folder — `buildRows` draws it as a plain row — so its
+// parent has no key here either. The two have to agree on what a folder is, and
+// they do it by asking the same question of the same count.
 export function todoGroupIds(tasks: Task[]): string[] {
-  const parents = new Set<string | null>()
-  for (const t of tasks) if (t.isTodo) parents.add(t.parentId)
-  return [...parents].map(todoGroupId)
+  const counts = new Map<string | null, number>()
+  for (const t of tasks) if (t.isTodo) counts.set(t.parentId, (counts.get(t.parentId) ?? 0) + 1)
+  return [...counts].filter(([, n]) => n > 1).map(([pid]) => todoGroupId(pid))
 }
 
 export function buildRows(tasks: Task[], expanded: Record<string, boolean>, projects: Project[], logs: TaskLog[]): Row[] {
@@ -251,7 +261,7 @@ export function buildRows(tasks: Task[], expanded: Record<string, boolean>, proj
 
   const rows: Row[] = []
 
-  const visit = (t: Task, depth: number) => {
+  const visit = (t: Task, depth: number, group?: { id: string; count: number }) => {
     const kids = children.get(t.id) ?? []
     rows.push({
       kind: 'task',
@@ -262,27 +272,50 @@ export function buildRows(tasks: Task[], expanded: Record<string, boolean>, proj
       eff: eff.get(t.id)!,
       hasKids: kids.length > 0,
       isLeaf: kids.length === 0,
+      todoGroup: group,
     })
     if (expanded[t.id] === false) return
     const todoKids = kids.filter((k) => k.isTodo)
     for (const k of kids) if (!k.isTodo) visit(k, depth + 1)
     // The folder lines up with the sibling tasks at this level, so its name sits
-    // at the same x as their names; the to-dos it holds step in one further.
+    // at the same x as their names.
     visitGroup(t.id, depth + 1, todoKids)
   }
 
+  /**
+   * The to-do children of one parent, as rows.
+   *
+   * A folder is drawn only when it has something to fold away. A lone to-do is
+   * an ordinary row: a folder line for it would spend a whole row saying "one",
+   * and — being collapsed by default — would hide that row behind it.
+   *
+   * With two or more the folder gets a line of its own while it is closed. Open,
+   * that line goes away rather than repeating what the rows under it already
+   * say, and the folder's mark moves onto the first to-do's row instead
+   * (`RowTask.todoGroup`). Which is also why the to-dos sit at the folder's own
+   * depth once it is open: the line they used to hang from is the one that has
+   * been taken away.
+   */
   const visitGroup = (parentId: string | null, depth: number, todoKids: Task[]) => {
     if (todoKids.length === 0) return
     const gid = todoGroupId(parentId)
-    // The placeholder stands in for the WBS numbers of the rows inside, so
-    // measure it off those — not off the row depth, which is inflated by every
-    // folder above it and would run away from the real numbers.
-    let wbsCells = 0
-    for (const k of todoKids) wbsCells = Math.max(wbsCells, (wbs.get(k.id) ?? '').length)
-    rows.push({ kind: 'todoGroup', id: gid, parentId, depth, wbsCells, todoIds: todoKids.map((k) => k.id) })
+    if (todoKids.length === 1) {
+      visit(todoKids[0], depth)
+      return
+    }
     // Folders are collapsed by default (tasks are expanded by default), so the
     // test is for an explicit `true` rather than the usual `!== false`.
-    if (expanded[gid] === true) for (const k of todoKids) visit(k, depth + 1)
+    if (expanded[gid] !== true) {
+      // The placeholder stands in for the WBS numbers of the rows inside, so
+      // measure it off those — not off the row depth, which is inflated by every
+      // folder above it and would run away from the real numbers.
+      let wbsCells = 0
+      for (const k of todoKids) wbsCells = Math.max(wbsCells, (wbs.get(k.id) ?? '').length)
+      rows.push({ kind: 'todoGroup', id: gid, parentId, depth, wbsCells, todoIds: todoKids.map((k) => k.id) })
+      return
+    }
+    const group = { id: gid, count: todoKids.length }
+    todoKids.forEach((k, i) => visit(k, depth, i === 0 ? group : undefined))
   }
 
   for (const r of roots) if (!r.isTodo) visit(r, 0)

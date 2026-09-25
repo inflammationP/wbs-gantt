@@ -80,6 +80,27 @@ export function priorityMeta(p: TaskPriority | null): PriorityMeta {
   return p ? PRIORITY_META[p] : NO_PRIORITY
 }
 
+/**
+ * The priority tint for a task row, as a `backgroundImage`.
+ *
+ * It hangs off the row's own left edge — the edge of the column, before the
+ * indent, the chevron and the WBS number — so the washes line up down the board
+ * however deep their tasks sit, rather than stepping in and out with each row's
+ * name. It is gone within a name's width: a solid mark would read as another
+ * column beside the status one at the far end of the row, and priority is a
+ * property of the row you are reading rather than a fourth thing to scan for.
+ * `undefined` when there is no priority to show — a to-do has none — which is
+ * also what `style` wants for "no tint".
+ *
+ * One place, because the Gantt's left column and Manage's task table are the
+ * same row with a name in it and have to tint it identically.
+ */
+export function priorityWash(p: TaskPriority | null): string | undefined {
+  if (!p) return undefined
+  const { token } = PRIORITY_META[p]
+  return `linear-gradient(to right, ${sigAlpha(token, 0.22)}, ${sigAlpha(token, 0)} 56px)`
+}
+
 export const STATUS_ORDER: TaskStatus[] = ['todo', 'not-started', 'in-progress', 'completed', 'paused', 'delayed']
 export const PRIORITY_ORDER: TaskPriority[] = ['low', 'medium', 'high', 'urgent']
 

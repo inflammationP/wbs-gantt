@@ -58,7 +58,12 @@ export function ContextMenu({ menu, onClose, onAddChild, onAddSibling, onEdit, o
         onContextMenu={(e) => { e.preventDefault(); onClose() }}
       />
       <div className="fixed z-[70] bg-panel border border-border rounded-[3px] shadow-2xl py-1" style={{ left, top, width: w }}>
-        <Item icon={<Plus size={13} />} label={t('task.addSubtask')} onClick={() => { onAddChild(menu.row); onClose() }} />
+        {/* A to-do can't be a parent (`parentOptions` in TaskDialog filters it
+            out), so it gets no "add subtask" — otherwise the two items below
+            both hand over a dialog that says "top level" and read as one. */}
+        {!menu.row.task.isTodo && (
+          <Item icon={<Plus size={13} />} label={t('task.addSubtask')} onClick={() => { onAddChild(menu.row); onClose() }} />
+        )}
         <Item icon={<Plus size={13} />} label={t('task.addSibling')} onClick={() => { onAddSibling(menu.row); onClose() }} />
         <div className="my-1 border-t border-line" />
         <Item icon={<Pencil size={13} />} label={t('common.edit')} onClick={() => { onEdit(menu.row); onClose() }} />
