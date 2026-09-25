@@ -10,16 +10,6 @@ const REPO = 'inflammationP/wbs-gantt'
 const TARGET = 'windows-x86_64'
 const KEY_PATH = join(homedir(), '.tauri', 'wbs-gantt.key')
 
-function ask(question) {
-  return new Promise((resolve) => {
-    const rl = createInterface({ input: process.stdin, output: process.stdout })
-    rl.question(question, (answer) => {
-      rl.close()
-      resolve(answer.trim())
-    })
-  })
-}
-
 /**
  * Read lines until a blank one — for text that needs more than a single line.
  *
@@ -49,6 +39,26 @@ function askLines(prompt) {
   })
 }
 
+/**
+ * The typed block as a markdown list — one line, one bullet.
+ *
+ * The dash is added here rather than typed, because markdown joins consecutive
+ * lines into a single paragraph: three separate points typed as three lines were
+ * published as one wall of text (which is what the v0.6.1 notes did). A line
+ * that already starts with a dash keeps one dash rather than gaining a second.
+ *
+ * These notes go to two places — the GitHub release body and `latest.json`,
+ * which the updater renders as markdown — so the list has to survive both.
+ */
+function asList(block) {
+  return block
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => `- ${line.replace(/^[-*]\s*/, '')}`)
+    .join('\n')
+}
+
 function run(cmd) {
   console.log(`\n> ${cmd}\n`)
   execSync(cmd, { stdio: 'inherit' })
@@ -56,32 +66,23 @@ function run(cmd) {
 
 const confPath = 'src-tauri/tauri.conf.json'
 const conf = JSON.parse(readFileSync(confPath, 'utf8'))
-const oldVersion = conf.version
 
 // 1. version + notes
-// Strip a leading "v" if the user typed it (version must be pure semver).
-const version = ((await ask(`Version [current ${oldVersion}]: `)) || oldVersion).replace(/^v/, '')
-// One line per bullet; a blank line ends the block. Markdown is fine — these go
-// into both the GitHub release body and `latest.json`, and the updater renders
-// the latter as markdown.
-const notes = await askLines(
-  'Release notes — one bullet per line, blank line to finish (Enter alone to skip):\n> ',
-)
+//
+// The version is read, never asked for. It was decided when the changelog
+// section was written, and that same step writes it into `tauri.conf.json` — so
+// that file is where it is kept, and asking for it again made the two able to
+// disagree (a release tagged v0.4.1 against a section headed v0.5.0 is what that
+// cost). Releasing a number that is not in there means editing the file first,
+// which is the same commit the changelog section belongs in.
+const version = conf.version
+console.log(`\n版本号 v${version}（取自 ${confPath}）`)
 
-// The version belongs in the commit that writes the changelog section — bump it
-// there and a release finds it already correct, writes nothing, and leaves the
-// tree clean. Reaching this branch means it was bumped late, so this file is now
-// dirty and needs a commit of its own. Said out loud rather than left to be
-// discovered: a silent extra edit here is exactly what produced the follow-up
-// "0.4.0" commits.
-if (version !== oldVersion) {
-  conf.version = version
-  writeFileSync(confPath, JSON.stringify(conf, null, 2) + '\n')
-  console.log(
-    `\n📝 ${confPath} 的版本号写成了 ${version}。\n` +
-      '   正常路径是写变更记录那一节时顺手改掉它，这次没赶上 —— 发布完需要为这一个文件补一次提交。\n',
-  )
-}
+// One line per point; a blank line ends the block and the dashes are added by
+// `asList`. Markdown inside a line is fine and passes through.
+const notes = asList(
+  await askLines('\nRelease notes — one line per point, blank line to finish (Enter alone to skip):\n> '),
+)
 
 const tag = `v${version}`
 const setupName = `${conf.productName}_${version}_x64-setup.exe`
@@ -160,47 +161,42 @@ try {
   console.log('或在安装并登录 gh 后重新运行本脚本。\n')
 }
 
-// 5. stamp the release date into the docs — a fallback, not the normal path
-// Both the CHANGELOG heading and FEATURES' version line are meant to carry their
-// real date already: a section is written once, finished, and released as it
-// stands. This only fires for a 待发布 placeholder that survived — a section
-// written days before the release, whose date nobody re-checked. That case is
-// why it exists (it was forgotten by hand two releases running); in the ordinary
-// one it changes nothing, and the tree stays clean. Editing a doc must never
-// block a release, so every failure is reported and skipped rather than thrown.
+// 5. stamp the release date into the changelog — a fallback, not the normal path
+// The heading is meant to carry its real date already: a section is written
+// once, finished, and released as it stands. This only fires for a 待发布
+// placeholder that survived — a section written days before the release, whose
+// date nobody re-checked. That case is why it exists (it was forgotten by hand
+// two releases running); in the ordinary one it changes nothing, and the tree
+// stays clean. Editing a doc must never block a release, so a failure is
+// reported and skipped rather than thrown.
+//
+// The CHANGELOG is the only file here. `FEATURES.md` is a "state of the board"
+// report that lags by design — it says which version it was written against
+// rather than claiming to describe the newest one — so there is nothing in it
+// for a release to stamp, and asking for a line mentioning the version only
+// ever produced a warning nobody could act on from a release run.
 {
   const d = new Date()
   const pad = (n) => String(n).padStart(2, '0')
   const today = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-  const stamped = []
-  const missing = []
+  const file = 'CHANGELOG.md'
 
-  for (const file of ['CHANGELOG.md', 'FEATURES.md']) {
-    try {
-      const lines = readFileSync(file, 'utf8').split('\n')
-      // Only lines naming the version being released, so an unrelated 待发布
-      // elsewhere in the file is left alone.
-      if (!lines.some((line) => line.includes(`v${version}`))) {
-        missing.push(file)
-        continue
-      }
+  try {
+    const lines = readFileSync(file, 'utf8').split('\n')
+    // Only lines naming the version being released, so an unrelated 待发布
+    // elsewhere in the file is left alone.
+    if (!lines.some((line) => line.includes(`v${version}`))) {
+      console.log(`⚠️  ${file} 里没有任何提到 v${version} 的行 —— 变更记录那一节写了吗？\n`)
+    } else {
       const next = lines
         .map((line) => (line.includes(`v${version}`) ? line.replace(/待发布/g, today) : line))
         .join('\n')
       if (next !== lines.join('\n')) {
         writeFileSync(file, next)
-        stamped.push(file)
+        console.log(`📝 已把 ${file} 里 v${version} 的「待发布」写成 ${today}，记得连同本次改动一起提交。\n`)
       }
-    } catch (err) {
-      console.log(`⚠️  ${file} 未能更新（${err.message}）——不影响发布。`)
     }
-  }
-
-  if (stamped.length) {
-    console.log(`📝 已把 ${stamped.join('、')} 里 v${version} 的「待发布」写成 ${today}，记得连同本次改动一起提交。\n`)
-  }
-  if (missing.length) {
-    console.log(`⚠️  ${missing.join('、')} 里没有任何提到 v${version} 的行。`)
-    console.log(`   要么版本号填错了，要么这次的变更记录还没写——请手工核对。\n`)
+  } catch (err) {
+    console.log(`⚠️  ${file} 未能更新（${err.message}）——不影响发布。`)
   }
 }
