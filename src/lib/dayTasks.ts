@@ -1,5 +1,5 @@
 import { Project, Task, TaskLog, TaskStatus } from '../types'
-import { buildChildrenMap, collectDescendants, computeWbs, deriveStatus, deriveTaskStatus, EffState } from './tree'
+import { buildChildrenMap, collectDescendants, computeWbs, deriveStatus, deriveTaskStatus } from './tree'
 import { isPausedOnDay, taskProgress } from './progress'
 import { addDays, toDate, toISO } from './dates'
 
@@ -312,7 +312,17 @@ export interface DayMilestones {
  * Status comes from `eff`, which is always *today's* reading — a past day's
  * chip therefore shows the task's current colour, not the colour it had then.
  */
-export function milestonesOnDay(tasks: Task[], eff: Map<string, EffState>, day: string): DayMilestones {
+export function milestonesOnDay(
+  tasks: Task[],
+  // Only the status is ever read, out of either state map: `EffState` from
+  // `effectiveStates` (today's reading, for the calendar) or `DayEffState` from
+  // `dayStates` (any day, which is what the reminder digest renders ahead of
+  // time). Naming what is actually used rather than the wider type is what lets
+  // both callers pass what they already have, and it is why `EffState` is no
+  // longer imported here.
+  eff: Map<string, DayEffState>,
+  day: string,
+): DayMilestones {
   const children = buildChildrenMap(tasks)
   const starts: Task[] = []
   const due: Task[] = []

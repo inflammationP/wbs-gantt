@@ -13,6 +13,16 @@ export const REPO_URL = 'https://github.com/inflammationP/wbs-gantt'
 export const ACCELERATOR_URL = 'https://steampp.net/'
 
 /**
+ * Where the reminder token comes from.
+ *
+ * PushPlus is a Chinese relay that delivers to personal WeChat through its own
+ * 公众号, which is why it needs no server of ours and no App Review: you scan a
+ * QR code, follow the account, and copy a token. The token is the only
+ * credential the app holds, and this is where the user goes to get it.
+ */
+export const PUSHPLUS_URL = 'https://www.pushplus.plus/'
+
+/**
  * Hand a URL to the user's browser.
  *
  * Called from buttons rather than anchors, deliberately. A plain `<a href>`

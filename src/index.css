@@ -218,3 +218,27 @@ body {
 ::selection {
   background: rgb(var(--c-accent) / 0.25);
 }
+
+/* ── The two side panels ────────────────────────────────────────────────────
+   `Sidebar`, the board, and up to two 320px panels used to share one flex row,
+   so the board got whatever was left. At the window's default width that was
+   about 450px once both panels were open — narrow enough that the Gantt's own
+   toolbar stopped fitting and folded into itself, which is what "the text
+   layout is a mess" was.
+
+   They float over the board instead of squeezing it. Either way the board loses
+   the same 320px to a panel; the difference is whether it loses them by being
+   re-laid-out into a space too small for it, or by being covered. Covered is
+   the lesser loss and the only one that leaves the board's own layout alone.
+
+   Positioned against the viewport rather than the shell — the shell is exactly
+   the viewport (`h-screen w-screen`), and the shell is not a positioning
+   ancestor, so `right: 0` lands on the window's own edge. */
+.side-panels {
+  position: absolute;
+  inset-block: 0;
+  right: 0;
+  z-index: 40;
+  display: flex;
+  box-shadow: -16px 0 32px rgb(0 0 0 / 0.35);
+}

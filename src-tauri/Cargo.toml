@@ -21,8 +21,25 @@ tauri-build = { version = "2.6.3", features = [] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "2.11.3", features = [] }
+# `tray-icon` is what makes "start with Windows" usable: the app is launched with
+# `--hidden` at boot, and without a tray there would be no way back to a window
+# that is not on screen and not in the taskbar.
+tauri = { version = "2.11.3", features = ["tray-icon"] }
 tauri-plugin-log = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-opener = "2"
+tauri-plugin-autostart = "2"
+# Pinned to the 2.6 line, not the 2.x line, because Tauri refuses to start when the
+# crate and the npm package disagree on minor and npm has no 2.7 yet: "~2.6" holds
+# this at 2.6.1, which is what `@tauri-apps/plugin-http` ships. Loosen it once npm
+# catches up.
+tauri-plugin-http = "~2.6"
+
+# Both were already in the tree below tauri and the http plugin, so naming them
+# directly costs no new compilation — and the alternative is worse. Without
+# reqwest the sender has to shell out to PowerShell, and without chrono it cannot
+# tell what day it is.
+chrono = "0.4"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+notify-rust = "4.17.0"

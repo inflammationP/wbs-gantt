@@ -12,8 +12,11 @@ import { DayDetailPanel } from './components/DayDetailPanel'
 import { GettingStarted } from './components/GettingStarted'
 import { UpdateOverlays } from './components/UpdateOverlays'
 import { useStore } from './store/useStore'
+import { useT } from './lib/useT'
+import { setTrayLabels } from './lib/notify'
 
 export default function App() {
+  const t = useT()
   const view = useStore((s) => s.activeView)
   // Re-keyed on every click of the nav's Gantt item, so the page remounts (and
   // scrolls back to today) instead of resuming where it was left.
@@ -40,6 +43,13 @@ export default function App() {
     void runUpdateCheck()
   }, [runUpdateCheck])
 
+  // The tray menu is built in Rust, where the dictionaries are not — so its two
+  // labels are pushed down from here, and re-pushed when the language changes.
+  // Without this the menu would be the one part of the app that stayed English.
+  useEffect(() => {
+    void setTrayLabels(t('tray.open'), t('tray.quit'))
+  }, [t])
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-bg text-fg">
       <Sidebar />
@@ -60,11 +70,18 @@ export default function App() {
       </main>
       {/* Sits left of the task panel, so opening a task from a day keeps the
           day's list on screen. Opened from the timeline header in the Gantt and
-          from a day cell in the Calendar. */}
-      {(view === 'gantt' || view === 'calendar') && selectedDay && <DayDetailPanel day={selectedDay} />}
-      {selectedProject
-        ? <ProjectDetailPanel projectId={selectedProject.id} />
-        : (selectedExists && selectedTaskId ? <TaskDetailPanel taskId={selectedTaskId} /> : null)}
+          from a day cell in the Calendar.
+
+          The wrapper takes them out of the shell's flex row — they float over
+          the board's right edge rather than narrowing it (see `index.css`).
+          Panels are things you look into and close; a board that re-flows every
+          time one opens is a board that never holds still. */}
+      <div className="side-panels">
+        {(view === 'gantt' || view === 'calendar') && selectedDay && <DayDetailPanel day={selectedDay} />}
+        {selectedProject
+          ? <ProjectDetailPanel projectId={selectedProject.id} />
+          : (selectedExists && selectedTaskId ? <TaskDetailPanel taskId={selectedTaskId} /> : null)}
+      </div>
     </div>
   )
 }

@@ -2,6 +2,13 @@ import { Chore, Habit, Project, Task, TaskLog } from '../types'
 import { DEFAULT_LANG, isLang, Lang } from '../lib/i18n'
 import { DEFAULT_THEME, isThemeId, ThemeId } from '../lib/theme'
 import { ALL_DAYS } from '../lib/habits'
+import {
+  CopyOverrides,
+  DigestCategory,
+  DIGEST_CATEGORIES,
+  ReminderRule,
+  isDigestCategory,
+} from '../lib/reminder'
 
 export interface PersistedData {
   projects: Project[]
@@ -104,9 +111,102 @@ export interface Prefs {
    * never hides the fact that an update exists.
    */
   updateSnoozeUntil: string | null
+  /**
+   * Whether a copy also goes to WeChat, through PushPlus.
+   *
+   * There used to be a channel list here, and a Windows notification alongside
+   * it as a peer. That was the wrong shape: the desktop notification is not a
+   * choice the app offers, it is what the app does, so the only thing left to
+   * decide is whether a second copy leaves the machine.
+   */
+  reminderWechat: boolean
+  /**
+   * When to send, as a list the user builds.
+   *
+   * Times are local and not instants, because a time of day repeats — "eight in
+   * the morning" survives a trip across time zones and a change of daylight
+   * saving, and a stored UTC instant would not. The sender compares each rule
+   * against the clock every time it wakes, which is also what makes them
+   * editable without touching the scheduled task.
+   *
+   * One rule ships by default. The sender treats the list as the whole of
+   * "reminders are on": an empty list is silence, and there is no separate switch
+   * that could disagree with it.
+   */
+  reminderRules: ReminderRule[]
+  /**
+   * Which categories a message may report at all.
+   *
+   * The user's standing preference, as opposed to what a given hour is for — an
+   * unticked category never appears, whichever slot is speaking. Defaults to
+   * every category, and an empty list means the same as "only what the slot
+   * says", so a hand-edited file cannot accidentally silence everything.
+   */
+  reminderTopics: DigestCategory[]
+  /** How many days ahead counts as "coming up". */
+  reminderLeadDays: number
+  /**
+   * The last day the in-app daily report was opened.
+   *
+   * `null` until it is opened once. The mark in the sidebar lives off this being
+   * behind today's date, so it comes back every morning and goes away when the
+   * report is actually read — which is the only sense in which it means anything.
+   */
+  reportSeenDay: string | null
+  /**
+   * Wording the user has replaced, per language.
+   *
+   * Per language rather than one set, because the alternative produces a state
+   * nobody can read: an English interface sending Chinese notifications, with
+   * nothing on screen to say whether that is a bug or a setting. An absent key
+   * falls back to the built-in string, so this is sparse and never has to be
+   * complete.
+   */
+  reminderCopy: Partial<Record<Lang, CopyOverrides>>
+  /**
+   * The PushPlus token the digest is posted with.
+   *
+   * A preference rather than work data, and so outside `KEY` — importing
+   * somebody else's board must not adopt their token, nor hand them ours.
+   * Plainly stored: it is a bearer credential for one push channel, in the same
+   * local profile as the board it describes, and encrypting it against an
+   * attacker who can already read `localStorage` would buy nothing.
+   */
+  reminderToken: string
+  /**
+   * Whether the app starts with Windows.
+   *
+   * A pref, though the autostart plugin can answer it itself, because the answer
+   * has to be readable during render and the plugin's is a promise. The store
+   * writes what the plugin reports after every change, so the two cannot drift.
+   */
+  autostart: boolean
 }
 
 const PREF_KEY = 'wbs-gantt.prefs'
+
+/**
+ * The three moments the day gets a notification: morning, noon and dusk.
+ *
+ * Not a default the user adjusts — there is no longer any surface that adjusts
+ * it. These three *are* the feature, and each time sits inside the slot it is
+ * named for (`SLOTS` in `reminder.ts`), so the rule and the greeting it opens
+ * with cannot come apart: a rule moved outside its slot would say "good morning"
+ * at noon.
+ *
+ * The shapes differ, and that is the other half. The first send of the day is
+ * the whole picture; the two after it are one line about what is left. A late
+ * send keeps its own shape and takes the hour's greeting, so the noon rule
+ * arriving at eleven at night is still the noon rule.
+ *
+ * Every day, all three. A weekday filter would be a configuration, and there is
+ * nothing left that could set one.
+ */
+const DEFAULT_RULES: ReminderRule[] = [
+  { id: 'r-early', time: '07:00', weekdays: [...ALL_DAYS], shape: 'day', enabled: true },
+  { id: 'r-noon', time: '12:30', weekdays: [...ALL_DAYS], shape: 'nudge', enabled: true },
+  { id: 'r-dusk', time: '18:30', weekdays: [...ALL_DAYS], shape: 'nudge', enabled: true },
+]
 
 export const DEFAULT_PREFS: Prefs = {
   lang: DEFAULT_LANG,
@@ -117,6 +217,17 @@ export const DEFAULT_PREFS: Prefs = {
   updateAnchorAt: null,
   nagShownAt: null,
   updateSnoozeUntil: null,
+  reminderWechat: false,
+  reminderRules: DEFAULT_RULES,
+  reminderTopics: [...DIGEST_CATEGORIES],
+  reminderLeadDays: 3,
+  reportSeenDay: null,
+  reminderCopy: {},
+  reminderToken: '',
+  // On by default. The desktop notification is the channel that costs nothing
+  // and needs no account, so the app ships ready to remind — and a machine that
+  // starts the app is the half of that the user would otherwise have to arrange.
+  autostart: true,
 }
 
 // An instant this module wrote itself. Anything else — absent, from an older
@@ -125,6 +236,27 @@ export const DEFAULT_PREFS: Prefs = {
 // actually has to succeed later.
 function isInstant(v: unknown): v is string {
   return typeof v === 'string' && !Number.isNaN(Date.parse(v))
+}
+
+// A `HH:mm` this module wrote itself. Range-checked rather than pattern-matched,
+// for the same reason `isInstant` parses: the value is compared against a clock
+// later, and a stored "25:00" would quietly mean "never due" — a reminder that
+// silently stops arriving, which is the one failure this feature cannot afford.
+/**
+ * Wording overrides, keyed by language.
+ *
+ * Only the shape is checked, not the keys: an unknown key is inert (nothing
+ * looks it up) and dropping it would silently throw away someone's writing the
+ * day a block is renamed. Values are kept as strings and trimmed by `copy` at
+ * read time, so whitespace-only text falls back rather than rendering blank.
+ */
+function isCopyOverrides(v: unknown): v is Partial<Record<Lang, CopyOverrides>> {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return false
+  return Object.entries(v as Record<string, unknown>).every(([lang, entries]) => {
+    if (!isLang(lang)) return false
+    if (typeof entries !== 'object' || entries === null || Array.isArray(entries)) return false
+    return Object.values(entries as Record<string, unknown>).every((s) => typeof s === 'string')
+  })
 }
 
 // Anything unrecognised falls back to the default rather than propagating: a
@@ -157,6 +289,34 @@ export function loadPrefs(): Prefs {
       updateSnoozeUntil: isInstant(parsed.updateSnoozeUntil)
         ? parsed.updateSnoozeUntil
         : DEFAULT_PREFS.updateSnoozeUntil,
+      // Forced off while the WeChat route is withdrawn. The preference and the
+      // sender's PushPlus branch are still here so that bringing it back is a
+      // one-line change — but a stored `true` with no switch on screen would
+      // keep posting to a third party the user can neither see nor stop.
+      // TODO(wechat): restore `parsed.reminderWechat` when the UI comes back.
+      reminderWechat: false,
+      // Forced, not read. There is no longer anything that edits the schedule, so
+      // a stored value could only be one from a build that had such a screen —
+      // and it would go on governing when reminders arrive with nothing on
+      // screen to explain where they came from or how to stop them. The three
+      // times are the feature now; `DEFAULT_RULES` says which three.
+      // TODO(settings): read `parsed.reminderRules` again if the screen comes back.
+      reminderRules: DEFAULT_PREFS.reminderRules,
+      reminderTopics: Array.isArray(parsed.reminderTopics)
+        ? parsed.reminderTopics.filter(isDigestCategory)
+        : DEFAULT_PREFS.reminderTopics,
+      reminderLeadDays:
+        typeof parsed.reminderLeadDays === 'number' &&
+        Number.isInteger(parsed.reminderLeadDays) &&
+        parsed.reminderLeadDays >= 0 &&
+        parsed.reminderLeadDays <= 30
+          ? parsed.reminderLeadDays
+          : DEFAULT_PREFS.reminderLeadDays,
+      reportSeenDay: typeof parsed.reportSeenDay === 'string' ? parsed.reportSeenDay : null,
+      reminderCopy: isCopyOverrides(parsed.reminderCopy) ? parsed.reminderCopy : DEFAULT_PREFS.reminderCopy,
+      reminderToken:
+        typeof parsed.reminderToken === 'string' ? parsed.reminderToken : DEFAULT_PREFS.reminderToken,
+      autostart: typeof parsed.autostart === 'boolean' ? parsed.autostart : DEFAULT_PREFS.autostart,
     }
   } catch {
     return DEFAULT_PREFS

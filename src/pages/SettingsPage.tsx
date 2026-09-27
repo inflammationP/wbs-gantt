@@ -45,6 +45,9 @@ export function SettingsPage() {
 
         {/* ---- Version ---- */}
         <VersionSection />
+
+        {/* ---- Start with Windows ---- */}
+        <AutostartRow />
       </div>
     </div>
   )
@@ -53,13 +56,38 @@ export function SettingsPage() {
 const linkCls = 'mt-1.5 text-[12px] text-accent hover:underline'
 
 /**
- * The version, and the two things a user needs when the updater cannot work.
+ * Start with Windows, demoted to the last line of the page.
  *
- * The GitHub material sits under a rule inside this section rather than as a
- * peer `<section>`, because it tells one story: automatic updates need GitHub,
- * so here is how to reach GitHub, and here is why it is worth reaching. Making
- * it a peer of Language and Theme would let it compete with them.
+ * Not part of the reminder section any more, and the demotion is the point. It
+ * is a real setting — it writes to the system's startup list, which is a heavier
+ * thing than anything else on this page does — but it is not one of the app's
+ * features and nothing else here depends on it, so it belongs where someone who
+ * is looking for it will find it and nobody else has to pass it.
  */
+function AutostartRow() {
+  const t = useT()
+  const autostart = useStore((s) => s.autostart)
+  const setAutostart = useStore((s) => s.setAutostart)
+  if (!isTauri()) return null
+
+  return (
+    <section className="border-t border-line pt-4">
+      <div className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          id="autostart"
+          checked={autostart}
+          onChange={(e) => void setAutostart(e.target.checked)}
+          className="accent-accent"
+        />
+        <label htmlFor="autostart" className="text-[12px] text-muted cursor-pointer">
+          {t('settings.autostart')}
+        </label>
+      </div>
+    </section>
+  )
+}
+
 function VersionSection() {
   const t = useT()
   const desktop = isTauri()

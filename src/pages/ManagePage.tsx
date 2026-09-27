@@ -58,6 +58,11 @@ export function ManagePage() {
   // Every count on this page is over leaf tasks, matching what the Gantt shows
   // as work.
   const leaves = useMemo(() => tasks.filter((task) => !tasks.some((x) => x.parentId === task.id)), [tasks])
+  // The first level of each project — the branches a project is divided into.
+  // Deliberately not "tasks that have children": a first-level task with no
+  // children of its own *is* the whole branch, and counting it out would make
+  // this figure disagree with the WBS the Gantt prints beside it.
+  const parents = useMemo(() => tasks.filter((task) => task.parentId === null), [tasks])
 
   const overview = useMemo(() => {
     const overdue = leaves.filter((task) => eff.get(task.id)?.status === 'delayed')
@@ -120,7 +125,12 @@ export function ManagePage() {
 
           <div className="grid grid-cols-2 gap-3">
             <Stat label={t('sidebar.projects')} value={String(projects.length)} sub={t('manage.sub.tracked')} />
-            <Stat label={t('manage.totalTasks')} value={String(tasks.length)} sub={t('manage.leafTasks', { count: leaves.length })} />
+            {/* The subtasks are the headline because they are the work; the
+                parent count is the shape it hangs from. It used to be the other
+                way round — total first, leaves as the caption — and "total"
+                meant everything, parents included, so the big number was the
+                one figure nobody had a use for. */}
+            <Stat label={t('manage.subtasks')} value={String(leaves.length)} sub={t('manage.parentTasks', { count: parents.length })} />
           </div>
 
           {/* The bands are nested now, so the parent's `space-y-6` no longer

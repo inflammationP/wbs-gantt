@@ -1,16 +1,18 @@
 import { useRef, useState } from 'react'
 import {
   BarChart2, Calendar, ClipboardList, Download, HelpCircle, LayoutDashboard, ListChecks, Minus,
-  Pencil, Plus, Settings, Upload,
+  Newspaper, Pencil, Plus, Settings, Upload,
 } from 'lucide-react'
 import { AppView, Project } from '../types'
 import { useStore } from '../store/useStore'
 import { exportJson, parseImport } from '../store/storage'
+import { copy } from '../lib/reminder'
 import { todayISO } from '../lib/dates'
 import { averageProgress } from '../lib/progress'
 import { Dict } from '../lib/i18n'
 import { useT } from '../lib/useT'
 import { ProjectDialog } from './ProjectDialog'
+import { DailyReport } from './DailyReport'
 import { useDialogs } from './dialogs'
 
 // Labels are keys rather than text: this table is built once at module scope, so
@@ -41,6 +43,11 @@ export function Sidebar() {
   // update exists" — so it tracks the unreachable-GitHub banner specifically,
   // and stays lit for exactly as long as that banner is up.
   const updateUnread = useStore((s) => s.updatePhase === 'unreachable')
+  // There used to be a second mark here, for reminders that could not be
+  // delivered. It is gone with the sentence that explained it, and it went for a
+  // reason rather than by tidying: Windows notifications are switched on and
+  // registered out of the box, so the condition it reported had stopped being
+  // reachable. A warning that can no longer come true is not a warning.
   const projectFilter = useStore((s) => s.projectFilter)
   const setProjectFilter = useStore((s) => s.setProjectFilter)
   const setSelected = useStore((s) => s.setSelected)
@@ -51,6 +58,27 @@ export function Sidebar() {
   const showGuide = useStore((s) => s.showGuide)
   const fileRef = useRef<HTMLInputElement>(null)
   const [editingProject, setEditingProject] = useState<Project | null>(null)
+  const [reportOpen, setReportOpen] = useState(false)
+  // The mark means "today's report has not been opened", so it is the date the
+  // panel was last opened compared against today — not a boolean toggled by
+  // hand, which would survive midnight and lie every second day.
+  const reportSeenDay = useStore((s) => s.reportSeenDay)
+  const today = useStore((s) => s.today)
+  const markReportSeen = useStore((s) => s.markReportSeen)
+  const reportUnread = reportSeenDay !== today
+  // The button's tooltip is the panel's own title, fetched the same overridable
+  // way the panel fetches it — a rename in Settings has to move both, or the
+  // tooltip ends up naming a thing the panel no longer calls itself.
+  const lang = useStore((s) => s.lang)
+  const reportCopy = useStore((s) => s.reminderCopy[s.lang])
+  const reportTitle = copy('report.title', lang, reportCopy)
+
+  // The settings icon keeps the meaning it has always had — "there is something
+  // to read in Settings" — and lights for either cause, since it is the only
+  // signpost to the page where both are fixed. Update wins the tooltip when both
+  // hold: it is the older of the two, and it is the one with an outside cause
+  // the user may already be halfway through chasing.
+  const settingsReason = updateUnread ? t('update.unreachable') : undefined
 
   const projectProgress = (pid: string) => {
     const leaves = tasks.filter((t) => t.projectId === pid && !tasks.some((x) => x.parentId === t.id))
@@ -86,6 +114,26 @@ export function Sidebar() {
           <div className="w-2 h-2 bg-accent" />
         </div>
         <div className="text-[12px] font-semibold tracking-[0.18em] text-fg">WBS·GANTT</div>
+        {/* Today, one click from anywhere — and a mark until it has been looked
+            at. Deliberately not a nav row beside Today: this is not a place you
+            work, it is a thing you read, and filing it with the pages would have
+            made it one more place to remember to go. */}
+        <button
+          onClick={() => {
+            markReportSeen()
+            setReportOpen(true)
+          }}
+          title={reportTitle}
+          aria-label={reportTitle}
+          className="ml-auto shrink-0 -mr-1 p-1 text-dim hover:text-fg transition-colors"
+        >
+          <span className="relative inline-flex">
+            <Newspaper size={14} />
+            {reportUnread && (
+              <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-delayed" />
+            )}
+          </span>
+        </button>
       </div>
 
       {/* Nav */}
@@ -97,7 +145,7 @@ export function Sidebar() {
             <button
               key={item.id}
               onClick={() => (item.id === 'gantt' ? openGantt() : setActiveView(item.id))}
-              title={item.id === 'settings' && updateUnread ? t('update.unreachable') : undefined}
+              title={item.id === 'settings' ? settingsReason : undefined}
               className={`w-full flex items-center gap-2.5 px-4 h-9 text-[12px] transition-colors border-l-2 ${
                 active
                   ? 'bg-panel2 text-fg border-accent'
@@ -210,6 +258,7 @@ export function Sidebar() {
       </div>
 
       {editingProject && <ProjectDialog project={editingProject} onClose={() => setEditingProject(null)} />}
+      {reportOpen && <DailyReport onClose={() => setReportOpen(false)} />}
     </aside>
     {dialogs}
     </>

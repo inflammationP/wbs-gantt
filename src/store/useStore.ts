@@ -2,15 +2,36 @@ import { useMemo } from 'react'
 import { create } from 'zustand'
 import { AppView, Chore, Habit, Project, Task, TaskLog, TaskPriority, TaskType, ViewMode } from '../types'
 import { ALL_DAYS, runsOn } from '../lib/habits'
-import { todayISO, addUnitISO, Unit, addDays, diffDays, toDate, toISO } from '../lib/dates'
+import { todayISO, addUnitISO, Unit, addDays, diffDays, pad, toDate, toISO } from '../lib/dates'
 import { timelineRange, DateRange } from '../lib/timeline'
 import { buildRows, collectDescendants, hasChildren, syncParentEnds, todoCascadeIds, todoGroupIds, Row } from '../lib/tree'
 import { loadData, saveData, loadPrefs, savePrefs, PersistedData, Prefs } from './storage'
 import { editDivider } from '../lib/logs'
-import { applyLang, Lang } from '../lib/i18n'
+import { applyLang, Lang, translate } from '../lib/i18n'
 import { applyTheme, ThemeId } from '../lib/theme'
 import { buildSeed } from '../lib/seed'
 import { checkForUpdate, isTauri, CheckResult } from '../lib/updater'
+import {
+  CopyKey,
+  CopyOverrides,
+  DigestCategory,
+  ReminderRule,
+  Slot,
+  composeDigest,
+  slotAt,
+  testDigest,
+} from '../lib/reminder'
+import {
+  sendReminder,
+  syncReminderFile,
+  installReminderTask as installTask,
+  removeReminderTask as removeTask,
+  isReminderTaskInstalled,
+  setAutostart as enableAutostart,
+  isAutostartEnabled,
+  showToast,
+  SendResult,
+} from '../lib/notify'
 
 export interface NewTaskInput {
   name: string
@@ -57,6 +78,15 @@ export type UpdatePhase = 'idle' | 'checking' | 'current' | 'available' | 'unrea
 
 /** The `available` variant, kept whole so the dialog can call `install`. */
 export type AvailableUpdate = Extract<CheckResult, { kind: 'available' }>
+
+/**
+ * Where a manual test send has got to.
+ *
+ * Session-only, like `UpdatePhase` and for the same reason: it describes the
+ * send that just happened. The durable facts — whether reminders are on, when
+ * they go out, and the token — are preferences.
+ */
+export type ReminderPhase = 'idle' | 'sending' | 'sent' | 'error' | 'unsupported'
 
 interface State {
   projects: Project[]
@@ -108,6 +138,20 @@ interface State {
   updateAnchorAt: string | null
   nagShownAt: string | null
   updateSnoozeUntil: string | null
+  // The WeChat digest. `reminderPhase` is session-only like `updatePhase`: it
+  // describes the send that just happened, not a durable fact.
+  reminderWechat: boolean
+  reminderRules: ReminderRule[]
+  reminderTopics: DigestCategory[]
+  reminderLeadDays: number
+  reminderCopy: Partial<Record<Lang, CopyOverrides>>
+  reportSeenDay: string | null
+  reminderToken: string
+  autostart: boolean
+  reminderPhase: ReminderPhase
+  reminderError: string | null
+  /** Whether Windows currently has the scheduled task. Asked, never remembered. */
+  reminderTaskInstalled: boolean
 
   setLang: (l: Lang) => void
   setTheme: (t: ThemeId) => void
@@ -176,6 +220,19 @@ interface State {
   closeUpdateDialog: () => void
   snoozeUpdate: () => void
   closeNag: () => void
+
+  setReminderWechat: (on: boolean) => void
+  setReminderRules: (rules: ReminderRule[]) => void
+  setReminderTopic: (category: DigestCategory, on: boolean) => void
+  setReminderLeadDays: (days: number) => void
+  setCopyOverride: (key: CopyKey, text: string) => void
+  /** Mark the day report read. Clears the sidebar mark until tomorrow. */
+  markReportSeen: () => void
+  setReminderToken: (token: string) => void
+  installReminderTask: () => Promise<void>
+  removeReminderTask: () => Promise<void>
+  refreshReminderTask: () => Promise<void>
+  setAutostart: (on: boolean) => Promise<void>
 }
 
 function uid(): string {
@@ -234,6 +291,14 @@ function persistPrefs(): void {
     updateAnchorAt,
     nagShownAt,
     updateSnoozeUntil,
+    reminderWechat,
+    reminderRules,
+    reminderTopics,
+    reminderLeadDays,
+    reminderCopy,
+    reportSeenDay,
+    reminderToken,
+    autostart,
   } = useStore.getState()
   savePrefs({
     lang,
@@ -244,6 +309,14 @@ function persistPrefs(): void {
     updateAnchorAt,
     nagShownAt,
     updateSnoozeUntil,
+    reminderWechat,
+    reminderRules,
+    reminderTopics,
+    reminderLeadDays,
+    reminderCopy,
+    reportSeenDay,
+    reminderToken,
+    autostart,
   })
 }
 
@@ -314,6 +387,17 @@ export const useStore = create<State>()((set, get) => ({
   updateAnchorAt: prefs.updateAnchorAt,
   nagShownAt: prefs.nagShownAt,
   updateSnoozeUntil: prefs.updateSnoozeUntil,
+  reminderWechat: prefs.reminderWechat,
+  reminderRules: prefs.reminderRules,
+  reminderTopics: prefs.reminderTopics,
+  reminderLeadDays: prefs.reminderLeadDays,
+  reminderCopy: prefs.reminderCopy,
+  reportSeenDay: prefs.reportSeenDay,
+  reminderToken: prefs.reminderToken,
+  autostart: prefs.autostart,
+  reminderPhase: 'idle',
+  reminderError: null,
+  reminderTaskInstalled: false,
 
   setLang: (l) => {
     applyLang(l)
@@ -880,6 +964,81 @@ export const useStore = create<State>()((set, get) => ({
   },
 
   closeNag: () => set({ nagOpen: false }),
+
+  setReminderWechat: (on) => {
+    set({ reminderWechat: on })
+    persistPrefs()
+    scheduleReminderSync(0)
+  },
+  setReminderRules: (rules) => {
+    set({ reminderRules: rules })
+    persistPrefs()
+    scheduleReminderSync(0)
+  },
+  setReminderTopic: (category, on) => {
+    const current = get().reminderTopics
+    const next = on ? [...current, category] : current.filter((c) => c !== category)
+    set({ reminderTopics: next })
+    persistPrefs()
+    scheduleReminderSync(0)
+  },
+  setReminderLeadDays: (days) => {
+    set({ reminderLeadDays: days })
+    persistPrefs()
+    scheduleReminderSync(0)
+  },
+  setCopyOverride: (key, text) => {
+    const { reminderCopy, lang } = get()
+    const forLang = { ...(reminderCopy[lang] ?? {}) }
+    // Empty means no opinion, not render nothing — see copy() in reminder.ts.
+    if (text.trim() === '') delete forLang[key]
+    else forLang[key] = text
+    set({ reminderCopy: { ...reminderCopy, [lang]: forLang } })
+    persistPrefs()
+    scheduleReminderSync(0)
+  },
+  markReportSeen: () => {
+    set({ reportSeenDay: todayISO() })
+    persistPrefs()
+  },
+  setReminderToken: (token) => {
+    set({ reminderToken: token })
+    persistPrefs()
+    scheduleReminderSync(0)
+  },
+
+  installReminderTask: async () => {
+    try {
+      await installTask()
+      set({ reminderTaskInstalled: true, reminderError: null })
+    } catch (err) {
+      console.warn('Reminder task install failed:', err)
+      set({ reminderError: err instanceof Error ? err.message : String(err) })
+    }
+  },
+  removeReminderTask: async () => {
+    try {
+      await removeTask()
+      set({ reminderTaskInstalled: false, reminderError: null })
+    } catch (err) {
+      console.warn('Reminder task removal failed:', err)
+      set({ reminderError: err instanceof Error ? err.message : String(err) })
+    }
+  },
+  refreshReminderTask: async () => {
+    set({ reminderTaskInstalled: await isReminderTaskInstalled() })
+  },
+
+  setAutostart: async (on) => {
+    try {
+      const actual = await enableAutostart(on)
+      set({ autostart: actual })
+      persistPrefs()
+    } catch (err) {
+      console.warn('Autostart change failed:', err)
+      set({ reminderError: err instanceof Error ? err.message : String(err) })
+    }
+  },
 }))
 
 // Persist data (only) to localStorage whenever projects/tasks/logs/chores/habits
@@ -907,6 +1066,111 @@ setInterval(() => {
   const t = todayISO()
   if (useStore.getState().today !== t) useStore.setState({ today: t })
 }, 60_000)
+
+/**
+ * How long a burst of edits is allowed to settle before the reminder file is
+ * rewritten.
+ *
+ * The file is the whole fortnight re-rendered, so writing it on every keystroke
+ * of a task rename would be churn for something nothing reads until tomorrow
+ * morning. Long enough that renaming and retyping is one write, short enough
+ * that the file is never meaningfully behind.
+ */
+const REMINDER_SETTLE_MS = 30_000
+
+let reminderTimer: ReturnType<typeof setTimeout> | null = null
+
+/**
+ * Rewrite the reminder file from the board as it stands, coalescing bursts.
+ *
+ * `delay = 0` is for settings the user has just changed by hand: they are about
+ * to close the window and have every right to expect it stuck.
+ */
+function scheduleReminderSync(delay = REMINDER_SETTLE_MS): void {
+  if (reminderTimer !== null) clearTimeout(reminderTimer)
+  reminderTimer = setTimeout(() => {
+    reminderTimer = null
+    const s = useStore.getState()
+    void syncReminderFile(
+      { tasks: s.tasks, logs: s.logs, chores: s.chores, habits: s.habits },
+      s.lang,
+      {
+        wechat: s.reminderWechat,
+        token: s.reminderToken.trim(),
+        ack: translate(s.lang, 'reminder.ack'),
+        rules: s.reminderRules,
+        topics: s.reminderTopics,
+        leadDays: s.reminderLeadDays,
+        overrides: s.reminderCopy[s.lang],
+      },
+    )
+  }, delay)
+}
+
+// Everything the digest is made of, plus the language it is written in. Keyed on
+// the same identity comparisons as the data subscriber above — a set of new
+// arrays is a change, a re-render is not.
+useStore.subscribe((state, prev) => {
+  if (
+    state.tasks !== prev.tasks ||
+    state.logs !== prev.logs ||
+    state.chores !== prev.chores ||
+    state.habits !== prev.habits ||
+    state.lang !== prev.lang
+  ) {
+    scheduleReminderSync()
+  }
+})
+
+// The first run, and with it the recovery path for every launch after: whatever
+// the file happens to hold, rewrite it from the board that was just loaded.
+scheduleReminderSync(0)
+
+// Two questions only the operating system can answer, asked once at startup.
+// Neither is guessable from our own preferences: the scheduled task can be
+// deleted from Task Scheduler and autostart turned off from Task Manager, and a
+// toggle that keeps saying "on" after that is worse than no toggle at all.
+if (isTauri()) {
+  void (async () => {
+    // The scheduled task is registered here, on the first launch, rather than by
+    // a button someone has to find. The whole point of the feature is that it
+    // works without being attended to, and a reminder that waits for its owner to
+    // finish setting it up is one that has already failed at that.
+    //
+    // Deliberately not in a dev build: the task would be registered against
+    // `target/debug/app.exe`, which the next `cargo clean` deletes, leaving a
+    // scheduled task aimed at a path that no longer exists — and one the user
+    // never asked for and cannot account for.
+    let installed = await isReminderTaskInstalled()
+    if (!installed && !import.meta.env.DEV) {
+      try {
+        await installTask()
+        installed = await isReminderTaskInstalled()
+      } catch (err) {
+        console.warn('Could not register the reminder task:', err)
+      }
+    }
+    useStore.setState({ reminderTaskInstalled: installed })
+
+    // The preference is the source of truth here, not the registry — that is the
+    // opposite of how this read before, and it is what makes the default a
+    // default. Reconciling the other way would let the very first launch flip
+    // "start with Windows" straight back off, since a fresh install is by
+    // definition not yet registered. The cost is that switching it off from Task
+    // Manager is undone on the next launch; switching it off in the app is not.
+    const auto = await isAutostartEnabled()
+    const wants = useStore.getState().autostart
+    // `null` means the question could not be put to Windows at all, which is not
+    // the same answer as "off" and must not be acted on either way.
+    if (auto !== null && auto !== wants) {
+      try {
+        await enableAutostart(wants)
+      } catch (err) {
+        console.warn('Could not apply the autostart preference:', err)
+      }
+    }
+  })()
+}
 
 export function useRows(): Row[] {
   const tasks = useStore((s) => s.tasks)
