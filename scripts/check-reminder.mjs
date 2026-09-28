@@ -424,6 +424,26 @@ for (const s of SLOTS) {
   }
 }
 
+// ── every figure the report draws has names under it ────────────────────────
+// The report's rows open onto the tasks behind them, so a category that carried
+// a count but no names would be a row that opens onto nothing. Every category is
+// a list of items, and the two the report counts rather than lists — the day's
+// log obligations — are one too.
+{
+  const cats = collectDay(FULL, DAY, LEAD)
+  for (const [key, list] of Object.entries(cats)) {
+    assert.ok(Array.isArray(list), `${key} must be a list, so the row can open onto it`)
+  }
+  assert.equal(cats.obligations.length, 1, 'the day owes one log')
+  assert.equal(cats.obligations[0].name, '已逾期的事', 'and the row can name it')
+  // The two sets are halves of one thing, not two counts that happen to match:
+  // everything owed, and the part of it still unwritten.
+  assert.equal(cats.obligations.length, cats.logsOwed.length, 'nothing is written yet, so they agree')
+  const settled = collectDay(board({ ...FULL, logs: [log({ taskId: 'late' })] }), DAY, LEAD)
+  assert.equal(settled.obligations.length, 1, 'writing one leaves the obligation standing')
+  assert.equal(settled.logsOwed.length, 0, 'but takes it out of the unwritten half')
+}
+
 // ── the test message is never blank ─────────────────────────────────────────
 {
   const t = testDigest('zh')

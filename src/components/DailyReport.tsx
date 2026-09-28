@@ -1,41 +1,57 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { useStore } from '../store/useStore'
-import { CopyKey, collectDay, copy } from '../lib/reminder'
+import { CopyKey, DigestCategory, DigestItem, collectDay, copy } from '../lib/reminder'
 import { strictLogRate } from '../lib/dayTasks'
 import { sig } from '../lib/ui'
 import { addDays, toDate, toISO } from '../lib/dates'
-import { formatShortDate } from '../lib/i18n'
+import { Lang, formatShortDate } from '../lib/i18n'
 import { useT } from '../lib/useT'
 import { Modal } from './ui'
 
 const ACCENT = 'rgb(var(--c-accent))'
 
+/** One line of the panel, and whatever it opens onto. */
+interface Node {
+  key: string
+  label: string
+  value: number
+  /** Names this line opens onto. */
+  items?: DigestItem[]
+  /** Counts this line opens onto, each of which opens onto its own names. */
+  children?: Node[]
+}
+
 /**
  * The panel behind the sidebar's report button: yesterday's tally over today's
  * shape, in numbers.
  *
- * **It is a recap, not a list.** The first draft listed every outstanding item
- * with a link to each, and it was the Today page under a different title — same
- * data, same rows, one more place to read them. What is here instead is the
- * thing no page shows: how much got done yesterday, and how big today is. Names
- * are deliberately absent. A name is what you go to the board to find; a count
- * is what tells you whether you need to.
+ * **It is a recap, not a list.** An earlier draft listed every outstanding item
+ * and it was the Today page under a different title — same data, same rows, one
+ * more place to read them. What is here instead is the thing no page shows: how
+ * much got done yesterday, and how big today is.
  *
- * **Three levels, and each one earns its size:**
+ * **But every figure opens.** A count is what tells you whether you need to go
+ * and look; the names underneath are for when it did, and they are one click
+ * away rather than on screen. So the panel opens as four numbers and answers
+ * "which ones" only when asked — which is the difference between this and the
+ * list it used to be, and the difference is entirely in what it costs to *not*
+ * care.
+ *
+ * **Three levels, and each earns its size:**
  *
  * 1. the section — 昨日 is a result, 今天 is the subject, so 今天 is drawn at
  *    full strength and 昨日 recedes behind it
- * 2. the row — a label at normal size, and its figure in `font-mono` so a column
- *    of them lines its digits up
- * 3. the sub-row — the three deadline counts, folded under one figure until
- *    asked for, indented and smaller
+ * 2. the line — a label at normal size and its figure in `font-mono`, so a
+ *    column of them lines its digits up
+ * 3. what it opened — one step smaller and one step further in, whether that is
+ *    another count or a name
  *
- * **A zero is dimmed, not hidden.** "已逾期 0" is the news this whole feature
- * exists to deliver, so it stays; but on a day where it is the only zero, the
- * rows that do have something in them should be what the eye lands on first.
- * Only the whole of today being empty gets a sentence instead, because five
- * zeroes in a column is a worse way to say "clean".
+ * **A zero is dimmed, not hidden.** "已逾期 0" is the news this feature exists to
+ * deliver, so it stays; but on a day where it is the only zero, the rows that do
+ * have something in them should be what the eye lands on first. Only the whole
+ * of today being empty gets a sentence instead, because four zeroes in a column
+ * is a worse way to say "clean".
  */
 export function DailyReport({ onClose }: { onClose: () => void }) {
   const t = useT()
@@ -46,11 +62,11 @@ export function DailyReport({ onClose }: { onClose: () => void }) {
   const chores = useStore((s) => s.chores)
   const habits = useStore((s) => s.habits)
   const leadDays = useStore((s) => s.reminderLeadDays)
-  // The user's own wording for the panel's own two sentences. The row labels are
-  // interface text, not message copy, so they are not overridable — see
-  // `docs/notification-copy.md` §九.
+  // The user's own wording for everything the panel calls a thing. These are the
+  // same keys the day's opening notification renders its four figures from, so a
+  // rename lands in both at once.
   const overrides = useStore((s) => s.reminderCopy[s.lang])
-  const [openTasks, setOpenTasks] = useState(false)
+  const [opened, setOpened] = useState<Record<string, boolean>>({})
 
   const yesterday = toISO(addDays(toDate(today), -1))
 
@@ -73,80 +89,71 @@ export function DailyReport({ onClose }: { onClose: () => void }) {
     [tasks, logs, chores, habits, today, leadDays],
   )
 
-  // Today's obligations, counted the same way yesterday's were — the smallest
-  // tasks, the ones that owe a log. It is the same figure the day's ring and the
-  // Calendar cell are drawn from, and the same one yesterday's rate is a
-  // percentage *of*, so the two sections of this panel are asking one question
-  // about two days rather than two questions about one.
-  const owedToday = useMemo(() => strictLogRate(tasks, logs, today).total, [tasks, logs, today])
+  // The four figures the opening notification sends, and the same four rows —
+  // one definition, so the panel and the 07:00 message cannot come apart.
+  const nodes: Node[] = [
+    { key: 'tasks', label: copy('group.tasks', lang, overrides), value: cats.obligations.length, items: cats.obligations },
+    {
+      key: 'deadlines',
+      label: copy('group.deadlines', lang, overrides),
+      value: cats.overdue.length + cats.dueToday.length + cats.dueSoon.length,
+      children: [
+        { key: 'overdue', label: label('overdue'), value: cats.overdue.length, items: cats.overdue },
+        { key: 'dueToday', label: label('dueToday'), value: cats.dueToday.length, items: cats.dueToday },
+        { key: 'dueSoon', label: label('dueSoon'), value: cats.dueSoon.length, items: cats.dueSoon },
+      ],
+    },
+    { key: 'chores', label: label('chores'), value: cats.chores.length, items: cats.chores },
+    { key: 'habits', label: label('habits'), value: cats.habits.length, items: cats.habits },
+  ]
+  const total = nodes.reduce((n, x) => n + x.value, 0)
 
-  // The three deadline counts are one thought — "what is due, and how late" —
-  // so they share a figure and open on demand. Three rows saying 4, 1 and 2 put
-  // the same kind of news three times in the reader's way.
-  //
-  // These three go through `copy` rather than `t`, unlike every other label on
-  // the panel: they name three of the notification's seven categories, so they
-  // are the words the *messages* use, and a user who renames 已逾期 in Settings
-  // must not find the panel still calling it something else.
-  const open = (category: string) => copy(`topic.${category}` as CopyKey, lang, overrides)
-  const deadlines: [string, number][] = [
-    [open('dueToday'), cats.dueToday.length],
-    [open('overdue'), cats.overdue.length],
-    [open('dueSoon'), cats.dueSoon.length],
-  ]
-  const deadlineTotal = deadlines.reduce((n, [, v]) => n + v, 0)
-  // The rest go through `copy` too, and all four of these are the very keys the
-  // day's opening notification renders its four figures from. One source for
-  // "任务清单" and "到期与逾期" rather than a dictionary entry here and a copy
-  // key there, which would be two answers the first time either was reworded.
-  const rest: [string, number][] = [
-    [copy('topic.chores', lang, overrides), cats.chores.length],
-    [copy('topic.habits', lang, overrides), cats.habits.length],
-  ]
-  // Everything today has to say. The obligation count is in here as well as the
-  // deadlines: a day can owe a log with nothing due on it, and that is still a
-  // day this panel has something to report.
-  const todayTotal = owedToday + deadlineTotal + rest.reduce((n, [, v]) => n + v, 0)
+  function label(key: DigestCategory) {
+    return copy(`topic.${key}`, lang, overrides)
+  }
+
+  const line = (n: Node, depth: number) => {
+    const opens = (n.children?.length ?? 0) + (n.items?.length ?? 0) > 0
+    const isOpen = Boolean(opened[n.key])
+    const flip = () => setOpened((o) => ({ ...o, [n.key]: !o[n.key] }))
+    return (
+      <Fragment key={n.key}>
+        <Row
+          label={n.label}
+          value={n.value}
+          depth={depth}
+          open={isOpen}
+          onToggle={opens ? flip : undefined}
+        />
+        {isOpen && n.children?.map((c) => line(c, depth + 1))}
+        {isOpen && n.items?.map((item, i) => (
+          // Index in the key: these are names, two of which can perfectly well
+          // be the same word, and the list does not reorder within a render.
+          <Name key={`${n.key}-${i}`} item={item} depth={depth + 1} today={today} lang={lang} />
+        ))}
+      </Fragment>
+    )
+  }
 
   return (
     <Modal title={copy('report.title', lang, overrides)} onClose={onClose} width={400}>
       <Section label={t('reminder.reportYesterday')} date={formatShortDate(lang, toDate(yesterday))} past>
-        <Row label={t('day.strictLogs')} value={recap.written} of={recap.owed} />
-        <Row label={t('reminder.reportRate')} value={recap.pct} bar />
+        <Row label={t('day.strictLogs')} value={recap.written} of={recap.owed} depth={0} />
+        <Row label={t('reminder.reportRate')} value={recap.pct} bar depth={0} />
       </Section>
 
       <Section label={t('reminder.reportToday')} date={formatShortDate(lang, toDate(today))}>
-        {todayTotal === 0 ? (
+        {total === 0 ? (
           <div className="px-1 py-2 text-[12px] text-muted">{copy('report.empty', lang, overrides)}</div>
         ) : (
-          <>
-            <Row label={copy('group.tasks', lang, overrides)} value={owedToday} />
-            <Row
-              label={copy('group.deadlines', lang, overrides)}
-              value={deadlineTotal}
-              open={openTasks}
-              onToggle={deadlineTotal > 0 ? () => setOpenTasks((o) => !o) : undefined}
-            />
-            {openTasks &&
-              deadlines.map(([label, value]) => <Row key={label} label={label} value={value} indent />)}
-            {rest.map(([label, value]) => (
-              <Row key={label} label={label} value={value} />
-            ))}
-          </>
+          nodes.map((n) => line(n, 0))
         )}
       </Section>
     </Modal>
   )
 }
 
-/**
- * One titled block. The rule under the heading is what separates the levels.
- *
- * `past` is the whole of how 昨日 is set apart: a dimmer heading and a muted
- * date. It has already happened, and the panel exists to talk about today — so
- * the section that is over should be readable without being the first thing
- * read.
- */
+/** One titled block. The rule under the heading is what separates the levels. */
 function Section({
   label,
   date,
@@ -170,6 +177,14 @@ function Section({
 }
 
 /**
+ * One step in from the left, per level.
+ *
+ * Applied to the row and to the name under it alike, so the whole tree shifts by
+ * the same amount rather than each level inventing its own indent.
+ */
+const INDENT = 20
+
+/**
  * A label and its figure, on one line.
  *
  * Four things carry meaning here and nothing else is decoration:
@@ -180,15 +195,14 @@ function Section({
  * - **`bar`** draws the figure as a proportion as well as a number. Only the
  *   completion rate is a proportion, and the two colours are the pair
  *   `DayBoard`'s ring already uses for the same idea at the same threshold
- * - **`indent`** is a sub-row: pushed in, a step smaller, and it gives up the
- *   chevron for a dot because it does not open
+ * - **`onToggle`** makes the whole line the control, and the chevron says so
  */
 function Row({
   label,
   value,
   of,
   bar,
-  indent,
+  depth,
   open,
   onToggle,
 }: {
@@ -198,7 +212,7 @@ function Row({
   of?: number
   /** The value is a percentage: draw it as a filled track as well as a figure. */
   bar?: boolean
-  indent?: boolean
+  depth: number
   /** Present on a row that opens. */
   open?: boolean
   onToggle?: () => void
@@ -211,15 +225,12 @@ function Row({
           the rows below it are in. */}
       <span className="w-3 flex items-center justify-center shrink-0">
         {onToggle ? (
-          <ChevronRight
-            size={12}
-            className={`text-dim transition-transform duration-150 ${open ? 'rotate-90' : ''}`}
-          />
+          <ChevronRight size={12} className={`text-dim transition-transform duration-150 ${open ? 'rotate-90' : ''}`} />
         ) : (
           <span className="w-1 h-1 rounded-full bg-dim" />
         )}
       </span>
-      <span className={`flex-1 truncate ${indent ? 'text-[11px]' : ''} ${zero ? 'text-dim' : 'text-muted'}`}>
+      <span className={`flex-1 truncate ${depth ? 'text-[11px]' : ''} ${zero ? 'text-dim' : 'text-muted'}`}>
         {label}
       </span>
       {bar && (
@@ -230,7 +241,7 @@ function Row({
           />
         </span>
       )}
-      <span className={`font-mono ${indent ? 'text-[12px]' : 'text-[13px]'} ${zero ? 'text-dim' : 'text-fg'}`}>
+      <span className={`font-mono ${depth ? 'text-[12px]' : 'text-[13px]'} ${zero ? 'text-dim' : 'text-fg'}`}>
         {bar ? `${value}%` : value}
         {of !== undefined && <span className="text-dim"> / {of}</span>}
       </span>
@@ -238,11 +249,33 @@ function Row({
   )
 
   // `text-left` because a button centres its content and this one is a row.
-  const cls = `w-full flex items-center gap-2 h-7 text-[12px] text-left ${indent ? 'pl-6 pr-1' : 'px-1'}`
-  if (!onToggle) return <div className={cls}>{body}</div>
+  const cls = 'w-full flex items-center gap-2 h-7 text-[12px] text-left pr-1'
+  const style = { paddingLeft: 4 + depth * INDENT }
+  if (!onToggle) return <div className={cls} style={style}>{body}</div>
   return (
-    <button onClick={onToggle} className={`${cls} rounded-[3px] hover:bg-panel2 transition-colors`}>
+    <button onClick={onToggle} className={`${cls} rounded-[3px] hover:bg-panel2 transition-colors`} style={style}>
       {body}
     </button>
+  )
+}
+
+/**
+ * One name, under the figure that counted it.
+ *
+ * No dot and no chevron: it is the end of a branch, and the indent is already
+ * saying which figure it belongs to. The date appears on the right only when it
+ * is news — a task due today carries today's date and the section header already
+ * says which day this is; an overdue or an upcoming one is the whole reason its
+ * line is here.
+ */
+function Name({ item, depth, today, lang }: { item: DigestItem; depth: number; today: string; lang: Lang }) {
+  return (
+    <div className="flex items-center gap-2 h-6 text-[12px] pr-1" style={{ paddingLeft: 4 + depth * INDENT }}>
+      <span className="w-3 shrink-0" />
+      <span className="flex-1 truncate text-dim">{item.name}</span>
+      {item.date && item.date !== today && (
+        <span className="shrink-0 font-mono text-[10px] text-dim">{formatShortDate(lang, toDate(item.date))}</span>
+      )}
+    </div>
   )
 }

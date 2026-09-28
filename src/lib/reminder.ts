@@ -85,15 +85,15 @@ export interface DigestItem {
 /** Every category's items for one day, computed once. */
 export type DayCats = Record<DigestCategory, DigestItem[]> & {
   /**
-   * How many of the day's tasks owe a log — written or not.
+   * The day's tasks that owe a log — written or not.
    *
-   * The report's 任务清单 figure, and the denominator its 完成率 is a percentage
-   * of. `logsOwed` is the other half of the same set: the ones still unwritten.
-   * Both are kept because the report asks for the whole and a nudge asks for the
+   * The report's 任务清单 row, and the denominator its 完成率 is a percentage of.
+   * `logsOwed` is the other half of the same set: the ones still unwritten. Both
+   * are kept because the report asks for the whole and a nudge asks for the
    * remainder, and neither can be derived from the other without a count of what
    * has been logged, which nothing here holds.
    */
-  obligations: number
+  obligations: DigestItem[]
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -407,7 +407,7 @@ export function collectDay(board: Board, day: string, leadDays: number): DayCats
         .filter((h) => !tickedOn(h, day))
         .map((h) => h.title),
     ),
-    obligations: obligations.length,
+    obligations: plain(obligations.map((o) => o.task.name)),
   }
 }
 
@@ -573,7 +573,7 @@ function renderFrom(
     // category under it is.
     const figures: [CopyKey, number][] = []
     // 任务清单 is the day's log obligations, so it goes with the log categories.
-    if (allowed.has('logsOwed')) figures.push(['group.tasks', cats.obligations])
+    if (allowed.has('logsOwed')) figures.push(['group.tasks', cats.obligations.length])
     // Every row is gated, including this one, which is the easy one to leave
     // ungated — it is always pushed, so an untick-everything would find a row
     // sitting there with a zero in it and read as a quiet day rather than as
@@ -597,7 +597,7 @@ function renderFrom(
     // every single day of their lives, so the stricter reading leaves the nudge
     // lit no matter how much gets written — which is indistinguishable from it
     // being broken, and is how it was reported.
-    const written = cats.obligations - cats.logsOwed.length
+    const written = cats.obligations.length - cats.logsOwed.length
     if (!written && cats.logsOwed.length) {
       lines.push(copy('nudge.logs', lang, opts.overrides))
     } else {
