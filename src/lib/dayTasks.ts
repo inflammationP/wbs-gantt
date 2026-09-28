@@ -79,8 +79,8 @@ export function loggedOnDay(logs: TaskLog[], day: string): Set<string> {
 /**
  * Whether a task's schedule covers `day`. Deliberately reads the raw dates:
  * `effectiveStates` hardcodes *today* internally, so it cannot answer anything
- * about a past day, and a parent's end date has already been synced into
- * `task.endDate` by `syncParentEnds`.
+ * about a past day, and a parent's dates have already been synced into
+ * `task.startDate` / `task.endDate` by `syncParentDates`.
  */
 export function activeOnDay(task: Task, day: string): boolean {
   if (task.isTodo || task.startDate == null) return false

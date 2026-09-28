@@ -4,8 +4,8 @@ import { Modal, Field, inputCls } from './ui'
 import { useStore } from '../store/useStore'
 import { Task, TaskLog } from '../types'
 import { addDays, toDate, toISO, todayISO } from '../lib/dates'
-import { isStrictLeaf, pendingLogsUnder } from '../lib/dayTasks'
-import { buildChildrenMap, hasChildren } from '../lib/tree'
+import { isStrictLeaf } from '../lib/dayTasks'
+import { buildChildrenMap } from '../lib/tree'
 import { taskProgress } from '../lib/progress'
 import { useT } from '../lib/useT'
 
@@ -39,17 +39,22 @@ interface Props {
 }
 
 /**
- * Write a log, or edit one.
+ * Write a log, or edit one — for one task, and only for the task it was opened
+ * on.
  *
- * Writing on a task that has subtasks opens in *batch* mode: a picker of
- * everything under it that still owes a log today (see `pendingLogsUnder`), and
- * saving moves to the next one instead of closing. The point is that filling a
- * branch's gaps should be one pass, not one open-close per subtask — and that
- * the gaps come from the same six conditions the day ring is drawn from, so the
- * two can never disagree about what is owed.
+ * Writing on a task with subtasks used to open in *batch* mode: a picker of
+ * everything under it that still owed a log today, saving advancing to the next
+ * one instead of closing. It is gone. A parent is a container, and a container
+ * does not do its contents' work — filling in another task's day from here
+ * meant the box on screen was never the thing being written about, and the one
+ * rule the whole tree is built on is that a task's work is recorded on the task.
  *
- * Editing is deliberately not batch: there is exactly one form to fill, and
- * nothing to advance to.
+ * What a parent keeps is the readout: the "still to log" list in the detail
+ * panel names every subtask that owes one today, and each name opens that
+ * subtask, where this dialog is one click away. The list and the day's ring are
+ * still built from the same six conditions (`pendingLogsUnder`, `strictLogRate`
+ * in lib/dayTasks.ts), so the count on the ring and the names in the list cannot
+ * drift apart — losing the picker cost nothing there.
  */
 export function LogDialog({ taskId, existing, defaultDate, onClose }: Props) {
   const t = useT()
@@ -61,34 +66,9 @@ export function LogDialog({ taskId, existing, defaultDate, onClose }: Props) {
 
   const task = tasks.find((x) => x.id === taskId)
 
-  // What is still owed under this task today — the same list the parent's
-  // reminder prints, from the same function, so the picker can never offer
-  // something that list denies or hide something it shows.
-  //
-  // A task with children is never a strict leaf (`isStrictLeaf` requires none),
-  // so the task itself cannot appear in its own pending list — the picker holds
-  // leaves only. That is deliberate: the reminder goes to the end of each branch,
-  // and offering the branch's own strict parent alongside them would put back
-  // the higher-level task the reminder just declined to name.
-  const pending = useMemo(
-    () => (hasChildren(tasks, taskId) ? pendingLogsUnder(tasks, logs, today, taskId) : []),
-    [tasks, logs, today, taskId],
-  )
-
-  const children = useMemo(() => buildChildrenMap(tasks), [tasks])
-
-  // Batch only when there is a gap to walk. With none, this is the ordinary log
-  // button it has always been, writing on the task it was opened from; a leaf
-  // has no branch to fill, and an edit has nothing to advance to.
-  const batch = !existing && pending.length > 0
-
-  // `null` follows the gaps. Choosing from the picker pins it until the next save.
-  const [picked, setPicked] = useState<string | null>(null)
-
   if (!task) return null
 
-  const target = batch ? (picked ?? pending[0].id) : taskId
-  const targetTask = tasks.find((x) => x.id === target) ?? task
+  const task_ = task
 
   const save = (date: string, content: string, targetProgress: number | null) => {
     if (existing) {
@@ -96,38 +76,17 @@ export function LogDialog({ taskId, existing, defaultDate, onClose }: Props) {
       onClose()
       return
     }
-    addLog({ taskId: target, date, content, targetProgress })
-    // What will still be owed once this lands: the pre-save list minus the one
-    // just written, which is exactly what the store settles to. Reading it here
-    // rather than after a re-render is what makes the last save close the dialog
-    // and every earlier one stay open.
-    const left = pending.filter((p) => p.id !== target)
-    if (left.length === 0) onClose()
-    else setPicked(null)
+    addLog({ taskId, date, content, targetProgress })
+    onClose()
   }
 
   return (
     <Modal title={existing ? t('log.edit') : t('log.write')} onClose={onClose} width={560}>
       <div className="space-y-3">
-        {batch ? (
-          <Field label={t('log.task')}>
-            <select className={inputCls} value={target} onChange={(e) => setPicked(e.target.value)}>
-              {pending.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-        ) : (
-          <div className="text-[13px] font-medium text-fg">{task.name}</div>
-        )}
+        <div className="text-[13px] font-medium text-fg">{task_.name}</div>
 
-        {/* Keyed by the task: switching target must not carry the previous
-            entry's date, text or target progress across. */}
         <LogForm
-          key={target}
-          task={targetTask}
+          task={task_}
           existing={existing}
           defaultDate={defaultDate}
           logs={logs}
@@ -135,8 +94,7 @@ export function LogDialog({ taskId, existing, defaultDate, onClose }: Props) {
           // (`isStrictLeaf`), so offering the field on a task with children
           // would collect a number nothing reads — the same lie the detail
           // panel used to tell about a parent's progress mode.
-          strict={isStrictLeaf(targetTask, children)}
-          saveLabel={batch && pending.some((p) => p.id !== target) ? t('log.saveNext') : t('common.save')}
+          strict={isStrictLeaf(task_, buildChildrenMap(tasks))}
           onSave={save}
           onCancel={onClose}
         />
@@ -151,7 +109,6 @@ function LogForm({
   defaultDate,
   logs,
   strict,
-  saveLabel,
   onSave,
   onCancel,
 }: {
@@ -160,7 +117,6 @@ function LogForm({
   defaultDate?: string
   logs: TaskLog[]
   strict: boolean
-  saveLabel: string
   onSave: (date: string, content: string, targetProgress: number | null) => void
   onCancel: () => void
 }) {
@@ -372,7 +328,7 @@ function LogForm({
 
       <div className="flex justify-end gap-2 pt-1">
         <button onClick={onCancel} className="h-8 px-3 text-[12px] text-muted hover:text-fg border border-border rounded-[3px]">{t('common.cancel')}</button>
-        <button onClick={submit} disabled={!content.trim()} className="h-8 px-4 text-[12px] font-medium bg-accent text-on-accent disabled:opacity-40 rounded-[3px]">{saveLabel}</button>
+        <button onClick={submit} disabled={!content.trim()} className="h-8 px-4 text-[12px] font-medium bg-accent text-on-accent disabled:opacity-40 rounded-[3px]">{t('common.save')}</button>
       </div>
     </>
   )

@@ -3,6 +3,8 @@ import {
   CheckSquare,
   ChevronDown,
   ChevronRight,
+  Circle,
+  CircleCheck,
   CircleDashed,
   FolderOpen,
   Pencil,
@@ -11,7 +13,7 @@ import {
   Square,
   Trash2,
 } from 'lucide-react'
-import { Row, RowTask, RowTodoGroup } from '../../lib/tree'
+import { Row, RowProject, RowTask, RowTodoGroup } from '../../lib/tree'
 import { STATUS_META, priorityWash, sig, sigAlpha, sigText } from '../../lib/ui'
 import { useStore } from '../../store/useStore'
 import { useT } from '../../lib/useT'
@@ -48,6 +50,16 @@ export interface TodoActions {
 interface Props {
   row: Row
   todo: TodoActions
+  /** Editing mode is on: rows can be dragged, and clicks build a selection. */
+  editing?: boolean
+  /** Whether this row is one of the rows about to be dragged. */
+  picked?: boolean
+  /**
+   * A click on the row itself. Owned by the chart rather than by this row,
+   * because what a click means depends on the mode: outside editing it opens the
+   * task, and inside it adds to or replaces the set the next drag will take.
+   */
+  onRowClick: (e: MouseEvent<HTMLElement>, row: RowTask) => void
   onAddChild: (row: RowTask) => void
   onEdit: (row: RowTask) => void
   onContext: (e: MouseEvent<HTMLDivElement>, row: RowTask) => void
@@ -58,30 +70,48 @@ const stop = (fn: () => void) => (e: MouseEvent) => {
   fn()
 }
 
-export function RowLeft({ row, todo, onAddChild, onEdit, onContext }: Props) {
+export function RowLeft({ row, todo, editing, picked, onRowClick, onAddChild, onEdit, onContext }: Props) {
   const t = useT()
   const { ask, element: dialogs } = useDialogs()
   const setSelected = useStore((s) => s.setSelected)
   const toggleExpanded = useStore((s) => s.toggleExpanded)
   const deleteTask = useStore((s) => s.deleteTask)
+  const withUndo = useStore((s) => s.withUndo)
   const projects = useStore((s) => s.projects)
   // Folders are collapsed until explicitly opened, tasks are expanded until
   // explicitly closed — so "absent from the map" means the opposite for each.
   const expandedEntry = useStore((s) => s.expanded[row.id])
   const isExpanded = row.kind === 'todoGroup' ? expandedEntry === true : expandedEntry !== false
-  const selected = useStore((s) => s.selectedTaskId === row.id)
+  const highlighted = useStore((s) => s.selectedTaskId === row.id)
+
+  if (row.kind === 'project') {
+    return (
+      <ProjectRow
+        row={row}
+        isExpanded={expandedEntry !== false}
+        editing={editing}
+        onToggleExpanded={(id) => toggleExpanded(id)}
+      />
+    )
+  }
 
   if (row.kind === 'todoGroup') {
     return (
       <TodoGroupRow
         row={row}
         todo={todo}
+        editing={editing}
         isExpanded={isExpanded}
         onToggleExpanded={(id) => toggleExpanded(id, false)}
       />
     )
   }
 
+  // In edit mode there is one highlight and it means one thing: the rows the
+  // next drag will take. The detail panel's own selection is suppressed while
+  // editing, because letting both paint the same tint would leave a row that is
+  // only open in the panel indistinguishable from a row that is about to move.
+  const selected = editing ? !!picked : highlighted
   const isTodo = row.task.isTodo
   const meta = STATUS_META[row.eff.status]
   // Set only on the first to-do of an open to-do folder — see `visitGroup`.
@@ -97,22 +127,25 @@ export function RowLeft({ row, todo, onAddChild, onEdit, onContext }: Props) {
       row.hasKids
         ? t('gantt.deleteTaskWithSubtasks', { name: row.task.name })
         : t('gantt.deleteTask', { name: row.task.name }),
-      () => deleteTask(row.id),
+      // The row's own bin can be taken back like the selection's, and for the
+      // same reason: the confirm says what is going, not what the board will
+      // look like once it has — and a whole subtree is a lot to work out.
+      () => withUndo(t('gantt.undoDelete', { what: row.task.name }), () => deleteTask(row.id)),
     )
   }
 
   return (
     <>
     <div
-      className={`relative h-full flex items-stretch text-[12px] group cursor-pointer ${
-        selected ? 'bg-accent/10' : 'hover:bg-panel2/60'
-      }`}
+      className={`relative h-full flex items-stretch text-[12px] group ${
+        editing ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
+      } ${selected ? 'bg-accent/10' : 'hover:bg-panel2/60'}`}
       // Priority as a band off the row's own left edge — the canvas's edge,
       // before the indent, the chevron and the WBS number — so the washes line
       // up down the column however deep their tasks sit. `priorityWash` holds
       // the rest of the why.
       style={{ backgroundImage: priorityWash(row.task.priority) }}
-      onClick={() => setSelected(row.id)}
+      onClick={(e) => onRowClick(e, row)}
       onContextMenu={(e) => {
         e.preventDefault()
         onContext(e, row)
@@ -151,6 +184,23 @@ export function RowLeft({ row, todo, onAddChild, onEdit, onContext }: Props) {
       <div className="shrink-0 flex items-center justify-end pr-1.5 font-mono text-[11px] text-dim" style={{ width: COLS.wbs }}>
         {row.wbs}
       </div>
+      {/* The pick circle, and in editing mode the only way to pick a row.
+          It sits in front of the name rather than at the row's own left edge, so
+          it lines up with the text it ticks however deep the row sits — the same
+          place a file manager puts its checkboxes. Absent outside editing mode,
+          where there is nothing to pick rows for. */}
+      {editing && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onRowClick(e, row) }}
+          title={selected ? t('common.deselect') : t('common.select')}
+          aria-label={selected ? t('common.deselect') : t('common.select')}
+          aria-pressed={selected}
+          className={`shrink-0 grid place-items-center -ml-0.5 mr-1 ${selected ? 'text-accent' : 'text-dim hover:text-fg'}`}
+          style={{ width: 18 }}
+        >
+          {selected ? <CircleCheck size={14} /> : <Circle size={14} />}
+        </button>
+      )}
       {/* name — to-dos get a dashed chip so unscheduled work is unmistakable */}
       <div className="flex-1 min-w-0 flex items-center gap-1.5 pr-1">
         {/* Fixed-width glyph slot: the project dot, the to-do ring and the
@@ -195,7 +245,11 @@ export function RowLeft({ row, todo, onAddChild, onEdit, onContext }: Props) {
       </div>
       {/* actions — the to-do checkbox stays visible; the rest is hover-only */}
       <div className="shrink-0 flex items-center justify-end pr-1 gap-0.5" style={{ width: COLS.actions }}>
-        {isTodo && (
+        {/* Hidden while editing: a to-do row would otherwise carry two selections
+            — this tick for its folder's bulk actions, the circle on the left for
+            the row itself — and the two tick different sets. The folder's own
+            line still holds those actions, acting on all of its to-dos. */}
+        {isTodo && !editing && (
           <button
             onClick={stop(() => todo.toggle(row.id))}
             title={checked ? t('common.deselect') : t('common.select')}
@@ -227,11 +281,13 @@ export function RowLeft({ row, todo, onAddChild, onEdit, onContext }: Props) {
 function TodoGroupRow({
   row,
   todo,
+  editing,
   isExpanded,
   onToggleExpanded,
 }: {
   row: RowTodoGroup
   todo: TodoActions
+  editing?: boolean
   isExpanded: boolean
   onToggleExpanded: (id: string) => void
 }) {
@@ -270,15 +326,21 @@ function TodoGroupRow({
       <div className="shrink-0" style={{ width: COLS.progress }} />
       <div className="shrink-0" style={{ width: COLS.status }} />
       <div className="shrink-0 flex items-center justify-end pr-1 gap-0.5" style={{ width: COLS.actions }}>
-        <button
-          onClick={stop(() => todo.setMany(todoIds, !allSelected))}
-          title={allSelected ? t('common.deselectAll') : t('common.selectAll')}
-          aria-label={allSelected ? t('common.deselectAll') : t('common.selectAll')}
-          className="p-1 text-dim hover:text-fg"
-          style={allSelected ? { color: sig('todo') } : undefined}
-        >
-          {allSelected ? <CheckSquare size={13} /> : <Square size={13} />}
-        </button>
+        {/* The ticks it drives are hidden in editing mode, so leaving this one
+            out on its own would be a switch with nothing to switch. The two
+            buttons beside it stay, acting on the whole folder — which is what
+            they already do when nothing is ticked. */}
+        {!editing && (
+          <button
+            onClick={stop(() => todo.setMany(todoIds, !allSelected))}
+            title={allSelected ? t('common.deselectAll') : t('common.selectAll')}
+            aria-label={allSelected ? t('common.deselectAll') : t('common.selectAll')}
+            className="p-1 text-dim hover:text-fg"
+            style={allSelected ? { color: sig('todo') } : undefined}
+          >
+            {allSelected ? <CheckSquare size={13} /> : <Square size={13} />}
+          </button>
+        )}
         <button
           onClick={stop(() => todo.restore(target))}
           title={bySelection
@@ -298,6 +360,77 @@ function TodoGroupRow({
           <Trash2 size={13} />
         </button>
       </div>
+    </div>
+  )
+}
+
+/**
+ * A project's line, the outermost container in the tree.
+ *
+ * Drawn as a band rather than as a box around its tasks, and it indents nothing:
+ * the band already says where the group begins and ends, and wrapping the tasks
+ * in a frame would have cost every name a size and pushed the whole tree a step
+ * to the right to say the same thing twice.
+ *
+ * The colour is the project's own — an identity, picked to tell projects apart,
+ * never one of the status signals. Those mean a status and nothing else, and the
+ * rows two lines below wear them for that.
+ */
+function ProjectRow({
+  row,
+  isExpanded,
+  editing,
+  onToggleExpanded,
+}: {
+  row: RowProject
+  isExpanded: boolean
+  editing?: boolean
+  onToggleExpanded: (id: string) => void
+}) {
+  const t = useT()
+  const { project } = row
+  return (
+    <div
+      className={`relative h-full flex items-stretch text-[12px] cursor-pointer group/project ${
+        editing ? 'cursor-grab active:cursor-grabbing' : ''
+      }`}
+      // A wash of the project's colour over the row's own background, plus a
+      // hairline through it: the band is meant to read as a rule between groups,
+      // not as another task that happens to be wider. The wash is deliberately
+      // light — it is a background under a whole row of text — but it has to be
+      // strong enough to read as a band and not as a hovered row.
+      style={{ background: `color-mix(in srgb, ${project.color} 18%, transparent)` }}
+      onClick={() => onToggleExpanded(row.id)}
+      title={isExpanded ? t('common.collapse') : t('common.expand')}
+    >
+      <div className="shrink-0" style={{ width: COLS.chevron }} />
+      <div className="shrink-0" style={{ width: COLS.wbs }} />
+      {/* The name is the one thing on this row that says which group this is, so
+          it is never cut short to make room for the rule: it takes the width it
+          needs and the rule gets what is left. `flex-initial` rather than
+          `flex-1` — a growing name cell would split the slack with the rule and
+          the rule would start halfway down a short name.
+          It does still `truncate`, because a name can be longer than the whole
+          column. That is the last resort, and by then the rule has given way to
+          its `min-w-2` stub — the name is what must stay readable. */}
+      <div className="flex-initial min-w-0 flex items-center gap-1.5 pr-2">
+        <span className="shrink-0 flex items-center justify-center text-dim" style={{ width: GLYPH_W }}>
+          {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        </span>
+        <span className="min-w-0 truncate text-[12px] font-semibold" style={{ color: project.color }}>
+          {project.name}
+        </span>
+      </div>
+      {/* The rule that makes it a divider rather than a row: it runs from the
+          name to the far end of the task column, so a short name and a long one
+          both end with the band reaching the same place.
+          It crosses the progress, status and actions columns, which stand empty
+          on this row — they are placeholders that keep the other rows' columns
+          aligned, and there is no task here to put anything in them.
+          `mr-3` is the "somewhere near the right end" the band stops at: a rule
+          that ran to the very edge would meet the splitter and read as a border
+          of the panel rather than as a divider inside it. */}
+      <span className="flex-1 self-center h-px min-w-2 mr-3" style={{ background: project.color, opacity: 0.4 }} />
     </div>
   )
 }

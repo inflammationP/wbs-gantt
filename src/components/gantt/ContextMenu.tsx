@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import type { ReactNode } from 'react'
-import { CornerUpLeft, NotebookText, Pencil, Plus, Trash2 } from 'lucide-react'
+import { CircleDashed, CornerUpLeft, NotebookText, Pause, Pencil, Play, Plus, Trash2 } from 'lucide-react'
 import { RowTask } from '../../lib/tree'
 import { useT } from '../../lib/useT'
 
@@ -20,6 +20,9 @@ interface Props {
   onWriteLog: (row: RowTask) => void
   onOutdent: (row: RowTask) => void
   onDelete: (row: RowTask) => void
+  onSetTodo: (row: RowTask) => void
+  onPause: (row: RowTask) => void
+  onResume: (row: RowTask) => void
 }
 
 function Item({ icon, label, onClick, danger }: { icon: ReactNode; label: string; onClick: () => void; danger?: boolean }) {
@@ -36,8 +39,13 @@ function Item({ icon, label, onClick, danger }: { icon: ReactNode; label: string
   )
 }
 
-export function ContextMenu({ menu, onClose, onAddChild, onAddSibling, onEdit, onWriteLog, onOutdent, onDelete }: Props) {
+export function ContextMenu({ menu, onClose, onAddChild, onAddSibling, onEdit, onWriteLog, onOutdent, onDelete, onSetTodo, onPause, onResume }: Props) {
   const t = useT()
+  // The same gate the detail panel uses for the same two buttons. A to-do cannot
+  // be parked again, a long-term goal has no end for a pause to postpone, and
+  // finished work is finished.
+  const canPark =
+    !menu.row.task.isTodo && menu.row.task.type !== 'long-term' && menu.row.eff.status !== 'completed'
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -71,6 +79,21 @@ export function ContextMenu({ menu, onClose, onAddChild, onAddSibling, onEdit, o
           <Item icon={<NotebookText size={13} />} label={t('log.write')} onClick={() => { onWriteLog(menu.row); onClose() }} />
         ) : null}
         <Item icon={<CornerUpLeft size={13} />} label={t('gantt.moveToTopLevel')} onClick={() => { onOutdent(menu.row); onClose() }} />
+        <div className="my-1 border-t border-line" />
+        {/* Parking and pausing, on the task itself rather than only inside the
+            detail panel — which is where they lived, and where you had to have
+            opened the task already to find out they existed.
+            The two are alternatives, as they are in the panel: for work that has
+            not started, parking it is the useful move and a pause would only
+            postpone nothing. */}
+        {canPark && (
+          menu.row.eff.status === 'not-started'
+            ? <Item icon={<CircleDashed size={13} />} label={t('task.setAsTodo')} onClick={() => { onSetTodo(menu.row); onClose() }} />
+            : <Item icon={<Pause size={13} />} label={t('task.pause')} onClick={() => { onPause(menu.row); onClose() }} />
+        )}
+        {menu.row.task.paused && (
+          <Item icon={<Play size={13} />} label={t('task.resume')} onClick={() => { onResume(menu.row); onClose() }} />
+        )}
         <div className="my-1 border-t border-line" />
         <Item icon={<Trash2 size={13} />} label={t('common.delete')} danger onClick={() => { onDelete(menu.row); onClose() }} />
       </div>

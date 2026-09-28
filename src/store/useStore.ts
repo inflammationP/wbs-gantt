@@ -4,7 +4,17 @@ import { AppView, Chore, Habit, Note, Project, Task, TaskLog, TaskPriority, Task
 import { ALL_DAYS, runsOn } from '../lib/habits'
 import { todayISO, addUnitISO, Unit, addDays, diffDays, pad, toDate, toISO } from '../lib/dates'
 import { timelineRange, DateRange } from '../lib/timeline'
-import { buildRows, collectDescendants, hasChildren, syncParentEnds, todoCascadeIds, todoGroupIds, Row } from '../lib/tree'
+import {
+  buildRows,
+  collectDescendants,
+  hasChildren,
+  placeTasks,
+  syncParentDates,
+  todoCascadeIds,
+  todoGroupIds,
+  projectRowId,
+  Row,
+} from '../lib/tree'
 import { loadData, saveData, loadPrefs, savePrefs, PersistedData, Prefs } from './storage'
 import { editDivider } from '../lib/logs'
 import { applyLang, Lang, translate } from '../lib/i18n'
@@ -46,6 +56,45 @@ export interface NewTaskInput {
   priority?: TaskPriority
   tags?: string[]
   dependencies?: string[]
+}
+
+/**
+ * The last rearrangement, kept so a wrong one can be put back exactly.
+ *
+ * One step, and only ever one: whatever just happened, offered while it is still
+ * the thing that just happened, and gone after that. Deliberately not a stack —
+ * a history of every edit is a different feature with a different interface, and
+ * this is the answer to a specific moment (the row landed somewhere and the
+ * damage is not obvious yet).
+ *
+ * What is kept is the *previous value of the fields the step wrote*, per task it
+ * touched — not a snapshot of the whole board. A board snapshot would put back
+ * anything else done in the meantime, which for a drag means resurrecting a task
+ * deleted since: a row that is gone is simply not there to patch, and a row that
+ * was renamed keeps the new name.
+ *
+ * A delete is the exception, and has to be: the row *is* the thing that went, so
+ * `removedTasks` and `removedLogs` hold what was taken and put it back. That is
+ * the one step that cannot be expressed as a patch on rows that are still there.
+ *
+ * The derived dates are not in here. Putting the structure back is enough —
+ * `syncParentDates` recomputes the same span from the same children on the next
+ * frame, which is where it came from.
+ */
+export interface UndoStep {
+  /**
+   * What the strip prints before its button, already in the reader's language —
+   * "Moved A", "Paused 3 tasks". Spelled out when the step is recorded rather
+   * than when it is read: the offer stands for a few seconds, and a language
+   * switched inside those seconds is not worth a second translation of
+   * something already read.
+   */
+  message: string
+  /** The fields each touched task had before the step, merged back over it. */
+  patches: { id: string; patch: Partial<Task> }[]
+  /** Rows the step removed outright, with everything hanging under them. */
+  removedTasks: Task[]
+  removedLogs: TaskLog[]
 }
 
 // The schedule a to-do is given when it is started (or restored in bulk).
@@ -176,6 +225,31 @@ interface State {
   updateTask: (id: string, patch: Partial<Task>) => void
   deleteTask: (id: string) => void
   setTaskParent: (id: string, parentId: string | null) => void
+  /**
+   * Where a drag lands: put these tasks in that place in the tree.
+   *
+   * One action for both halves of the gesture, because they are one gesture —
+   * "reorder among siblings" and "move into another branch" differ only in
+   * whether `parentId` changed, and a caller that had to pick between them would
+   * have to work out which it was holding. See the implementation for what
+   * "place" costs.
+   */
+  moveTasks: (ids: string[], parentId: string | null, beforeId: string | null, projectId: string) => void
+  /**
+   * Run a set of edits as one step that can be taken back.
+   *
+   * `run` is a batch of ordinary actions — a drag's `moveTasks`, or the loop a
+   * bulk button runs — and what gets recorded is whatever the tasks array looks
+   * like afterwards. Reading the difference rather than asking each action to
+   * describe itself is what lets one step cover a move, a pause, a park and a
+   * delete without four sets of bookkeeping drifting apart.
+   */
+  withUndo: (message: string, run: () => void) => void
+  /** The last step, or null. Read by the Gantt's "did X · undo" strip. */
+  lastUndo: UndoStep | null
+  undoLast: () => void
+  /** Dismiss the offer without using it — the strip's own timeout, or leaving. */
+  clearUndo: () => void
   moveTask: (id: string, deltaUnits: number, unit: Unit) => void
   resizeTask: (id: string, startISO: string, endISO: string) => void
 
@@ -234,7 +308,7 @@ interface State {
   toggleHabit: (id: string) => void
   deleteHabit: (id: string) => void
 
-  syncParentEnds: () => void
+  syncParentDates: () => void
 
   importData: (data: PersistedData) => void
 
@@ -393,6 +467,7 @@ export const useStore = create<State>()((set, get) => ({
   chores: initial.chores,
   habits: initial.habits,
   notes: initial.notes,
+  lastUndo: null,
   activeView: 'gantt',
   ganttKey: 0,
   selectedTaskId: null,
@@ -474,6 +549,11 @@ export const useStore = create<State>()((set, get) => ({
       const expanded: Record<string, boolean> = {}
       for (const t of s.tasks) if (hasChildren(s.tasks, t.id)) expanded[t.id] = false
       for (const gid of todoGroupIds(s.tasks)) expanded[gid] = false
+      // Project lines fold too, which is what makes this button mean "show me
+      // the projects" rather than "show me the projects, still open". Named
+      // explicitly like the folders above, because they are expanded by default
+      // and an absent key is what "expanded" looks like.
+      for (const p of s.projects) expanded[projectRowId(p.id)] = false
       return { expanded }
     }),
 
@@ -508,11 +588,25 @@ export const useStore = create<State>()((set, get) => ({
       // than taken from the input.
       const isTodo = input.isTodo === true
       const isLT = !isTodo && input.type === 'long-term'
+      const parentId = input.parentId ?? null
+      // The sibling group this lands in, and where in it. A group the user has
+      // arranged keeps its arrangement: appending is what "the new task is at
+      // the bottom of this branch" means once they have said where things go.
+      // A group nobody has dragged has no `order` anywhere, and writing one here
+      // would be the first — which would freeze a date sort that is still doing
+      // its job.
+      // The project is part of the test, not decoration: every root-level task
+      // in every project shares `parentId === null`, so without it a new top
+      // level task would be appended by the order of whichever project happens
+      // to be furthest along.
+      const kin = s.tasks.filter((t) => t.parentId === parentId && t.projectId === projectId)
+      const ordered = kin.some((t) => t.order != null)
+      const order = ordered ? Math.max(...kin.map((t) => t.order ?? -1)) + 1 : undefined
       const task: Task = {
         id,
         name: input.name,
         description: input.description ?? '',
-        parentId: input.parentId ?? null,
+        parentId,
         projectId,
         type: isLT ? 'long-term' : 'phase',
         isTodo,
@@ -524,6 +618,7 @@ export const useStore = create<State>()((set, get) => ({
         pauseDate: null,
         pauses: [],
         priority: isTodo ? null : (input.priority ?? 'medium'),
+        order,
         tags: input.tags ?? [],
         dependencies: input.dependencies ?? [],
         createdAt: now,
@@ -558,6 +653,122 @@ export const useStore = create<State>()((set, get) => ({
         ),
       }
     }),
+  /**
+   * Put a set of tasks at one place in the tree — the drop, once it has
+   * happened.
+   *
+   * The rearrangement itself is `placeTasks` in `lib/tree.ts`, which is pure and
+   * which the Gantt's drag preview also calls: what the rows show while the
+   * pointer is down is produced by the same function that produces what they
+   * become here, so the preview cannot show one arrangement and commit another.
+   *
+   * What is left for this action is the two things a preview must not do —
+   * stamping `updatedAt`, and leaving a record of where everything was.
+   *
+   * One `set`, because App re-runs the parent-date sync on every `tasks`
+   * identity change: a half-applied move would be read once, and the derived
+   * dates of two branches would be computed from a tree that never existed.
+   */
+  moveTasks: (ids, parentId, beforeId, projectId) =>
+    set((s) => {
+      const next = placeTasks(s.tasks, ids, parentId, beforeId, projectId)
+      if (!next) return {}
+
+      // Read off the two arrays rather than off the internals of `placeTasks`:
+      // the rows are one-to-one and in order, so anything that differs is
+      // something the move wrote, and that is exactly the set to record.
+      const patches: UndoStep['patches'] = []
+      for (let i = 0; i < next.length; i++) {
+        const was = s.tasks[i]
+        const now = next[i]
+        if (was.parentId !== now.parentId || was.projectId !== now.projectId || was.order !== now.order) {
+          // `order: undefined` is how a task that had never been dragged gets
+          // its "no opinion" back; `Number.isFinite` reads it as absent, and
+          // `JSON.stringify` drops the key entirely.
+          patches.push({ id: was.id, patch: { parentId: was.parentId, projectId: was.projectId, order: was.order } })
+        }
+      }
+      // `ids` are the roots — the caller removes anything another moving task is
+      // already carrying — so its length is the count the strip should say.
+      //
+      // Spelled out here rather than in the component, so the strip and the
+      // label that followed the pointer during the drag read the same. Written
+      // in the language on screen at the time and left that way, like a log's
+      // auto-written text.
+      const what =
+        ids.length > 1
+          ? translate(s.lang, 'gantt.dragMany', { count: ids.length })
+          : (s.tasks.find((t) => t.id === ids[0])?.name ?? '')
+
+      const now = new Date().toISOString()
+      return {
+        tasks: next.map((t) => ({ ...t, updatedAt: now })),
+        lastUndo: { message: translate(s.lang, 'gantt.moved', { what }), patches, removedTasks: [], removedLogs: [] },
+      }
+    }),
+
+  /**
+   * Everything else that can be taken back, recorded by watching the board.
+   *
+   * The tasks array is compared by identity first and by value only for the rows
+   * that changed: every action here maps over the array and hands back the same
+   * object for the rows it did not touch, so a `!==` is enough to skip the ones
+   * that are not this step's business. What survives that filter is written down
+   * as the values those fields had *before*, which is all an undo needs.
+   *
+   * Rows that are gone rather than changed are the delete case, and they are
+   * kept whole — a row that has left the board has no field left to patch, and
+   * the log entries that went with it are not on the board either.
+   */
+  withUndo: (message, run) => {
+    const before = get()
+    const tasks = before.tasks
+    const logs = before.logs
+    run()
+    const after = get()
+    if (after.tasks === tasks && after.logs === logs) return
+
+    const stillThere = new Map(after.tasks.map((t) => [t.id, t]))
+    const patches: UndoStep['patches'] = []
+    const removedTasks: Task[] = []
+    for (const was of tasks) {
+      const now = stillThere.get(was.id)
+      if (!now) {
+        removedTasks.push(was)
+        continue
+      }
+      if (now === was) continue
+      const patch: Record<string, unknown> = {}
+      for (const k of Object.keys(was) as (keyof Task)[]) if (was[k] !== now[k]) patch[k] = was[k]
+      if (Object.keys(patch).length > 0) patches.push({ id: was.id, patch: patch as Partial<Task> })
+    }
+    const logIds = new Set(after.logs.map((l) => l.id))
+    const removedLogs = removedTasks.length > 0 ? logs.filter((l) => !logIds.has(l.id)) : []
+
+    set({ lastUndo: { message, patches, removedTasks, removedLogs } })
+  },
+
+  undoLast: () =>
+    set((s) => {
+      const u = s.lastUndo
+      if (!u) return {}
+      const byId = new Map(u.patches.map((p) => [p.id, p.patch]))
+      const now = new Date().toISOString()
+      const tasks = s.tasks.map((t) => {
+        const p = byId.get(t.id)
+        return p ? { ...t, ...p, updatedAt: now } : t
+      })
+      return {
+        // A removed row comes back as it was, timestamp and all — it is the same
+        // record, and nothing about it changed while it was off the board. Its
+        // place in the array is wherever the end is: the array's order is the
+        // order things were created and nothing reads it as an arrangement.
+        tasks: u.removedTasks.length > 0 ? [...tasks, ...u.removedTasks] : tasks,
+        logs: u.removedLogs.length > 0 ? [...s.logs, ...u.removedLogs] : s.logs,
+        lastUndo: null,
+      }
+    }),
+  clearUndo: () => set((s) => (s.lastUndo ? { lastUndo: null } : {})),
   moveTask: (id, deltaUnits, unit) =>
     set((s) => {
       const task = s.tasks.find((t) => t.id === id)
@@ -903,9 +1114,11 @@ export const useStore = create<State>()((set, get) => ({
     })),
   deleteHabit: (id) => set((s) => ({ habits: s.habits.filter((h) => h.id !== id) })),
 
-  syncParentEnds: () =>
+  syncParentDates: () =>
     set((s) => {
-      const next = syncParentEnds(s.tasks, s.logs)
+      const next = syncParentDates(s.tasks, s.logs)
+      // The same array back means nothing moved, and returning `{}` is what
+      // keeps this from re-triggering the effect that called it.
       return next === s.tasks ? {} : { tasks: next }
     }),
 
@@ -920,6 +1133,11 @@ export const useStore = create<State>()((set, get) => ({
       selectedTaskId: null,
       selectedProjectId: null,
       projectFilter: 'all',
+      // A drag from the board that was just replaced is not a step back from
+      // this one. The ids are almost certain not to match, so the offer would
+      // mostly do nothing — but "mostly" is not a thing to leave to chance when
+      // the failure is a silent edit to an unrelated task.
+      lastUndo: null,
     }),
 
   dismissGuide: () => {

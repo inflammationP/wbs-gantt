@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { NotebookText, Pencil, Trash2, X } from 'lucide-react'
 import { Task, TaskLog } from '../types'
 import { useStore } from '../store/useStore'
-import { computeWbs, effectiveStates, todoCascadeIds } from '../lib/tree'
+import { computeWbs, effectiveStates, nameQualifiers, todoCascadeIds } from '../lib/tree'
 import { logsForTask } from '../lib/logs'
 import { LogLines } from './LogLines'
 import { hasStrictLeafUnder, pendingLogsUnder } from '../lib/dayTasks'
@@ -51,6 +51,16 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
 
   const project = useMemo(() => projects.find((p) => p.id === task?.projectId), [projects, task])
 
+  // The panel has no `key` in App.tsx, so opening another task from inside it —
+  // which the "still to log" names now do — hands the same DOM node a different
+  // subject while keeping its scroll offset. Left alone, clicking a name near
+  // the top would swap the contents and leave the reader halfway down a task
+  // they have not seen the beginning of.
+  const bodyRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    bodyRef.current?.scrollTo(0, 0)
+  }, [taskId])
+
   if (!task || !project) return null
 
   const formatDate = (iso: string | null) => (iso ? formatDayMonthYear(lang, toDate(iso)) : t('common.tbd'))
@@ -70,6 +80,9 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
   // its children, so its children's gaps are the thing worth surfacing here.
   const branchPending = hasKids ? pendingLogsUnder(tasks, logs, today, task.id) : []
   const tracksLogs = hasKids && hasStrictLeafUnder(tasks, task.id)
+  // Not `useMemo`: this sits below the early return above, and a hook after a
+  // conditional return is a hook that sometimes does not run.
+  const qualifiers = nameQualifiers(branchPending, tasks)
   const taskStatus = eff?.status ?? 'not-started'
   const meta = STATUS_META[taskStatus]
   const prio = priorityMeta(task.priority)
@@ -110,29 +123,46 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-4 space-y-4">
+      <div ref={bodyRef} className="flex-1 overflow-auto p-4 space-y-4">
         {isLoggable && (
           <button onClick={() => setLogDialog({ existing: null })} className="w-full h-8 inline-flex items-center justify-center gap-1.5 text-[12px] font-medium bg-accent text-on-accent rounded-[3px] hover:brightness-110">
             <NotebookText size={14} /> {t('log.write')}
           </button>
         )}
 
-        {/* Today's gaps in this branch. Names only, and nothing to click: the
-            writing happens in the dialog above, which walks the same gaps one
-            after another. Derived from `pendingLogsUnder`, so what is listed
-            here is exactly what that dialog will offer and exactly what the
-            day panel's ring is counting. */}
+        {/* Today's gaps in this branch — a readout, not an editor. It says which
+            subtasks owe a log today and nothing more; the writing happens on
+            each of them, which is where the button above leads once a name is
+            clicked. Derived from `pendingLogsUnder`, so what is listed here is
+            exactly what the day panel's ring is counting.
+
+            Names are qualified only where they would otherwise collide with
+            another name in this same list, and the qualification is the chain of
+            parents above the row (see `nameQualifiers`): "which 联调 is this" is
+            the question a flat list of names cannot otherwise answer, and it is
+            the question that decides where the work gets recorded. */}
         {tracksLogs && (
           <div>
             <div className="text-[10px] uppercase tracking-wider text-dim mb-1">{t('task.pendingLogs')}</div>
             {branchPending.length ? (
               <div className="space-y-1">
-                {branchPending.map((p) => (
-                  <div key={p.id} className="flex items-center px-2 h-7 bg-panel2 border border-border rounded-[3px] text-[11px]">
-                    <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-not-started" />
-                    <span className="truncate ml-2 text-muted">{p.name}</span>
-                  </div>
-                ))}
+                {branchPending.map((p) => {
+                  const above = qualifiers.get(p.id) ?? []
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => setSelected(p.id)}
+                      title={[...above, p.name].join(t('common.pathSeparator'))}
+                      className="w-full flex items-center px-2 h-7 bg-panel2 border border-border rounded-[3px] text-[11px] text-left hover:bg-panel2/60 hover:border-accent/50"
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-not-started" />
+                      <span className="truncate ml-2 text-muted">
+                        {above.length > 0 && <span className="text-dim">{above.join(t('common.listSeparator'))}{t('common.pathSeparator')}</span>}
+                        {p.name}
+                      </span>
+                    </button>
+                  )
+                })}
               </div>
             ) : (
               <div className="text-[12px] text-dim">{t('day.allLogged')}</div>

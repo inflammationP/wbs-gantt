@@ -126,6 +126,10 @@ const en = {
   'common.deselect': 'Deselect',
   'common.selectAll': 'Select all',
   'common.deselectAll': 'Deselect all',
+  /** Between the names in a list read out in running text. */
+  'common.listSeparator': ', ',
+  /** Between a chain of ancestors and the name it qualifies — see `nameQualifiers`. */
+  'common.pathSeparator': ' › ',
   'common.unknownTask': 'Unknown task',
   'common.notes': 'Notes…',
   'common.targetProgress': 'Target progress: {percent}%',
@@ -182,6 +186,45 @@ const en = {
   'gantt.pickDate': 'Click any date to open its day detail',
   'gantt.writeLogForDay': 'Write a log for this day',
   'gantt.moveToTopLevel': 'Move to top level',
+  // "Organize" rather than "Manage tasks": `nav.manage` is already "Manage", and
+  // two entries a word apart in the same language would read as the same place.
+  'gantt.manageTasks': 'Organize',
+  'gantt.editDone': 'Done',
+  'gantt.editMode': 'Editing',
+  'gantt.selected': { one: '{count} selected', other: '{count} selected' },
+  'gantt.clearSelection': 'Clear selection',
+  'gantt.setTodoMany': {
+    one: 'Mark {count} task as to-do?\n\nIts dates, priority and progress are cleared.',
+    other: 'Mark {count} tasks as to-do?\n\nTheir dates, priorities and progress are cleared.',
+  },
+  'gantt.setTodoManyWithSubtasks': {
+    one:
+      'Mark {count} task and its {subs} unfinished subtask as to-do?\n\n' +
+      'Their dates, priorities and progress are cleared. Completed subtasks are left untouched.',
+    other:
+      'Mark {count} tasks and their {subs} unfinished subtasks as to-do?\n\n' +
+      'Their dates, priorities and progress are cleared. Completed subtasks are left untouched.',
+  },
+  'gantt.deleteSelected': {
+    one: 'Delete {count} task?',
+    other: 'Delete {count} tasks?',
+  },
+  'gantt.deleteSelectedWithSubtasks': {
+    one: 'Delete {count} task and its subtasks?',
+    other: 'Delete {count} tasks and their subtasks?',
+  },
+  'gantt.dragMany': { one: '{count} task', other: '{count} tasks' },
+  // The pill that follows the pointer. `{what}` is the dragged task's own name,
+  // or the `gantt.dragMany` phrase when several are on the move.
+  'gantt.moved': 'Moved {what}',
+  // The strip under the board: what the step just did, and the way back. One
+  // phrase per action, because "Undo" alone says what will happen but not what
+  // is being offered — and the offer expires in ten seconds.
+  'gantt.undoTodo': 'Marked {what} as to-do',
+  'gantt.undoPause': 'Paused {what}',
+  'gantt.undoResume': 'Resumed {what}',
+  'gantt.undoDelete': 'Deleted {what}',
+  'gantt.undo': 'Undo',
 
   // --- to-dos ---
   'todo.folderName': 'To-dos',
@@ -211,6 +254,8 @@ const en = {
     'This is a to-do: unscheduled work. It sits last among its siblings inside a {toDos} folder until you give it a schedule with {startTask} in the detail panel.',
   'task.endDateLocked':
     'The end date is decided by the subtask that ends last — change that subtask’s end date instead.',
+  'task.startDateLocked':
+    'The start date is decided by the subtask that starts first — change that subtask’s start date instead.',
   'task.strictProgress': 'Turn off daily logs (not recommended)',
   'task.overdueMark': 'This task is already overdue — mark as',
   'task.tagsPlaceholder': 'study, health',
@@ -292,7 +337,6 @@ const en = {
   // Writing on a task that has subtasks: the label above the picker, and the
   // save button while more are still owed.
   'log.task': 'Task',
-  'log.saveNext': 'Save and continue',
   'logs.all': 'All logs',
   'logs.empty': 'No logs yet.',
   'logs.moreTasks': { one: '+{count} more task', other: '+{count} more tasks' },
@@ -486,7 +530,7 @@ const en = {
   'reminder.groupDeadlines': 'Due & overdue',
   'reminder.testTitle': 'WBS Gantt — test message',
   'reminder.testBody': 'If you are reading this in WeChat, reminders are working.',
-  'reminder.nudgeLogs': 'Today’s logs are still unwritten — write one, and sync the task progress while you are there.',
+  'reminder.nudgeLogs': 'Remember to write logs for the tasks you have finished.',
   'reminder.nudgeDebt': '{count} waiting on you —',
   'reminder.nudgeDebtLine': '- {count} {label}',
   'reminder.nudgeTasks': 'tasks',
@@ -564,11 +608,11 @@ const en = {
   'guide.step.project': 'Create a project in {manage}',
   'guide.step.parentTask': 'Add a parent task inside it',
   'guide.step.strictChild': 'Nest a strict subtask under that task',
-  'guide.step.endDate': 'How a parent’s end date is worked out',
+  'guide.step.endDate': 'How a parent’s dates are worked out',
   'guide.step.log': 'Write a log on the strict subtask',
   'guide.step.tour': 'Look around: Logs, Manage, Calendar, Settings',
   // The explanation dialogs. The two about derivation have to stay true to
-  // src/lib/tree.ts (`syncParentEnds`) and src/lib/progress.ts (`autoProgress` /
+  // src/lib/tree.ts (`syncParentDates`) and src/lib/progress.ts (`autoProgress` /
   // `taskProgress`) — a guide that describes the rules wrongly is worse than no
   // guide, so change the copy when the rule changes.
   // The language names ride in as a parameter rather than being written into each
@@ -579,13 +623,13 @@ const en = {
   'guide.explain.language.p1':
     'The interface comes in {langs}. It opens in English — if that is not your language, switch it in Settings, under Language. Everything follows at once, this card included.',
   'guide.explain.language.skip': 'Not now',
-  'guide.explain.endDate.title': 'How a parent’s end date is worked out',
+  'guide.explain.endDate.title': 'How a parent’s dates are worked out',
   'guide.explain.endDate.p1':
-    'A phase parent keeps no schedule of its own — its end date is decided by its subtasks, and it is always the latest of them. Give a subtask an end date past the parent’s and the parent stretches out to meet it.',
+    'A phase parent keeps no schedule of its own — it starts when its earliest subtask starts and ends when its latest one ends. Give a subtask dates outside the parent’s and the parent stretches out to meet them.',
   'guide.explain.endDate.p2':
-    'The interface says as much: open a phase parent for editing and the end-date field is greyed out, reading “decided by the subtask that ends last”. Drag any subtask and the parent follows. Its progress works the same way — the average of its subtasks’ — which is why it will not let you type one in either.',
+    'The interface says as much: open a phase parent for editing and both date fields are greyed out. Drag any subtask and the parent follows, at both ends. Its progress works the same way — the average of its subtasks’ — which is why it will not let you type one in either.',
   // The form offers long-term goals as parents too, so this dialog has to
-  // account for one: `syncParentEnds` skips them, and they carry no end date to
+  // account for one: `syncParentDates` skips them, and they carry no end date to
   // stretch, which the two paragraphs above would otherwise misdescribe.
   'guide.explain.endDate.p3':
     'Long-term goals are the exception. They have a start and no end, so a parent of that kind has nothing to stretch — which is why it shows a start date and nothing else.',
@@ -671,6 +715,8 @@ const zh: Dict = {
   'common.deselect': '取消选择',
   'common.selectAll': '全选',
   'common.deselectAll': '取消全选',
+  'common.listSeparator': '、',
+  'common.pathSeparator': ' › ',
   'common.unknownTask': '未知任务',
   'common.notes': '备注…',
   'common.targetProgress': '目标进度：{percent}%',
@@ -724,6 +770,34 @@ const zh: Dict = {
   'gantt.pickDate': '点击任意日期查看当天详情',
   'gantt.writeLogForDay': '为这一天写日志',
   'gantt.moveToTopLevel': '移到顶层',
+  'gantt.manageTasks': '管理任务',
+  'gantt.editDone': '完成',
+  'gantt.editMode': '编辑模式',
+  'gantt.selected': { one: '已选 {count} 项', other: '已选 {count} 项' },
+  'gantt.clearSelection': '取消选择',
+  'gantt.setTodoMany': {
+    one: '确定将这 {count} 个任务设为待办？\n\n它们的日期、优先级和进度将被清除。',
+    other: '确定将这 {count} 个任务设为待办？\n\n它们的日期、优先级和进度将被清除。',
+  },
+  'gantt.setTodoManyWithSubtasks': {
+    one: '确定将这 {count} 个任务及其 {subs} 项未完成的子任务设为待办？\n\n它们的日期、优先级和进度将被清除；已完成的子任务不受影响。',
+    other: '确定将这 {count} 个任务及其 {subs} 项未完成的子任务设为待办？\n\n它们的日期、优先级和进度将被清除；已完成的子任务不受影响。',
+  },
+  'gantt.deleteSelected': {
+    one: '确定删除这 {count} 个任务？',
+    other: '确定删除这 {count} 个任务？',
+  },
+  'gantt.deleteSelectedWithSubtasks': {
+    one: '确定删除这 {count} 个任务及其子任务？',
+    other: '确定删除这 {count} 个任务及其子任务？',
+  },
+  'gantt.dragMany': { one: '{count} 个任务', other: '{count} 个任务' },
+  'gantt.moved': '已移动 {what}',
+  'gantt.undoTodo': '已将 {what}设为待办',
+  'gantt.undoPause': '已暂停 {what}',
+  'gantt.undoResume': '已恢复 {what}',
+  'gantt.undoDelete': '已删除 {what}',
+  'gantt.undo': '撤销',
 
   'todo.folderName': '待办',
   'todo.folder': '待办（{count}）',
@@ -749,6 +823,7 @@ const zh: Dict = {
   'task.todoNote':
     '这是一项待办：尚未排期的工作。它会排在同级任务末尾的 {toDos} 文件夹中，直到你在详情面板里用 {startTask} 为它安排时间。',
   'task.endDateLocked': '结束日期由最晚结束的子任务决定，请改为修改那个子任务的结束日期。',
+  'task.startDateLocked': '开始日期由最早开始的子任务决定，请改为修改那个子任务的开始日期。',
   'task.strictProgress': '取消日志限制（不推荐）',
   'task.overdueMark': '该任务已逾期 —— 标记为',
   'task.tagsPlaceholder': '学习, 健康',
@@ -809,7 +884,6 @@ const zh: Dict = {
   'log.progressRequired': '两个格子至少填一个 —— 没进展就在「{add}」里填 0。',
   'log.progressBackward': '进度不能往回填 —— 这一填比当天开始时还低。',
   'log.task': '任务',
-  'log.saveNext': '保存并继续',
   'logs.all': '全部日志',
   'logs.empty': '暂无日志。',
   'logs.moreTasks': { one: '还有 {count} 项任务', other: '还有 {count} 项任务' },
@@ -976,7 +1050,7 @@ const zh: Dict = {
   'reminder.groupDeadlines': '到期与逾期',
   'reminder.testTitle': '看板 —— 测试消息',
   'reminder.testBody': '你能在微信里看到这条，就说明提醒已经配好了。',
-  'reminder.nudgeLogs': '今天的日志还没写 —— 记一笔，顺手把任务进度同步了。',
+  'reminder.nudgeLogs': '记得为已经完成的任务填写日志。',
   'reminder.nudgeDebt': '还有 {count} 项事项待处理，其中：',
   'reminder.nudgeDebtLine': '- {count} 项{label}',
   'reminder.nudgeTasks': '任务',
@@ -1046,18 +1120,18 @@ const zh: Dict = {
   'guide.step.project': '在{manage}里新建一个项目',
   'guide.step.parentTask': '在这个项目下新建一个父任务',
   'guide.step.strictChild': '在父任务下挂一个严格子任务',
-  'guide.step.endDate': '父任务的结束日期是怎么来的',
+  'guide.step.endDate': '父任务的日期是怎么来的',
   'guide.step.log': '给严格子任务写一条任务日志',
   'guide.step.tour': '逛一圈：日志 · 管理 · 日历 · 设置',
   'guide.explain.language.title': '界面语言',
   'guide.explain.language.p1':
     '界面有 {langs} 三种。默认打开是 English —— 如果你不读英文，到设置里的「语言」换一下。换完立刻生效，这张卡片也会跟着变。',
   'guide.explain.language.skip': '先不用',
-  'guide.explain.endDate.title': '父任务的结束日期是怎么来的',
+  'guide.explain.endDate.title': '父任务的日期是怎么来的',
   'guide.explain.endDate.p1':
-    '阶段任务的父任务自己不排期 —— 它的结束日期由子任务决定，永远是所有子任务里最晚的那个。给某个子任务一个比父任务更晚的结束日期，父任务就会撑出去跟上它。',
+    '阶段任务的父任务自己不排期 —— 它从最早开始的子任务开始、到最晚结束的子任务结束。给某个子任务的日期超出父任务的范围，父任务就会撑出去跟上它。',
   'guide.explain.endDate.p2':
-    '这一点界面上就写着：打开一个阶段父任务的编辑框，结束日期那一栏是灰的，写着「由结束最晚的子任务决定」。你拖动任何一个子任务，父任务都会跟着走。进度同理 —— 父任务的进度是子任务进度的平均，所以它也不让你手填。',
+    '这一点界面上就写着：打开一个阶段父任务的编辑框，开始日期和结束日期两栏都是灰的。你拖动任何一个子任务，父任务两头都会跟着走。进度同理 —— 父任务的进度是子任务进度的平均，所以它也不让你手填。',
   'guide.explain.endDate.p3':
     '长期目标是例外。它只有开始、没有结束，所以这种父任务没有东西可撑 —— 这就是它只显示一个开始日期的原因。',
   'guide.explain.strict.title': '严格与非严格：进度从哪来',
@@ -1139,6 +1213,8 @@ const fr: Dict = {
   'common.deselect': 'Désélectionner',
   'common.selectAll': 'Tout sélectionner',
   'common.deselectAll': 'Tout désélectionner',
+  'common.listSeparator': ', ',
+  'common.pathSeparator': ' › ',
   'common.unknownTask': 'Tâche inconnue',
   'common.notes': 'Notes…',
   'common.targetProgress': 'Avancement visé : {percent} %',
@@ -1195,6 +1271,38 @@ const fr: Dict = {
   'gantt.pickDate': 'Cliquez sur une date pour ouvrir le détail du jour',
   'gantt.writeLogForDay': 'Écrire un journal pour ce jour',
   'gantt.moveToTopLevel': 'Déplacer au niveau supérieur',
+  'gantt.manageTasks': 'Organiser',
+  'gantt.editDone': 'Terminé',
+  'gantt.editMode': 'Édition',
+  'gantt.selected': { one: '{count} sélectionnée', other: '{count} sélectionnées' },
+  'gantt.clearSelection': 'Tout désélectionner',
+  'gantt.setTodoMany': {
+    one: 'Marquer {count} tâche comme à faire ?\n\nSes dates, sa priorité et sa progression seront effacées.',
+    other: 'Marquer {count} tâches comme à faire ?\n\nLeurs dates, priorités et progressions seront effacées.',
+  },
+  'gantt.setTodoManyWithSubtasks': {
+    one:
+      'Marquer {count} tâche et sa {subs} sous-tâche inachevée comme à faire ?\n\n' +
+      'Leurs dates, priorités et progressions seront effacées. Les sous-tâches terminées ne sont pas touchées.',
+    other:
+      'Marquer {count} tâches et leurs {subs} sous-tâches inachevées comme à faire ?\n\n' +
+      'Leurs dates, priorités et progressions seront effacées. Les sous-tâches terminées ne sont pas touchées.',
+  },
+  'gantt.deleteSelected': {
+    one: 'Supprimer {count} tâche ?',
+    other: 'Supprimer {count} tâches ?',
+  },
+  'gantt.deleteSelectedWithSubtasks': {
+    one: 'Supprimer {count} tâche et ses sous-tâches ?',
+    other: 'Supprimer {count} tâches et leurs sous-tâches ?',
+  },
+  'gantt.dragMany': { one: '{count} tâche', other: '{count} tâches' },
+  'gantt.moved': '{what} déplacé',
+  'gantt.undoTodo': '« {what} » marqué comme à faire',
+  'gantt.undoPause': '« {what} » mis en pause',
+  'gantt.undoResume': '« {what} » repris',
+  'gantt.undoDelete': '« {what} » supprimé',
+  'gantt.undo': 'Annuler',
 
   'todo.folderName': 'À faire',
   'todo.folder': 'À faire ({count})',
@@ -1225,6 +1333,8 @@ const fr: Dict = {
     'Ceci est une tâche à faire : du travail non planifié. Elle se place en dernier parmi ses voisines, dans un dossier {toDos}, jusqu’à ce que vous lui donniez un planning avec {startTask} dans le panneau de détail.',
   'task.endDateLocked':
     'La date de fin est déterminée par la sous-tâche qui se termine le plus tard — modifiez plutôt la date de fin de cette sous-tâche.',
+  'task.startDateLocked':
+    'La date de début est déterminée par la sous-tâche qui commence le plus tôt — modifiez plutôt la date de début de cette sous-tâche.',
   'task.strictProgress': 'Désactiver les journaux (non recommandé)',
   'task.overdueMark': 'Cette tâche est déjà en retard — la marquer comme',
   'task.tagsPlaceholder': 'étude, santé',
@@ -1288,7 +1398,6 @@ const fr: Dict = {
   'log.progressRequired': 'Remplissez au moins l’un des deux — mettez 0 dans « {add} » si rien n’a bougé.',
   'log.progressBackward': 'L’avancement ne peut pas reculer — la valeur passe sous celle du début de journée.',
   'log.task': 'Tâche',
-  'log.saveNext': 'Enregistrer et continuer',
   'logs.all': 'Tous les journaux',
   'logs.empty': 'Aucun journal pour l’instant.',
   'logs.moreTasks': { one: '+{count} autre tâche', other: '+{count} autres tâches' },
@@ -1458,7 +1567,7 @@ const fr: Dict = {
   'reminder.groupDeadlines': 'Échéances',
   'reminder.testTitle': 'WBS Gantt — message de test',
   'reminder.testBody': 'Si vous lisez ceci dans WeChat, les rappels fonctionnent.',
-  'reminder.nudgeLogs': 'Les journaux du jour ne sont pas écrits — écrivez-en un, et synchronisez l’avancement tant que vous y êtes.',
+  'reminder.nudgeLogs': 'Pensez à écrire les journaux des tâches terminées.',
   'reminder.nudgeDebt': '{count} choses en attente, dont :',
   'reminder.nudgeDebtLine': '- {count} {label}',
   'reminder.nudgeTasks': 'tâches',
@@ -1531,18 +1640,18 @@ const fr: Dict = {
   'guide.step.project': 'Créer un projet dans {manage}',
   'guide.step.parentTask': 'Ajouter une tâche parente dedans',
   'guide.step.strictChild': 'Rattacher une sous-tâche stricte à cette tâche',
-  'guide.step.endDate': 'D’où vient la date de fin d’une tâche parente',
+  'guide.step.endDate': 'D’où viennent les dates d’une tâche parente',
   'guide.step.log': 'Écrire un journal sur la sous-tâche stricte',
   'guide.step.tour': 'Un tour : Journaux · Gestion · Calendrier · Paramètres',
   'guide.explain.language.title': 'Langue de l’interface',
   'guide.explain.language.p1':
     'L’interface existe en {langs}. Elle s’ouvre en anglais — si ce n’est pas votre langue, changez-la dans Paramètres, à la rubrique Langue. Tout suit aussitôt, cette carte comprise.',
   'guide.explain.language.skip': 'Plus tard',
-  'guide.explain.endDate.title': 'D’où vient la date de fin d’une tâche parente',
+  'guide.explain.endDate.title': 'D’où viennent les dates d’une tâche parente',
   'guide.explain.endDate.p1':
-    'Une tâche parente de phase ne porte pas de planning à elle : sa date de fin est déterminée par ses sous-tâches, et c’est toujours la plus tardive d’entre elles. Donnez à une sous-tâche une date de fin postérieure à celle du parent et le parent s’étire pour la rejoindre.',
+    'Une tâche parente de phase ne porte pas de planning à elle : elle commence avec sa sous-tâche la plus précoce et se termine avec la plus tardive. Donnez à une sous-tâche des dates en dehors de celles du parent et le parent s’étire pour les rejoindre.',
   'guide.explain.endDate.p2':
-    'L’interface le dit elle-même : ouvrez un parent de phase en édition et le champ de date de fin est grisé, avec « déterminée par la sous-tâche qui se termine le plus tard ». Déplacez une sous-tâche et le parent suit. Son avancement fonctionne de même — la moyenne de celui de ses sous-tâches — et c’est pourquoi il ne vous laisse pas non plus le saisir.',
+    'L’interface le dit elle-même : ouvrez un parent de phase en édition et les deux champs de date sont grisés. Déplacez une sous-tâche et le parent suit, aux deux extrémités. Son avancement fonctionne de même — la moyenne de celui de ses sous-tâches — et c’est pourquoi il ne vous laisse pas non plus le saisir.',
   'guide.explain.endDate.p3':
     'Les objectifs à long terme font exception. Ils ont un début et pas de fin : un tel parent n’a donc rien à étirer — d’où la date de début seule.',
   'guide.explain.strict.title': 'Stricte ou non : d’où vient l’avancement',

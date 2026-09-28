@@ -92,6 +92,17 @@ export function TaskDialog({ onClose, existing, defaultParentId, defaultProjectI
   const isTodo = form.isTodo
   const isLT = form.type === 'long-term'
   const hasKids = existing ? tasks.some((t) => t.parentId === existing.id) : false
+  /**
+   * Whether this task's dates and progress mode are decided by its subtasks.
+   *
+   * Deliberately not the same question as `hasKids`. `effectiveStates` leaves
+   * to-dos out of a parent's span — they are unscheduled, so they have no dates
+   * to contribute — which means a task whose children are *all* to-dos is still
+   * keeping its own dates. Locking those would be a field that looks editable
+   * until the moment you try to use it, which is the precise failure this whole
+   * group of rules exists to remove.
+   */
+  const rollsUp = hasKids && !isLT && tasks.some((k) => k.parentId === existing!.id && !k.isTodo)
   const isOverdueStrict = !existing && !isTodo && !isLT && form.strictProgress && !!form.endDate && form.endDate < todayISO()
 
   // Turning the box on forces a phase (a to-do has no start, and long-term
@@ -238,16 +249,26 @@ export function TaskDialog({ onClose, existing, defaultParentId, defaultProjectI
         {/* Everything a to-do doesn't have: dates, strict flag, priority. */}
         {!isTodo && (
           <>
+            {/* Both ends, not just the end. A phase parent is a container: its
+                window is where its contents are, and `syncParentDates` writes
+                both from the children. Leaving the start editable would be a
+                field whose every edit is silently overwritten on the next
+                render — the same false affordance the end date was already
+                spared. */}
             {isLT ? (
               <Field label={t('common.startDate')}>
                 <input type="date" className={inputCls} value={form.startDate ?? ''} onChange={(e) => set('startDate', e.target.value)} />
               </Field>
             ) : (
               <div className="grid grid-cols-2 gap-3">
-                <Field label={t('common.startDate')}><input type="date" className={inputCls} value={form.startDate ?? ''} onChange={(e) => set('startDate', e.target.value)} /></Field>
+                <Field label={t('common.startDate')}>
+                  <span className={rollsUp ? 'block cursor-help' : 'block'} title={rollsUp ? t('task.startDateLocked') : undefined}>
+                    <input type="date" className={`${inputCls} ${rollsUp ? 'opacity-50 cursor-not-allowed' : ''}`} value={form.startDate ?? ''} onChange={(e) => set('startDate', e.target.value)} disabled={rollsUp} />
+                  </span>
+                </Field>
                 <Field label={t('common.endDate')}>
-                  <span className={hasKids ? 'block cursor-help' : 'block'} title={hasKids ? t('task.endDateLocked') : undefined}>
-                    <input type="date" className={`${inputCls} ${hasKids ? 'opacity-50 cursor-not-allowed' : ''}`} value={form.endDate ?? ''} onChange={(e) => set('endDate', e.target.value)} disabled={hasKids} />
+                  <span className={rollsUp ? 'block cursor-help' : 'block'} title={rollsUp ? t('task.endDateLocked') : undefined}>
+                    <input type="date" className={`${inputCls} ${rollsUp ? 'opacity-50 cursor-not-allowed' : ''}`} value={form.endDate ?? ''} onChange={(e) => set('endDate', e.target.value)} disabled={rollsUp} />
                   </span>
                 </Field>
               </div>
@@ -291,8 +312,19 @@ export function TaskDialog({ onClose, existing, defaultParentId, defaultProjectI
               checked={!form.strictProgress}
               onChange={(e) => (e.target.checked ? setOptOutAsk(true) : set('strictProgress', true))}
               className="accent-accent"
+              // Inert on a parent: its progress is its subtasks' average, so
+              // `taskProgress` is never called for it and this flag decides
+              // nothing. The detail panel has said so for a long time — it
+              // prints `task.modeRolledUp` in place of the mode — and the dialog
+              // offering to set a flag that does nothing is the other half of
+              // the same sentence.
+              disabled={rollsUp}
             />
-            <label htmlFor="no-logs" className="text-[12px] text-fg cursor-pointer">
+            <label
+              htmlFor="no-logs"
+              className={`text-[12px] cursor-pointer ${rollsUp ? 'text-dim cursor-help' : 'text-fg'}`}
+              title={rollsUp ? t('task.modeRolledUp') : undefined}
+            >
               {t('task.strictProgress')}
             </label>
           </div>

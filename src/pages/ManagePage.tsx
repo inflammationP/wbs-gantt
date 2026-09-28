@@ -7,7 +7,7 @@ import { addDays, toDate, toISO, todayISO } from '../lib/dates'
 import { PROJECT_COLORS, STATUS_META, STATUS_ORDER, priorityMeta, priorityWash, sig, sigText } from '../lib/ui'
 import { formatShortDate, weekdayLabels } from '../lib/i18n'
 import { useLang, useT } from '../lib/useT'
-import { computeWbs, effectiveStates } from '../lib/tree'
+import { compareSiblings, computeWbs, effectiveStates } from '../lib/tree'
 import { ALL_DAYS } from '../lib/habits'
 import { useDialogs } from '../components/dialogs'
 import { HabitDialog } from '../components/HabitDialog'
@@ -93,15 +93,20 @@ export function ManagePage() {
   const wbs = useMemo(() => computeWbs(tasks), [tasks])
   const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? ''
 
+  // The Gantt's own sibling order, from the Gantt's own function: to-dos last,
+  // then whatever order the user dragged them into, then the date-and-name sort.
+  // This list used to carry a near-copy of that comparator, and a near-copy is
+  // what it was — it had dropped the `id` tiebreak, and it grouped projects by
+  // the letters of their ids rather than by the order they are listed in. Either
+  // one on its own is invisible until two tasks happen to tie; together with the
+  // project lines now drawn in the Gantt, they read as two pages disagreeing.
+  const projectRank = new Map(projects.map((p, i) => [p.id, i]))
   const filtered = tasks
     .filter((task) => statusFilter === 'all' || eff.get(task.id)?.status === statusFilter)
-    // To-dos last within each project, matching the Gantt's sibling order.
     .sort(
       (a, b) =>
-        a.projectId.localeCompare(b.projectId) ||
-        (a.isTodo ? 1 : 0) - (b.isTodo ? 1 : 0) ||
-        (a.startDate ?? '').localeCompare(b.startDate ?? '') ||
-        a.name.localeCompare(b.name),
+        (projectRank.get(a.projectId) ?? 999) - (projectRank.get(b.projectId) ?? 999) ||
+        compareSiblings(a, b),
     )
 
   const statsFor = (pid: string) => {

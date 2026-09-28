@@ -4,6 +4,7 @@ import { Check, ChevronDown, ChevronRight, NotebookText, Pencil, ScrollText, Tri
 import { useStore } from '../store/useStore'
 import { Chore, Habit, TaskLog } from '../types'
 import { DayRow, daySummary } from '../lib/dayTasks'
+import { nameQualifiers } from '../lib/tree'
 import { carriedSince } from '../lib/chores'
 import { tickedOn } from '../lib/habits'
 import { STATUS_META, sig, sigAlpha } from '../lib/ui'
@@ -93,6 +94,13 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, onAddHabi
 
   const summary = useMemo(() => daySummary(tasks, logs, projects, day, today), [tasks, logs, projects, day, today])
   const dayLogs = useMemo(() => logs.filter((l) => l.date === day), [logs, day])
+  // Measured over the whole day rather than over `visibleRows`, on purpose: the
+  // qualifier must not appear and disappear as branches are folded. See
+  // `nameQualifiers`.
+  const qualifiers = useMemo(
+    () => nameQualifiers(summary.all.map((r) => ({ id: r.task.id, name: r.task.name, parentId: r.task.parentId })), tasks),
+    [summary.all, tasks],
+  )
   const projectOf = (id: string) => projects.find((p) => p.id === id)
 
   const toggle = (id: string) => setExpanded((e) => ({ ...e, [id]: !e[id] }))
@@ -130,6 +138,7 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, onAddHabi
     onWriteLog: (id: string) => setLogFor(id),
     onOpenTask: (id: string) => setSelected(id),
     projectName: (id: string) => projectOf(id)?.name ?? '',
+    qualifiers,
   }
 
   // The day opens at the first level: a parent is followed by its own children,
@@ -463,6 +472,7 @@ function DayRowView({
   onWriteLog,
   onOpenTask,
   projectName,
+  qualifiers,
 }: {
   row: DayRow
   /**
@@ -480,6 +490,11 @@ function DayRowView({
   onWriteLog: (id: string) => void
   onOpenTask: (id: string) => void
   projectName: (id: string) => string
+  /**
+   * Names to print before a row's own, for the rows whose name collides with
+   * another in this list. Empty for most of them; see `nameQualifiers`.
+   */
+  qualifiers: Map<string, string[]>
 }) {
   const t = useT()
   const toggleTaskDay = useStore((s) => s.toggleTaskDay)
@@ -532,8 +547,18 @@ function DayRowView({
           )}
           <span
             className={`min-w-0 truncate text-[12px] ${struck ? 'line-through text-dim' : 'text-fg/90'}`}
-            title={`${row.wbs} ${row.task.name}`}
+            // The path rather than the WBS number: a number says where a task is
+            // in its project, which is exactly what someone asking "which of
+            // these two is this" does not have in their head. The number is
+            // still on the row, one chevron away, in the strip that unfolds.
+            title={[...(qualifiers.get(row.task.id) ?? []), row.task.name].join(t('common.pathSeparator'))}
           >
+            {/* Only where the bare name would be ambiguous — see
+                `nameQualifiers`. Dim and before the name, so a row that needed
+                no qualification reads exactly as it always did. */}
+            {(qualifiers.get(row.task.id) ?? []).length > 0 && (
+              <span className="text-dim">{qualifiers.get(row.task.id)!.join(t('common.pathSeparator'))}{t('common.pathSeparator')}</span>
+            )}
             {row.task.name}
           </span>
         </button>

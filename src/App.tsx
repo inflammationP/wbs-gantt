@@ -26,13 +26,14 @@ export default function App() {
   const selectedExists = useStore((s) => s.tasks.some((t) => t.id === s.selectedTaskId))
   const selectedProject = useStore((s) => s.projects.find((p) => p.id === s.selectedProjectId))
   const tasks = useStore((s) => s.tasks)
-  const syncParentEnds = useStore((s) => s.syncParentEnds)
+  const syncParentDates = useStore((s) => s.syncParentDates)
   const runUpdateCheck = useStore((s) => s.runUpdateCheck)
 
-  // Keep each phase parent's end date synced to its latest child's end date.
+  // Keep each phase parent's dates on the span of its children. Both ends: a
+  // parent is a container, so its window is where its contents are.
   useEffect(() => {
-    syncParentEnds()
-  }, [tasks, syncParentEnds])
+    syncParentDates()
+  }, [tasks, syncParentDates])
 
   // The update check the app fires on the user's behalf at startup — the same
   // call the Settings button makes, with nothing to tell them apart. In
