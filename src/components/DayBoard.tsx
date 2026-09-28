@@ -16,6 +16,7 @@ import { DayLogsModal } from './DayLogsModal'
 import { Field, Modal, Segmented, Stat, inputCls } from './ui'
 import { useDialogs } from './dialogs'
 import { HabitDialog } from './HabitDialog'
+import { NoteActions, NoteBox } from './NoteBox'
 
 // The ring's empty track is the border token, which is what it always was —
 // `#242c35` was that token written out by hand, and stayed put when a theme
@@ -311,6 +312,7 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, onAddHabi
           <div className="w-[34%] min-w-[240px] max-w-[320px] shrink-0 border-l border-border overflow-auto">
             {habitSection}
             {choreSection}
+            <NoteSection day={day} />
           </div>
         </div>
       ) : (
@@ -318,6 +320,7 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, onAddHabi
           {taskSections}
           {habitSection}
           {choreSection}
+          <NoteSection day={day} />
         </div>
       )}
 
@@ -348,37 +351,84 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, onAddHabi
   )
 }
 
+/**
+ * The day's notebook, as a section.
+ *
+ * A component of its own because the Edit button belongs in the heading beside
+ * the title, and the heading belongs to `Section` — so the button and the state
+ * it opens have to be in the same place, which is here rather than in
+ * `NoteBox`. `NoteBox` is handed the open/closed flag and draws the box.
+ *
+ * Its own open state, not `DayBoard`'s: the notebook is the one section whose
+ * heading anyone collapses for their own reasons, and folding it into the
+ * shared record would have meant three other sections' state to move for it.
+ */
+function NoteSection({ day }: { day: string }) {
+  const t = useT()
+  const [open, setOpen] = useState(true)
+  const [editing, setEditing] = useState(false)
+
+  return (
+    <Section
+      title={t('notes.title')}
+      open={open}
+      onToggle={() => setOpen((o) => !o)}
+      action={<NoteActions day={day} editing={editing} onEdit={() => setEditing(true)} />}
+    >
+      <NoteBox day={day} editing={editing} onDone={() => setEditing(false)} />
+    </Section>
+  )
+}
+
 function Section({
   title,
   count,
   hint,
   open,
   onToggle,
+  action,
   children,
 }: {
   title: string
   /**
    * A number is how many are on the label; a string is for a section whose
-   * subject is a fraction of itself — the habits' `3/5`.
+   * subject is a fraction of itself — the habits' `3/5`. Omitted for a section
+   * with nothing to count, which is only the notebook: a day holds one of it.
    */
-  count: number | string
+  count?: number | string
   /** One line under the title, for what the section's contents mean. */
   hint?: string
   open: boolean
   onToggle: () => void
+  /**
+   * A control belonging to the section as a whole, at the far end of its
+   * heading. Revealed on hover, and on focus — `opacity-0` on its own would
+   * leave a control in the tab order that a keyboard user cannot see.
+   */
+  action?: ReactNode
   children: ReactNode
 }) {
   return (
     <div className="border-b border-border py-2">
-      <button
-        onClick={onToggle}
-        aria-expanded={open}
-        className="w-full flex items-center gap-1.5 px-4 h-6 text-[10px] uppercase tracking-wider text-dim hover:text-fg"
-      >
-        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        {title}
-        <span className="font-mono normal-case tracking-normal">{count}</span>
-      </button>
+      {/* The group is the heading row, not the whole section: a control that
+          appeared whenever the pointer was anywhere in the section would appear
+          while you were reading the text underneath it. */}
+      <div className="group flex items-center px-4 h-6">
+        <button
+          onClick={onToggle}
+          aria-expanded={open}
+          className="flex-1 flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-dim hover:text-fg"
+        >
+          {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+          {title}
+          {count != null && <span className="font-mono normal-case tracking-normal">{count}</span>}
+        </button>
+        {action && (
+          <div className="shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+            {action}
+          </div>
+        )}
+      </div>
       {open && (
         <>
           {/* Under the title, aligned with it rather than with the rows: this

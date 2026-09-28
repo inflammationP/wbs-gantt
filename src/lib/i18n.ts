@@ -68,7 +68,7 @@ const en = {
 
   // --- navigation and shell ---
   'nav.gantt': 'Gantt',
-  'nav.logs': 'Logs',
+  'nav.logs': 'Logs / Notes',
   'nav.manage': 'Manage',
   'nav.calendar': 'Calendar',
   'nav.settings': 'Settings',
@@ -90,6 +90,7 @@ const en = {
   'common.save': 'Save',
   'common.delete': 'Delete',
   'common.edit': 'Edit',
+  'common.view': 'View',
   'common.close': 'Close',
   'common.ok': 'OK',
   // Acknowledging an explanation, which is a different act from confirming a
@@ -130,6 +131,7 @@ const en = {
   'common.targetProgress': 'Target progress: {percent}%',
   'common.taskCount': { one: '{count} task', other: '{count} tasks' },
   'common.logCount': { one: '{count} log', other: '{count} logs' },
+  'common.noteCount': { one: '{count} note', other: '{count} notes' },
 
   // --- statuses, priorities, task types ---
   'status.todo': 'To-do',
@@ -294,7 +296,20 @@ const en = {
   'logs.all': 'All logs',
   'logs.empty': 'No logs yet.',
   'logs.moreTasks': { one: '+{count} more task', other: '+{count} more tasks' },
-  'logs.dayFooter': '{logs} · {tasks}',
+  // The switcher's first half. `nav.logs` cannot serve here — it now names both.
+  'logs.tabLogs': 'Logs',
+
+  // --- notes ---
+  // The Logs page holds two kinds of entry; these name the second one, which is
+  // written and never ticked off.
+  'notes.title': 'Notes',
+  'notes.empty': 'Nothing written yet.',
+  'notes.add': 'Write something',
+  'notes.placeholder': 'Whatever you want to keep.',
+  // The notebook's own empty state, worded like the other day sections' ("none
+  // on this day") rather than as an invitation: the invitation is the Edit
+  // button beside it, and two ways of saying "write here" is one too many.
+  'notes.none': 'None yet.',
 
   // --- calendar ---
   'calendar.prevMonth': 'Previous month',
@@ -586,7 +601,7 @@ const en = {
   'guide.explain.tour.intro':
     'These four pages all read the board you have just built, so there is something to see on each of them even while it is still small. One line on each:',
   'guide.explain.tour.logs':
-    'Logs — everything written, collected by day; a strict task’s entries carry their target progress too.',
+    'Logs — everything written, collected by day; a strict task’s entries carry their target progress too. The switcher in the corner shows just the notes instead — what you write for its own sake, and which never becomes a task.',
   'guide.explain.tour.manage':
     'Manage — the overview: what is on today, what is coming, what has slipped, then a year of completion shading, and projects and tasks broken out below.',
   'guide.explain.tour.calendar':
@@ -601,7 +616,7 @@ const zh: Dict = {
   'app.title': 'WBS · Gantt —— 项目管控',
 
   'nav.gantt': '甘特图',
-  'nav.logs': '日志',
+  'nav.logs': '日志 / 记事本',
   'nav.manage': '管理',
   'nav.calendar': '日历',
   'nav.settings': '设置',
@@ -622,6 +637,7 @@ const zh: Dict = {
   'common.save': '保存',
   'common.delete': '删除',
   'common.edit': '编辑',
+  'common.view': '查看',
   'common.close': '关闭',
   'common.ok': '确定',
   'common.gotIt': '我知道了',
@@ -660,6 +676,7 @@ const zh: Dict = {
   'common.targetProgress': '目标进度：{percent}%',
   'common.taskCount': { one: '{count} 项任务', other: '{count} 项任务' },
   'common.logCount': { one: '{count} 条日志', other: '{count} 条日志' },
+  'common.noteCount': { one: '{count} 条笔记', other: '{count} 条笔记' },
 
   'status.todo': '待办',
   'status.notStarted': '未开始',
@@ -796,7 +813,13 @@ const zh: Dict = {
   'logs.all': '全部日志',
   'logs.empty': '暂无日志。',
   'logs.moreTasks': { one: '还有 {count} 项任务', other: '还有 {count} 项任务' },
-  'logs.dayFooter': '{logs} · {tasks}',
+  'logs.tabLogs': '日志',
+
+  'notes.title': '记事本',
+  'notes.empty': '还没写过什么。',
+  'notes.add': '写点什么',
+  'notes.placeholder': '想写什么写什么。',
+  'notes.none': '暂无',
 
   'calendar.prevMonth': '上个月',
   'calendar.nextMonth': '下个月',
@@ -1048,7 +1071,8 @@ const zh: Dict = {
   'guide.explain.tour.title': '逛一圈',
   'guide.explain.tour.intro':
     '这四个页面读的都是你刚建起来的看板 —— 就算它还很小，每个页面上也有东西可看。各一句：',
-  'guide.explain.tour.logs': '日志 —— 所有写过的内容按天汇总；严格任务的条目还带着目标进度。',
+  'guide.explain.tour.logs':
+    '日志 —— 所有写过的内容按天汇总；严格任务的条目还带着目标进度。右上角可以切到记事本 —— 那是你为自己写的东西，永远不会变成任务。',
   'guide.explain.tour.manage':
     'Manage —— 整体概览：今天该做什么、接下来是什么、哪些逾期了，往下是一年的完成热力图，再往下按项目和任务分列。',
   'guide.explain.tour.calendar':
@@ -1060,7 +1084,7 @@ const fr: Dict = {
   'app.title': 'WBS · Gantt — Contrôle de projet',
 
   'nav.gantt': 'Gantt',
-  'nav.logs': 'Journaux',
+  'nav.logs': 'Journaux / Notes',
   'nav.manage': 'Gestion',
   'nav.calendar': 'Calendrier',
   'nav.settings': 'Paramètres',
@@ -1081,6 +1105,7 @@ const fr: Dict = {
   'common.save': 'Enregistrer',
   'common.delete': 'Supprimer',
   'common.edit': 'Modifier',
+  'common.view': 'Voir',
   'common.close': 'Fermer',
   'common.ok': 'OK',
   'common.gotIt': 'Compris',
@@ -1119,6 +1144,7 @@ const fr: Dict = {
   'common.targetProgress': 'Avancement visé : {percent} %',
   'common.taskCount': { one: '{count} tâche', other: '{count} tâches' },
   'common.logCount': { one: '{count} journal', other: '{count} journaux' },
+  'common.noteCount': { one: '{count} note', other: '{count} notes' },
 
   'status.todo': 'À faire',
   // "Non commencée" is the usual term and reads better, but it needs 90px in the
@@ -1266,7 +1292,13 @@ const fr: Dict = {
   'logs.all': 'Tous les journaux',
   'logs.empty': 'Aucun journal pour l’instant.',
   'logs.moreTasks': { one: '+{count} autre tâche', other: '+{count} autres tâches' },
-  'logs.dayFooter': '{logs} · {tasks}',
+  'logs.tabLogs': 'Journaux',
+
+  'notes.title': 'Notes',
+  'notes.empty': 'Rien d’écrit pour l’instant.',
+  'notes.add': 'Écrire quelque chose',
+  'notes.placeholder': 'Ce que vous voulez garder.',
+  'notes.none': 'Aucune pour l’instant.',
 
   'calendar.prevMonth': 'Mois précédent',
   'calendar.nextMonth': 'Mois suivant',
@@ -1525,7 +1557,7 @@ const fr: Dict = {
   'guide.explain.tour.intro':
     'Ces quatre pages lisent toutes le tableau que vous venez de bâtir : il y a donc quelque chose à voir sur chacune, même réduite. Une ligne pour chacune :',
   'guide.explain.tour.logs':
-    'Journaux — tout ce qui a été écrit, rassemblé par jour ; les entrées d’une tâche stricte portent aussi leur avancement cible.',
+    'Journaux — tout ce qui a été écrit, rassemblé par jour ; les entrées d’une tâche stricte portent aussi leur avancement cible. Le sélecteur dans le coin n’affiche que les notes — ce que vous écrivez pour vous, et qui ne devient jamais une tâche.',
   'guide.explain.tour.manage':
     'Gestion — la vue d’ensemble : ce qui est au programme aujourd’hui, ce qui arrive, ce qui a glissé, puis une année de complétion en nuance, et les projets et les tâches détaillés en dessous.',
   'guide.explain.tour.calendar':

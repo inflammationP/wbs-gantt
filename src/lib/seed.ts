@@ -1,4 +1,4 @@
-import { Chore, Habit, Project, Task, TaskLog } from '../types'
+import { Chore, Habit, Note, Project, Task, TaskLog } from '../types'
 
 // Fresh installs start empty — no bundled demo data.
 //
@@ -11,6 +11,7 @@ export function buildSeed(): {
   logs: TaskLog[]
   chores: Chore[]
   habits: Habit[]
+  notes: Note[]
 } {
-  return { projects: [], tasks: [], logs: [], chores: [], habits: [] }
+  return { projects: [], tasks: [], logs: [], chores: [], habits: [], notes: [] }
 }

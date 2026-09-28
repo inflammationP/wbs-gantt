@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { create } from 'zustand'
-import { AppView, Chore, Habit, Project, Task, TaskLog, TaskPriority, TaskType, ViewMode } from '../types'
+import { AppView, Chore, Habit, Note, Project, Task, TaskLog, TaskPriority, TaskType, ViewMode } from '../types'
 import { ALL_DAYS, runsOn } from '../lib/habits'
 import { todayISO, addUnitISO, Unit, addDays, diffDays, pad, toDate, toISO } from '../lib/dates'
 import { timelineRange, DateRange } from '../lib/timeline'
@@ -92,10 +92,11 @@ interface State {
   projects: Project[]
   tasks: Task[]
   logs: TaskLog[]
-  // Chores and habits live outside the three above on purpose — see `Chore` and
-  // `Habit` in types.ts.
+  // Chores, habits and notes live outside the three above on purpose — see
+  // `Chore`, `Habit` and `Note` in types.ts.
   chores: Chore[]
   habits: Habit[]
+  notes: Note[]
   activeView: AppView
   // Bumped by `openGantt` and used as the Gantt page's React key, so clicking
   // the nav item remounts it rather than reusing the mounted one.
@@ -195,6 +196,33 @@ interface State {
   deleteChore: (id: string) => void
 
   /**
+   * Write a day's notebook. One action, because a day holds one box — see
+   * `Note` in types.ts.
+   *
+   * An empty body deletes the note rather than storing a blank one: the store
+   * shape has no way to tell "nothing written" from "written and cleared", and
+   * inventing one would put an empty note on every day the user ever opened.
+   * Writing the same text back is a no-op, which is what keeps a blur that
+   * changed nothing from bumping `updatedAt` and writing the board to disk.
+   */
+  setNote: (date: string, body: string) => void
+
+  /**
+   * Add a paragraph to a day, keeping whatever is already written there.
+   *
+   * The other half of `setNote`, and the two are not interchangeable: an edit
+   * replaces the box's contents, while this puts text *into* it. That is what
+   * makes "write something" a thing you can do on a day you have already
+   * written on without standing in front of the whole of it.
+   *
+   * Joined with a blank line, the same join `collapseNotes` makes when it folds
+   * an older blob down. No clock, no divider, nothing that marks one write off
+   * from the next — a day is one box, and where the paragraphs break is the
+   * only structure it has.
+   */
+  appendNote: (date: string, body: string) => void
+
+  /**
    * `init` carries what the editor can also set; the quick path passes a title
    * and nothing else. Read field by field rather than spread, so a new habit
    * cannot be born paused or pre-ticked by a caller that happened to have a
@@ -250,6 +278,7 @@ if (!loaded) {
     logs: initial.logs,
     chores: initial.chores,
     habits: initial.habits,
+    notes: initial.notes,
   })
 }
 
@@ -363,6 +392,7 @@ export const useStore = create<State>()((set, get) => ({
   logs: initial.logs,
   chores: initial.chores,
   habits: initial.habits,
+  notes: initial.notes,
   activeView: 'gantt',
   ganttKey: 0,
   selectedTaskId: null,
@@ -764,6 +794,42 @@ export const useStore = create<State>()((set, get) => ({
     })),
   deleteChore: (id) => set((s) => ({ chores: s.chores.filter((c) => c.id !== id) })),
 
+  // Three ways in, one way out: a blank body removes the note, which is the
+  // only "delete" this feature has and needs no confirm — the text is right
+  // there in the box that is about to lose it.
+  setNote: (date, body) =>
+    set((s) => {
+      const existing = s.notes.find((n) => n.date === date)
+      // Whitespace-only counts as empty: a note of nothing but newlines would
+      // draw a card saying the user had written something on that day.
+      const text = body.trim() ? body : ''
+      if (existing && existing.body === text) return {}
+      if (!text) {
+        return existing ? { notes: s.notes.filter((n) => n.date !== date) } : {}
+      }
+      const updatedAt = new Date().toISOString()
+      return {
+        notes: existing
+          ? s.notes.map((n) => (n.date === date ? { ...n, body: text, updatedAt } : n))
+          : [...s.notes, { date, body: text, updatedAt }],
+      }
+    }),
+  appendNote: (date, body) =>
+    set((s) => {
+      const text = body.trim()
+      if (!text) return {}
+      const existing = s.notes.find((n) => n.date === date)
+      return {
+        notes: existing
+          ? s.notes.map((n) =>
+              n.date === date
+                ? { ...n, body: `${n.body}\n\n${text}`, updatedAt: new Date().toISOString() }
+                : n,
+            )
+          : [...s.notes, { date, body: text, updatedAt: new Date().toISOString() }],
+      }
+    }),
+
   addHabit: (title, init) => {
     const now = new Date().toISOString()
     set((s) => ({
@@ -850,6 +916,7 @@ export const useStore = create<State>()((set, get) => ({
       logs: data.logs ?? [],
       chores: data.chores ?? [],
       habits: data.habits ?? [],
+      notes: data.notes ?? [],
       selectedTaskId: null,
       selectedProjectId: null,
       projectFilter: 'all',
@@ -1041,15 +1108,21 @@ export const useStore = create<State>()((set, get) => ({
   },
 }))
 
-// Persist data (only) to localStorage whenever projects/tasks/logs/chores/habits
-// change.
+// Persist data (only) to localStorage whenever projects/tasks/logs/chores/habits/
+// notes change.
+//
+// Both halves of this are load-bearing, and neither is checked by the compiler:
+// a collection missing from the condition is a collection whose edits are never
+// written, and one missing from the literal is a collection the next write of
+// anything else silently erases.
 useStore.subscribe((state, prev) => {
   if (
     state.projects !== prev.projects ||
     state.tasks !== prev.tasks ||
     state.logs !== prev.logs ||
     state.chores !== prev.chores ||
-    state.habits !== prev.habits
+    state.habits !== prev.habits ||
+    state.notes !== prev.notes
   ) {
     saveData({
       projects: state.projects,
@@ -1057,6 +1130,7 @@ useStore.subscribe((state, prev) => {
       logs: state.logs,
       chores: state.chores,
       habits: state.habits,
+      notes: state.notes,
     })
   }
 })

@@ -1,4 +1,4 @@
-import { Chore, Habit, Project, Task, TaskLog } from '../types'
+import { Chore, Habit, Note, Project, Task, TaskLog } from '../types'
 import { DEFAULT_LANG, isLang, Lang } from '../lib/i18n'
 import { DEFAULT_THEME, isThemeId, ThemeId } from '../lib/theme'
 import { ALL_DAYS } from '../lib/habits'
@@ -15,16 +15,23 @@ export interface PersistedData {
   tasks: Task[]
   logs: TaskLog[]
   /**
-   * Chores and habits, kept apart from `tasks` on purpose — see `Chore` and
-   * `Habit` in types.ts.
+   * Chores, habits and notes, kept apart from `tasks` on purpose — see `Chore`,
+   * `Habit` and `Note` in types.ts.
    *
    * Optional in the type, unlike the three above: every blob written before
-   * chores — or before habits — has no such field, and `normalize` is what turns
-   * that into an empty array. Declaring it required would only move the same
-   * admission to a cast at each read.
+   * chores — or before habits, or before notes — has no such field, and
+   * `normalize` is what turns that into an empty array. Declaring it required
+   * would only move the same admission to a cast at each read.
+   *
+   * The cost of that optionality is that `normalize` is the *only* place the
+   * compiler insists a new collection be named. Every other drop point —
+   * `exportJson`, `parseImport`, the store's save literal and its subscriber —
+   * compiles clean while quietly omitting it, which is why they are worth
+   * checking by hand when one is added.
    */
   chores?: Chore[]
   habits?: Habit[]
+  notes?: Note[]
 }
 
 /**
@@ -331,6 +338,39 @@ export function savePrefs(prefs: Prefs): void {
   }
 }
 
+/**
+ * One notebook per day, out of whatever the blob holds.
+ *
+ * A day is a single box now, so several entries for one date can only be
+ * leftovers from the shape this used to have — notes were a collection of
+ * entries with ids, several to a day, before that was recognised as the wrong
+ * model. Their text is **joined** rather than all but the last dropped. This is
+ * the user's writing, it is the one thing in the blob that cannot be
+ * reconstructed from anything else, and the cost of a stray blank line between
+ * two paragraphs is nothing against the cost of losing one of them.
+ *
+ * An absent `date` is left as the empty string rather than guessed at, which
+ * files the note under no day and hides it — where inventing one would drop it
+ * into some day's card on a date nobody chose.
+ */
+function collapseNotes(raw: { date?: string; body?: string; updatedAt?: string }[]): Note[] {
+  const byDate = new Map<string, Note>()
+  for (const n of raw) {
+    const date = n.date ?? ''
+    const body = (n.body ?? '').trim()
+    if (!body) continue
+    const seen = byDate.get(date)
+    byDate.set(date, {
+      date,
+      body: seen ? `${seen.body}\n\n${body}` : body,
+      // The later of the two, so a collapsed pair keeps saying when the day was
+      // last written rather than when its first half was.
+      updatedAt: seen && seen.updatedAt > (n.updatedAt ?? '') ? seen.updatedAt : (n.updatedAt ?? ''),
+    })
+  }
+  return [...byDate.values()]
+}
+
 // Normalize data loaded from disk or import: backfill `type`/`strictProgress`,
 // coerce missing dates to null, and default missing collections. This is also
 // the invariant repair point for to-dos — a task marked `isTodo` always comes
@@ -377,6 +417,7 @@ function normalize(data: PersistedData): LoadedData {
       pauses: Array.isArray(h.pauses) ? h.pauses : [],
       doneDays: Array.isArray(h.doneDays) ? h.doneDays : [],
     })),
+    notes: collapseNotes(Array.isArray(data.notes) ? data.notes : []),
     tasks: data.tasks.map((t) => {
       const isLT = t.type === 'long-term'
       const isTodo = t.isTodo === true
@@ -395,6 +436,11 @@ function normalize(data: PersistedData): LoadedData {
         // not come back with its work forgotten.
         confirmedDays: Array.isArray(t.confirmedDays) ? t.confirmedDays : [],
         priority: isTodo ? null : (t.priority ?? 'medium'),
+        // A hand-edited file can put anything here, and the sibling comparator
+        // subtracts two of them — a string would compare as `NaN` and leave the
+        // order implementation-defined. Anything that is not a finite number
+        // reads as "no opinion", which is the state every task starts in.
+        order: Number.isFinite(t.order) ? (t.order as number) : undefined,
       }
     }),
     logs: (data.logs ?? []).map((l) => ({
@@ -436,6 +482,7 @@ export function exportJson(data: PersistedData): string {
       logs: data.logs,
       chores: data.chores ?? [],
       habits: data.habits ?? [],
+      notes: data.notes ?? [],
     },
     null,
     2,
@@ -453,5 +500,6 @@ export function parseImport(json: string): LoadedData {
     logs: parsed.logs ?? [],
     chores: parsed.chores ?? [],
     habits: parsed.habits ?? [],
+    notes: parsed.notes ?? [],
   })
 }

@@ -242,3 +242,28 @@ body {
   display: flex;
   box-shadow: -16px 0 32px rgb(0 0 0 / 0.35);
 }
+
+/* ── The Logs page's two modes ──────────────────────────────────────────────
+   Flipping between the logs and the notes replaces the whole grid, and a
+   `transition` cannot express that: it animates a value that changed, and here
+   nothing changes — different elements are mounted. So this is a mount
+   animation, replayed by keying the grid on the mode.
+
+   Deliberately small: 160ms and 6px reads as "that is another page", where a
+   longer or bouncier one would read as "something just happened". */
+@keyframes swap-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.swap-in {
+  animation: swap-in 160ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .swap-in {
+    animation: none;
+  }
+}

@@ -35,6 +35,21 @@ export interface Task {
   pauseDate: string | null // yyyy-MM-dd, set while paused
   pauses: { pauseDate: string; resumeDate: string }[]
   priority: TaskPriority | null // null only for to-dos
+  /**
+   * Where this task sits among its siblings, once the user has said so by
+   * dragging it. Absent means "no opinion": the sibling list falls back to the
+   * date-and-name sort it has always used.
+   *
+   * Deliberately not backfilled on load. Deriving an order for every task from
+   * the sort it happens to be in would freeze today's arrangement as a fact —
+   * and a task created tomorrow with an earlier start date, which today appears
+   * above its siblings, would then be appended to the bottom instead.
+   *
+   * Sparse by design, and every value is relative to the other members of one
+   * sibling list: `moveTasks` renumbers the whole group on every drop, so a
+   * group is either wholly ordered or not ordered at all.
+   */
+  order?: number
   tags: string[]
   dependencies: string[] // task ids
   createdAt: string
@@ -119,6 +134,38 @@ export interface Habit {
   pauses: { pauseDate: string; resumeDate: string }[]
   doneDays: string[] // yyyy-MM-dd, the days it was ticked
   createdAt: string
+  updatedAt: string
+}
+
+/**
+ * A day's notebook — the thing you write and never tick off.
+ *
+ * Its own collection rather than a `Task` or a `Chore`, and the difference is
+ * one word: *state*. A task has a status, a chore has a `done`. A note has
+ * neither, and that is the whole point of it — the feature exists because the
+ * user was parking stray writing in a task called "supplement for logs", where
+ * it silently acquired a schedule, a priority, a progress and a log obligation
+ * it never asked for.
+ *
+ * **One per day, keyed by `date`.** A day is a single box you keep adding to,
+ * not a list of entries — so there is nothing to distinguish one write from the
+ * next, and no `id`. A collection keyed by its own date cannot hold two notes
+ * for one day, which makes "one note per day" a property of the shape rather
+ * than a rule every write path has to remember.
+ *
+ * `updatedAt` is the last write and nothing else. There is deliberately no
+ * `createdAt`: a box edited over a week has no single beginning, and the writer
+ * is the Logs page's day card, which needs to say *when it was last touched* if
+ * it says anything at all.
+ *
+ * Nothing reads `notes` except the Logs page, the day panel and the Today page.
+ * Not the tree, not the roll-ups, not the timeline, not the reminder digest,
+ * not the heatmap — the isolation is structural rather than a check each of
+ * those places has to remember, exactly as it is for `Chore` and `Habit`.
+ */
+export interface Note {
+  date: string // yyyy-MM-dd, and the identity of the note
+  body: string // free text; a newline is a newline
   updatedAt: string
 }
 
