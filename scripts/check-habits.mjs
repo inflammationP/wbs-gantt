@@ -25,6 +25,31 @@ import { createServer } from 'vite'
 globalThis.document = { documentElement: { dataset: {}, style: { setProperty() {} } } }
 globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} }
 
+// The fixture below is written around one specific week: 2026-08-31 is a
+// Monday, its "today" 2026-09-22 a Tuesday, and every assertion leans on that
+// layout. It used to *assert* that the real clock agreed — which made the
+// script a time bomb that went off the morning after, blaming the rules for
+// what was the calendar. The clock is frozen instead: `new Date()` and
+// `Date.now()` stand still at the fixture's Tuesday noon, so the weekday each
+// date was chosen for stays the weekday it has. Both readers of the clock go
+// through it — this file's `today()` helper, and `todayISO()` inside the
+// store's `toggleHabit`.
+//
+// `setTime` on a real instance rather than returning a substitute object:
+// the subclass prototype chain stays intact, so `instanceof Date` keeps
+// meaning what it meant for anything downstream that asks.
+const RealDate = Date
+const FROZEN = new RealDate(2026, 8, 22, 12, 0, 0) // Tue 2026-09-22, local midday
+globalThis.Date = class extends RealDate {
+  constructor(...args) {
+    super(...args)
+    if (args.length === 0) this.setTime(FROZEN.getTime())
+  }
+  static now() {
+    return FROZEN.getTime()
+  }
+}
+
 const server = await createServer({
   server: { middlewareMode: true },
   appType: 'custom',
@@ -42,10 +67,10 @@ const today = (offset) => {
 }
 const TODAY = today(0)
 
-// The fixture's own premise, asserted before anything is built on it. Every date
-// below is chosen for the weekday it falls on, so if one of them is not the day
-// the test believes, the failures downstream would blame the rule.
-assert.equal(TODAY, '2026-09-22', 'fixture dates below assume this is today')
+// The fixture's premise is the frozen clock above, not the calendar, so the
+// weekday assertions below are timeless: they pin the Monday-first convention
+// the whole fixture is laid out with.
+assert.equal(TODAY, '2026-09-22', 'the frozen clock is the fixture itself')
 assert.equal(weekdayIndex(new Date(2026, 8, 21)), 0) // Mon
 assert.equal(weekdayIndex(new Date(2026, 8, 22)), 1) // Tue
 assert.equal(weekdayIndex(new Date(2026, 8, 23)), 2) // Wed
