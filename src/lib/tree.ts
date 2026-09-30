@@ -1,5 +1,5 @@
 import { Project, Task, TaskLog, TaskStatus } from '../types'
-import { taskProgress } from './progress'
+import { completedOn, taskProgress } from './progress'
 import { todayISO } from './dates'
 
 export interface EffState {
@@ -198,6 +198,32 @@ export function placeTasks(
 }
 
 /**
+ * The names above a task, nearest parent first — the chain a list prints before
+ * a row to say which branch it came from.
+ *
+ * `byId` is a parameter rather than a `tasks` array because both callers are
+ * already walking a list of rows: building the index once per call is the
+ * difference between one pass and one per row. `seen` is not decoration —
+ * hand-edited data can hold a cycle, and without it this walk would not return.
+ */
+export function ancestorNames(
+  task: { id: string; parentId: string | null },
+  byId: Map<string, Task>,
+): string[] {
+  const out: string[] = []
+  const seen = new Set([task.id])
+  let p = task.parentId
+  while (p != null && !seen.has(p)) {
+    const parent = byId.get(p)
+    if (!parent) break
+    seen.add(p)
+    out.push(parent.name)
+    p = parent.parentId
+  }
+  return out
+}
+
+/**
  * The names above each row that a list has to show to keep two rows apart.
  *
  * A flat list has neither the Gantt's indentation nor its WBS column, so two
@@ -226,23 +252,9 @@ export function nameQualifiers(
   tasks: Task[],
 ): Map<string, string[]> {
   const byId = new Map(tasks.map((t) => [t.id, t]))
-  // What each row has left to spend, nearest ancestor first. `seen` is not
-  // decoration: hand-edited data can hold a cycle, and without it this walk
-  // would not return.
+  // What each row has left to spend, nearest ancestor first.
   const chains = new Map<string, string[]>()
-  for (const r of rows) {
-    const chain: string[] = []
-    const seen = new Set([r.id])
-    let p = r.parentId
-    while (p != null && !seen.has(p)) {
-      const parent = byId.get(p)
-      if (!parent) break
-      seen.add(p)
-      chain.push(parent.name)
-      p = parent.parentId
-    }
-    chains.set(r.id, chain)
-  }
+  for (const r of rows) chains.set(r.id, ancestorNames(r, byId))
 
   const spent = new Map<string, number>()
   const label = (r: { id: string; name: string }) =>
@@ -323,11 +335,29 @@ export function effectiveStates(tasks: Task[], logs: TaskLog[]): Map<string, Eff
     } else if (kids.length === 0) {
       // Leaf: long-term goals always have a real start and an unresolved end.
       const progress = taskProgress(t, logs, new Date())
+      const status = deriveTaskStatus(t, progress, todayISO())
+      // A finished task ends the day it finished, not the day it was meant to.
+      // The bar is drawn from this, so a task done on the 8th of a window
+      // running to the 20th was carrying twelve days of work it had already
+      // handed in — and the parents rolled up from it were stretched to match,
+      // since their span is read off their children's ends.
+      //
+      // Derived, not written into `endDate`: the plan is not the record. Every
+      // consumer that means "how long was this meant to take" still reads the
+      // stored field — the pause arithmetic, `countableDays`, the deadline the
+      // Calendar marks — and a task taken back off `completed` gets its window
+      // back, because nothing was overwritten.
+      //
+      // No floor is needed against a finish before the start: `completedOn`
+      // cannot name one, because `taskProgress` reads "not started" on such a
+      // day and that is not 100. The bar has one place this cannot go wrong, and
+      // it is not here.
+      const done = status === 'completed' ? completedOn(t, logs) : null
       r = {
         start: t.startDate,
-        end: t.type === 'long-term' ? null : t.endDate,
+        end: t.type === 'long-term' ? null : (done ?? t.endDate),
         progress,
-        status: deriveTaskStatus(t, progress, todayISO()),
+        status,
       }
     } else {
       const es = kids.map(derive)

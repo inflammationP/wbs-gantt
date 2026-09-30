@@ -6,7 +6,7 @@ import { Task, TaskLog } from '../types'
 import { addDays, toDate, toISO, todayISO } from '../lib/dates'
 import { isStrictLeaf } from '../lib/dayTasks'
 import { buildChildrenMap } from '../lib/tree'
-import { taskProgress } from '../lib/progress'
+import { countableDays, taskProgress } from '../lib/progress'
 import { useT } from '../lib/useT'
 
 // `inputCls` carries `border-border`, and a red box has to not race it in the
@@ -55,6 +55,15 @@ interface Props {
  * still built from the same six conditions (`pendingLogsUnder`, `strictLogRate`
  * in lib/dayTasks.ts), so the count on the ring and the names in the list cannot
  * drift apart — losing the picker cost nothing there.
+ *
+ * Then the parent's own write went too, which is what the guard below is. The
+ * batch picker was already saying a container does not do its contents' work;
+ * a button that writes one entry on the container itself says the smaller half
+ * of the same wrong thing. A task that gains a child is a folder from that
+ * moment, and a folder has no progress of its own for a log to move.
+ *
+ * That last step is about *new* entries only — the history is untouched, and
+ * the guard names `existing` for exactly that reason.
  */
 export function LogDialog({ taskId, existing, defaultDate, onClose }: Props) {
   const t = useT()
@@ -67,6 +76,22 @@ export function LogDialog({ taskId, existing, defaultDate, onClose }: Props) {
   const task = tasks.find((x) => x.id === taskId)
 
   if (!task) return null
+
+  // A task with children is a folder, and a folder does not keep a log.
+  //
+  // New entries only: `existing` is untouched by this. What a parent keeps is
+  // the history it wrote while it was still a leaf, and that history stays
+  // manageable — editing one fixes a typo, deleting one removes something the
+  // user no longer wants on record, and neither is the folder pretending to be
+  // a task. What the folder cannot do is *start* a new day's work, because a
+  // parent has no progress of its own for a log to move (`taskProgress` is only
+  // ever read off leaves) — a write here would be a number nothing reads.
+  //
+  // Every caller hides its own way in — the context menu's item, the panel's
+  // button — and this is the line that makes the rule true rather than merely
+  // well hidden. Without it the rule lives in each of those places, and the
+  // fifth one added later will not remember.
+  if (!existing && tasks.some((x) => x.parentId === task.id)) return null
 
   const task_ = task
 
@@ -198,6 +223,22 @@ function LogForm({
     setProg((p) => ({ ...p, input: String(p.src === 'delta' ? absolute - base : absolute) }))
   }
 
+  // What one day of this task is worth, when the span is split evenly: the
+  // same number every day, fixed by the window rather than by how much has been
+  // written so far.
+  //
+  // A shortcut, not a rule. Pressing it fills one of the two boxes with a
+  // number and the user can then edit it like anything they typed — what gets
+  // stored is still a plain figure, and nothing downstream knows this button
+  // exists. That is the whole point: the same arithmetic the app already
+  // derives for old data (see the auto-accumulate in `taskProgress`), offered
+  // as a keystroke instead of as a fallback nobody can see.
+  const dayShare = useMemo(() => {
+    if (task.startDate == null || task.endDate == null) return null
+    const days = countableDays(task, task.startDate, task.endDate)
+    return days > 0 ? Math.round(100 / days) : null
+  }, [task])
+
   const taRef = useRef<HTMLTextAreaElement>(null)
   // Caret position to restore after the controlled re-render; setting
   // `.value` on a textarea resets the selection to the end.
@@ -316,13 +357,57 @@ function LogForm({
               />
             </Field>
           </div>
-          <div className={`text-[11px] mt-1 ${error ? 'text-delayed' : 'text-dim'}`}>
-            {error === 'backward'
-              ? t('log.progressBackward')
-              : error === 'missing'
-                ? t('log.progressRequired', { add: t('log.progressAdd') })
-                : t('log.currentProgress', { percent: base })}
+          <div className="flex items-start justify-between gap-2 mt-1">
+            <div className={`text-[11px] ${error ? 'text-delayed' : 'text-dim'}`}>
+              {error === 'backward'
+                ? t('log.progressBackward')
+                : error === 'missing'
+                  ? t('log.progressRequired', { add: t('log.progressAdd') })
+                  : t('log.currentProgress', { percent: base })}
+            </div>
+            {/* Splits the span across the window's days, and calls a remainder
+                below a fifth of one a completion. Right of the line rather than
+                under the boxes, because it is a way of filling one of them —
+                not a third thing to fill in. */}
+            {dayShare != null && (
+              <button
+                type="button"
+                onClick={() => {
+                  setError(null)
+                  // Advance one day = add (1 ÷ the task's days) × 100.
+                  //
+                  // What is left over after that is then read: a remainder
+                  // below a *fifth* of a day's share is a rounding artifact,
+                  // not work. On a 3-day task the shares are 33, 33, 33 — after
+                  // two logs the task reads 66, and the last day would have to
+                  // claim 34 to land on 100, or write a 1% log to clear the
+                  // crumb. Past that threshold the task is taken as complete and
+                  // the box is filled with 100 instead.
+                  //
+                  // A fifth, not a whole day, because the gap this closes is
+                  // only ever the rounding's: it is a crumb left by 100 ÷ N not
+                  // being a whole number, and one whole day is a day's work
+                  // that still deserves its log.
+                  const after = clampPct(base + dayShare)
+                  setProg(
+                    100 - after < dayShare / 5
+                      ? { src: 'absolute', input: '100' }
+                      : { src: 'delta', input: String(dayShare) },
+                  )
+                }}
+                className="shrink-0 text-[11px] text-accent hover:text-fg"
+              >
+                {t('log.byDays')}
+              </button>
+            )}
           </div>
+          {/* The rule in words, under the boxes. It used to be the button's
+              `title`, which is the browser's own tooltip and cannot be made to
+              appear any sooner than about a second — too slow to be read as an
+              explanation of the thing the pointer is resting on. */}
+          {dayShare != null && (
+            <div className="mt-1 text-[11px] text-dim leading-snug">{t('log.byDaysHint')}</div>
+          )}
         </div>
       )}
 

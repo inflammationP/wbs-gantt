@@ -1,7 +1,8 @@
-import { Chore, Habit, Note, Project, Task, TaskLog } from '../types'
+import { Chore, Habit, Note, Project, Task, TaskLog, TaskPriority } from '../types'
 import { DEFAULT_LANG, isLang, Lang } from '../lib/i18n'
 import { DEFAULT_THEME, isThemeId, ThemeId } from '../lib/theme'
 import { ALL_DAYS } from '../lib/habits'
+import { PRIORITY_ORDER } from '../lib/ui'
 import {
   CopyOverrides,
   DigestCategory,
@@ -32,6 +33,20 @@ export interface PersistedData {
   chores?: Chore[]
   habits?: Habit[]
   notes?: Note[]
+  /**
+   * What the user calls each to-do folder, by folder id.
+   *
+   * A folder is a *run of consecutive to-do siblings*, synthesized by
+   * `buildRows` and recomputed on every render — there is no record of it to
+   * hang a name on, which is the whole reason this is a map beside the tasks
+   * rather than a field on one. The key is `todoGroupId(parentId, projectId)`,
+   * the identity the tree already gives a folder, so the name survives the run
+   * being split, re-ordered or dragged out and back.
+   *
+   * Sparse: a folder nobody named has no entry, and the row falls back to the
+   * count it has always shown.
+   */
+  todoFolders?: Record<string, string>
 }
 
 /**
@@ -418,12 +433,20 @@ function normalize(data: PersistedData): LoadedData {
       doneDays: Array.isArray(h.doneDays) ? h.doneDays : [],
     })),
     notes: collapseNotes(Array.isArray(data.notes) ? data.notes : []),
+    // Written out rather than cast through: this one arrives from a hand-edited
+    // file or a JSON export, and a value that is not a string would be rendered
+    // as a folder name and stored back on the next save.
+    todoFolders: readFolderNames(data.todoFolders),
     tasks: data.tasks.map((t) => {
       const isLT = t.type === 'long-term'
       const isTodo = t.isTodo === true
       return {
         ...t,
-        type: isLT && !isTodo ? 'long-term' : 'phase',
+        // A to-do keeps no type, and that has to survive a round trip: this
+        // line is what the app writes back on every load, so normalising a
+        // to-do to 'phase' here would re-answer the question the start dialog
+        // is supposed to ask.
+        type: isTodo ? null : isLT ? 'long-term' : 'phase',
         isTodo,
         startDate: isTodo ? null : (t.startDate ?? null),
         endDate: isTodo || isLT ? null : (t.endDate ?? null),
@@ -435,7 +458,7 @@ function normalize(data: PersistedData): LoadedData {
         // fields: logs survive that trip too, and a task that comes back should
         // not come back with its work forgotten.
         confirmedDays: Array.isArray(t.confirmedDays) ? t.confirmedDays : [],
-        priority: isTodo ? null : (t.priority ?? 'medium'),
+        priority: isTodo ? null : readPriority(t.priority),
         // A hand-edited file can put anything here, and the sibling comparator
         // subtracts two of them — a string would compare as `NaN` and leave the
         // order implementation-defined. Anything that is not a finite number
@@ -450,6 +473,41 @@ function normalize(data: PersistedData): LoadedData {
       targetProgress: l.targetProgress ?? null,
     })),
   }
+}
+
+/**
+ * A priority out of a saved file, or the ordinary one.
+ *
+ * This is a trust boundary and the check is not decoration. `priorityMeta` reads
+ * `PRIORITY_META[p]` and then `.token` off it, so a value with no entry there is
+ * not a wrong colour — it is a thrown exception on the first render that shows
+ * the task. Anything unrecognised therefore falls back rather than through.
+ *
+ * The `'urgent'` line is the other half: that level was renamed to `'top'`, and
+ * every board saved before the rename still says the old word. It has no entry
+ * in `PRIORITY_META` any more, which is exactly the crash above — so it is read
+ * as what it is now. Removing this line would look like clearing out a dead
+ * string, and would take the priority off every task on every existing board.
+ * `scripts/check-task-tree.mjs` is what holds that.
+ */
+export function readPriority(v: unknown): TaskPriority {
+  if (v === 'urgent') return 'top'
+  return PRIORITY_ORDER.includes(v as TaskPriority) ? (v as TaskPriority) : 'medium'
+}
+
+/**
+ * The folder names out of a saved file, keeping only the ones that are names.
+ *
+ * Blank is not a name: a folder called "" has to read as unnamed, or the row
+ * would print an empty label instead of the count it falls back to.
+ */
+function readFolderNames(v: unknown): Record<string, string> {
+  if (v == null || typeof v !== 'object' || Array.isArray(v)) return {}
+  const out: Record<string, string> = {}
+  for (const [id, name] of Object.entries(v as Record<string, unknown>)) {
+    if (typeof name === 'string' && name.trim()) out[id] = name
+  }
+  return out
 }
 
 export function loadData(): LoadedData | null {
@@ -483,6 +541,7 @@ export function exportJson(data: PersistedData): string {
       chores: data.chores ?? [],
       habits: data.habits ?? [],
       notes: data.notes ?? [],
+      todoFolders: data.todoFolders ?? {},
     },
     null,
     2,
@@ -501,5 +560,6 @@ export function parseImport(json: string): LoadedData {
     chores: parsed.chores ?? [],
     habits: parsed.habits ?? [],
     notes: parsed.notes ?? [],
+    todoFolders: parsed.todoFolders ?? {},
   })
 }

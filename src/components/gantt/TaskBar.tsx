@@ -36,6 +36,9 @@ export function TaskBar({ row, timeline, rowH }: { row: RowTask; timeline: Timel
 
   const isGoal = row.task.type === 'long-term'
   const isParent = row.hasKids
+  // Finished: drawn to the day it finished, and not a thing you drag. See
+  // `begin` for why those two go together.
+  const finished = row.eff.status === 'completed'
   const meta = STATUS_META[row.eff.status]
 
   // Continuous x position of the start (and, for phases, the exclusive end).
@@ -73,6 +76,12 @@ export function TaskBar({ row, timeline, rowH }: { row: RowTask; timeline: Timel
     if (isGoal && mode !== 'move') return
     e.stopPropagation()
     e.preventDefault()
+    // A finished task's bar is its record, not its plan. It is drawn to the day
+    // it finished, and every one of these drags writes `endDate` — which that
+    // drawing does not read. The bar would snap straight back on release, having
+    // quietly re-planned the task underneath it. The dialog is where a finished
+    // task gets re-planned; the board is where you look at it.
+    if (finished) return
     const el = barRef.current
     if (!el) return
     el.setPointerCapture(e.pointerId)
@@ -200,7 +209,15 @@ export function TaskBar({ row, timeline, rowH }: { row: RowTask; timeline: Timel
       cur = p.resumeDate
     }
     if (row.task.paused && row.task.pauseDate) pushSeg(cur, row.task.pauseDate)
-    else if (row.task.endDate) pushSeg(cur, row.task.endDate)
+    else {
+      // The end the task actually reached. For everything unfinished that is
+      // the stored `endDate` — `effectiveStates` hands the same value straight
+      // back — and for a finished task it is the day it finished, which is the
+      // whole point of drawing this from `eff` rather than from the field. The
+      // bar is the picture, so it is the picture that has to move.
+      const end = row.eff.end ?? row.task.endDate
+      if (end) pushSeg(cur, end)
+    }
   }
 
   if (segs.length === 0) return null
@@ -215,7 +232,7 @@ export function TaskBar({ row, timeline, rowH }: { row: RowTask; timeline: Timel
     return (
       <div
         ref={barRef}
-        className="absolute rounded-[2px] border cursor-grab active:cursor-grabbing overflow-hidden select-none"
+        className={`absolute rounded-[2px] border overflow-hidden select-none ${finished ? '' : 'cursor-grab active:cursor-grabbing'}`}
         style={{ left, width, top, height: barH, background: sigAlpha(barToken, 0.16), borderColor: sig(barToken), zIndex: 10 }}
         onPointerDown={begin('move')}
         onPointerMove={onMove}
@@ -232,7 +249,7 @@ export function TaskBar({ row, timeline, rowH }: { row: RowTask; timeline: Timel
             {row.task.name}
           </div>
         )}
-        {!isParent && (
+        {!isParent && !finished && (
           <>
             <div onPointerDown={begin('start')} className="absolute inset-y-0 left-0 w-2 cursor-ew-resize" style={{ zIndex: 2 }} />
             <div onPointerDown={begin('end')} className="absolute inset-y-0 right-0 w-2 cursor-ew-resize" style={{ zIndex: 2 }} />

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { NotebookText, Pencil, Trash2, X } from 'lucide-react'
+import { FolderTree, NotebookText, Pencil, Trash2, X } from 'lucide-react'
 import { Task, TaskLog } from '../types'
 import { useStore } from '../store/useStore'
 import { computeWbs, effectiveStates, nameQualifiers, todoCascadeIds } from '../lib/tree'
@@ -13,6 +13,7 @@ import { formatDayMonthYear } from '../lib/i18n'
 import { useLang, useT } from '../lib/useT'
 import { CompletionHeatmap } from './CompletionHeatmap'
 import { LogDialog } from './LogDialog'
+import { TaskTreeDialog } from './TaskTreeDialog'
 import { StartTodoDialog } from './StartTodoDialog'
 import { useDialogs } from './dialogs'
 
@@ -45,6 +46,7 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
   const setTaskTodo = useStore((s) => s.setTaskTodo)
 
   const [logDialog, setLogDialog] = useState<{ existing?: TaskLog | null } | null>(null)
+  const [treeOpen, setTreeOpen] = useState(false)
   const [startTodo, setStartTodo] = useState<string[] | null>(null)
   const [showHistory, setShowHistory] = useState(true)
   const [showPauses, setShowPauses] = useState(false)
@@ -124,7 +126,11 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
       </div>
 
       <div ref={bodyRef} className="flex-1 overflow-auto p-4 space-y-4">
-        {isLoggable && (
+        {/* Not on a parent. It grew children, so it is a folder now and its
+            progress is theirs; there is nothing here for a log to move. What
+            takes this button's place is the "still to log" list below, which is
+            the thing a parent is actually for. */}
+        {isLoggable && !hasKids && (
           <button onClick={() => setLogDialog({ existing: null })} className="w-full h-8 inline-flex items-center justify-center gap-1.5 text-[12px] font-medium bg-accent text-on-accent rounded-[3px] hover:brightness-110">
             <NotebookText size={14} /> {t('log.write')}
           </button>
@@ -186,6 +192,11 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
                 <div key={log.id} className="border border-border rounded-[3px] p-2">
                   <div className="flex items-center justify-between mb-1">
                     <span className="font-mono text-[11px] text-dim">{formatDate(log.date)}</span>
+                    {/* Pencil and bin stay on a parent's history. Only the
+                        *new* entry is the folder's problem — the entries below
+                        were written while this task was still a leaf, and
+                        correcting or removing one is managing a record, not a
+                        container doing its contents' work. */}
                     <div className="flex items-center gap-0.5">
                       <button onClick={() => setLogDialog({ existing: log })} title={t('common.edit')} className="p-0.5 text-dim hover:text-fg"><Pencil size={12} /></button>
                       <button onClick={() => deleteLog(log.id)} title={t('common.delete')} className="p-0.5 text-dim hover:text-delayed"><Trash2 size={12} /></button>
@@ -203,8 +214,19 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
           )}
         </div>
 
-        {/* type */}
-        <ReadOnlyField label={t('common.type')}>{t(task.type === 'long-term' ? 'type.longTerm' : 'type.phase')}</ReadOnlyField>
+        {/* Not on a to-do. It has no type to report, and the row used to answer
+            the question anyway — first with "Phase", which was the creation
+            form's default read back as the user's decision, and then with a
+            dash, which is a line of the panel spent saying "not applicable" to
+            a question the header has already answered by saying "to-do".
+
+            `task.type` is null exactly when `isTodo`, so the two branches left
+            here are the only two this row can be drawn for. */}
+        {!task.isTodo && (
+          <ReadOnlyField label={t('common.type')}>
+            {t(task.type === 'long-term' ? 'type.longTerm' : 'type.phase')}
+          </ReadOnlyField>
+        )}
 
         {task.type !== 'long-term' && !task.isTodo && (
           <ReadOnlyField label={t('task.progressMode')}>
@@ -232,19 +254,17 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
           )}
         </div>
 
-        {/* schedule — replaced by the unscheduled note + Start task for to-dos */}
+        {/* schedule — for a to-do, replaced by the one thing there is to do
+            with one. There used to be a note above the button explaining that
+            it had no schedule yet and listing what it would be asked for when
+            it started; the button says both. */}
         {task.isTodo ? (
-          <div>
-            <div className="text-[12px] text-muted leading-relaxed bg-panel2 border border-border rounded-[3px] p-2.5">
-              {t('task.noSchedule')}
-            </div>
-            <button
-              onClick={() => setStartTodo([task.id])}
-              className="mt-2 w-full h-8 text-[12px] font-medium bg-accent text-on-accent rounded-[3px] hover:brightness-110"
-            >
-              {t('todo.startTask')}
-            </button>
-          </div>
+          <button
+            onClick={() => setStartTodo([task.id])}
+            className="w-full h-8 text-[12px] font-medium bg-accent text-on-accent rounded-[3px] hover:brightness-110"
+          >
+            {t('todo.startTask')}
+          </button>
         ) : task.paused ? (
           <div>
             <div className="text-[12px] text-muted leading-relaxed bg-panel2 border border-border rounded-[3px] p-2.5">
@@ -267,17 +287,25 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
               </ReadOnlyField>
             </div>
             {task.type !== 'long-term' && taskStatus !== 'completed' && (
-              // "Not started" is the one state where parking the work is more
-              // useful than pausing it, so it takes the button's place.
-              taskStatus === 'not-started' ? (
+              // Two ways of putting the same work aside, and the pair is worth
+              // seeing together: a pause keeps the schedule and hands back the
+              // days it cost, parking drops the schedule entirely.
+              //
+              // "Not started" still gets no pause — there is no schedule to
+              // interrupt yet, and a pause would only postpone nothing — but
+              // parking is there in every state, which is what the pairing is
+              // for. The two are tied together tighter than the body's usual
+              // spacing, because they are one choice with two answers.
+              <div className="space-y-1.5">
+                {taskStatus !== 'not-started' && (
+                  <button onClick={() => pauseTask(task.id)} className="w-full h-7 text-[12px] text-muted hover:text-fg border border-border rounded-[3px]">
+                    {t('task.pause')}
+                  </button>
+                )}
                 <button onClick={handleSetTodo} className="w-full h-7 text-[12px] text-muted hover:text-fg border border-border rounded-[3px]">
                   {t('task.setAsTodo')}
                 </button>
-              ) : (
-                <button onClick={() => pauseTask(task.id)} className="w-full h-7 text-[12px] text-muted hover:text-fg border border-border rounded-[3px]">
-                  {t('task.pause')}
-                </button>
-              )
+              </div>
             )}
           </>
         )}
@@ -350,23 +378,19 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
           )}
         </div>
 
-        {/* subtasks */}
-        <div>
-          <div className="text-[10px] uppercase tracking-wider text-dim mb-1">{t('common.subtasks')}</div>
-          {subtasks.length ? (
-            <div className="space-y-1">
-              {subtasks.map((st) => (
-                <div key={st.id} className="flex items-center gap-2 px-2 h-7 bg-panel2 border border-border rounded-[3px] text-[11px] text-muted">
-                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: sig(STATUS_META[effMap.get(st.id)?.status ?? 'not-started'].token) }} />
-                  <span className="truncate">{st.name}</span>
-                  <span className="ml-auto font-mono text-dim">{effMap.get(st.id)?.progress != null ? `${effMap.get(st.id)?.progress}%` : t('common.none')}</span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-[12px] text-dim">{t('task.noSubtasks')}</div>
-          )}
-        </div>
+        {/* The way into the tree diagram. A button rather than the drawing
+            itself: the project's tree is long, and in a 320px column it is a
+            wall of rows pushing everything below it off the screen. Hidden when
+            the project has nothing else in it, which is the one case where the
+            drawing would be a single name. */}
+        {projectTasks.length > 1 && (
+          <button
+            onClick={() => setTreeOpen(true)}
+            className="w-full h-7 inline-flex items-center justify-center gap-1.5 text-[12px] text-muted hover:text-fg border border-border rounded-[3px]"
+          >
+            <FolderTree size={13} /> {t('task.tree')}
+          </button>
+        )}
 
         {/* description */}
         <div>
@@ -376,6 +400,20 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
       </div>
     </aside>
     {logDialog && <LogDialog taskId={task.id} existing={logDialog.existing} onClose={() => setLogDialog(null)} />}
+    {treeOpen && (
+      <TaskTreeDialog
+        taskId={task.id}
+        // Closing on the way out, not staying open on the old task: the tree is
+        // drawn around the task being read, and following a row puts you
+        // somewhere else. A diagram centred on where you were, now showing
+        // somewhere you are not, is worse than one you open again.
+        onPick={(id) => {
+          setSelected(id)
+          setTreeOpen(false)
+        }}
+        onClose={() => setTreeOpen(false)}
+      />
+    )}
     {startTodo && <StartTodoDialog taskIds={startTodo} onClose={() => setStartTodo(null)} />}
     {dialogs}
     </>

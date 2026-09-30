@@ -1,5 +1,5 @@
 export type TaskStatus = 'todo' | 'not-started' | 'in-progress' | 'completed' | 'paused' | 'delayed'
-export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent'
+export type TaskPriority = 'low' | 'medium' | 'high' | 'top'
 export type TaskType = 'phase' | 'long-term'
 export type ViewMode = 'day' | 'week' | 'month' | 'quarter' | 'year'
 export type AppView = 'gantt' | 'today' | 'calendar' | 'logs' | 'manage' | 'settings'
@@ -17,10 +17,17 @@ export interface Task {
   description: string
   parentId: string | null
   projectId: string
-  type: TaskType
+  // null only for to-dos.
+  //
+  // A to-do has no type yet. Its creation form no longer asks — the field was
+  // there but disabled, which is a question that cannot be answered at that
+  // point, and writing 'phase' into it anyway was the app answering for the
+  // user. `StartTodoDialog` asks when the work actually begins, and that answer
+  // is what lands here.
+  type: TaskType | null
   // A to-do is unscheduled work parked for later: no dates, no priority, no
-  // strict flag, no progress. `isTodo` is authoritative — nothing derives a
-  // date, a progress or a rolled-up status onto a task carrying it.
+  // type, no strict flag, no progress. `isTodo` is authoritative — nothing
+  // derives a date, a progress or a rolled-up status onto a task carrying it.
   isTodo: boolean
   startDate: string | null // yyyy-MM-dd (null for long-term goals and to-dos)
   endDate: string | null // yyyy-MM-dd inclusive (null for long-term goals and to-dos)

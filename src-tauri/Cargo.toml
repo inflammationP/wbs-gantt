@@ -25,6 +25,7 @@ log = "0.4"
 # `--hidden` at boot, and without a tray there would be no way back to a window
 # that is not on screen and not in the taskbar.
 tauri = { version = "2.11.3", features = ["tray-icon"] }
+tauri-plugin-single-instance = "2"
 tauri-plugin-log = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"

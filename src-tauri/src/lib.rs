@@ -409,6 +409,20 @@ fn set_tray_labels(app: tauri::AppHandle, open: String, quit: String) -> Result<
     tray.set_menu(Some(menu)).map_err(|e| e.to_string())
 }
 
+/// Bring the main window back to the front.
+///
+/// `show` alone does not undo a minimize — Windows restores a minimized window
+/// only when asked to — so a window sitting minimized in the taskbar would stay
+/// there while this appeared to do nothing. Both callers below are "the user is
+/// asking for the window again", so they both need the unminimize.
+fn reveal_main_window(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.unminimize();
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+}
+
 fn tray_menu(app: &tauri::AppHandle, open: &str, quit: &str) -> tauri::Result<Menu<tauri::Wry>> {
     let open_item = MenuItem::with_id(app, "open", open, true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", quit, true, None::<&str>)?;
@@ -418,6 +432,22 @@ fn tray_menu(app: &tauri::AppHandle, open: &str, quit: &str) -> tauri::Result<Me
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // First, and it has to be first: this plugin has to claim the instance
+        // before anything else in the builder starts up, and its whole job is to
+        // keep a second copy of the app from starting at all. Without it,
+        // clicking the desktop shortcut while the app was already running —
+        // minimized, or hidden in the tray from a `--hidden` boot — started a
+        // *second* process, which dutifully showed its own window. Two windows,
+        // two copies of the same file, and the one already on screen never came
+        // back. Now the second launch hands its arguments to the first and exits;
+        // the callback below is the first one being told to come forward.
+        //
+        // `--send-reminder` is untouched by this: it exits from `main` before
+        // `run` is ever called, so the scheduled task has no window to raise and
+        // no first instance to talk to.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            reveal_main_window(app);
+        }))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         // Hands external links to the system browser. Without it an <a href> in the
@@ -479,12 +509,7 @@ pub fn run() {
                     // the language setting.
                     .menu(&tray_menu(app.handle(), "Open WBS Gantt", "Quit")?)
                     .on_menu_event(|app, event| match event.id.as_ref() {
-                        "open" => {
-                            if let Some(w) = app.get_webview_window("main") {
-                                let _ = w.show();
-                                let _ = w.set_focus();
-                            }
-                        }
+                        "open" => reveal_main_window(app),
                         "quit" => app.exit(0),
                         _ => {}
                     })

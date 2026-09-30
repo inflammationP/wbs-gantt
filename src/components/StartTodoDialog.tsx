@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Modal, Field, inputCls } from './ui'
 import { LogOptOutDialog } from './LogOptOutDialog'
 import { useStore } from '../store/useStore'
-import { Task, TaskPriority } from '../types'
+import { Task, TaskPriority, TaskType } from '../types'
 import { PRIORITY_META, PRIORITY_ORDER, sig } from '../lib/ui'
 import { todayISO } from '../lib/dates'
 import { useT, useTRich } from '../lib/useT'
@@ -10,6 +10,8 @@ import { useT, useTRich } from '../lib/useT'
 interface Form {
   startDate: string
   endDate: string
+  /** The question the creation form no longer asks — see `Task.type`. */
+  type: TaskType
   strictProgress: boolean
   priority: TaskPriority
 }
@@ -41,7 +43,16 @@ export function StartTodoDialog({ taskIds, onClose }: Props) {
     Object.fromEntries(
       targets.map((t) => [
         t.id,
-        { startDate: todayISO(), endDate: todayISO(), strictProgress: true, priority: 'medium' as TaskPriority },
+        {
+          startDate: todayISO(),
+          endDate: todayISO(),
+          // A to-do carries no type, and older data carries a 'phase' nobody
+          // chose — both land on the same starting point, which is the option
+          // the rest of the app treats as the ordinary case.
+          type: (t.type ?? 'phase') as TaskType,
+          strictProgress: true,
+          priority: 'medium' as TaskPriority,
+        },
       ]),
     ),
   )
@@ -74,7 +85,7 @@ export function StartTodoDialog({ taskIds, onClose }: Props) {
         // A parent's dates are derived from its children, so there is nothing
         // to ask for — it gets a placeholder day until they are restored too.
         if (tasks.some((x) => x.parentId === t.id)) {
-          return { id: t.id, startDate: todayISO(), endDate: todayISO(), strictProgress: false, priority: f.priority }
+          return { id: t.id, startDate: todayISO(), endDate: todayISO(), strictProgress: false, priority: f.priority, type: f.type }
         }
         return { id: t.id, ...f }
       }),
@@ -132,6 +143,17 @@ export function StartTodoDialog({ taskIds, onClose }: Props) {
 
           </>
         )}
+
+        {/* The question the creation form used to grey out. It is asked here
+            because this is where the to-do stops being a note and becomes a
+            piece of scheduled work, which is when "is this a phase or a
+            long-term goal" has an answer. */}
+        <Field label={t('common.type')}>
+          <select className={inputCls} value={form.type} onChange={(e) => set({ type: e.target.value as TaskType })}>
+            <option value="phase">{t('type.phase')}</option>
+            <option value="long-term">{t('type.longTerm')}</option>
+          </select>
+        </Field>
 
         <Field label={t('common.priority')}>
           <select className={inputCls} value={form.priority} onChange={(e) => set({ priority: e.target.value as TaskPriority })}>

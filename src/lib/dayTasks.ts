@@ -1,5 +1,5 @@
 import { Project, Task, TaskLog, TaskStatus } from '../types'
-import { buildChildrenMap, collectDescendants, computeWbs, deriveStatus, deriveTaskStatus } from './tree'
+import { ancestorNames, buildChildrenMap, collectDescendants, computeWbs, deriveStatus, deriveTaskStatus } from './tree'
 import { isPausedOnDay, taskProgress } from './progress'
 import { addDays, toDate, toISO } from './dates'
 
@@ -17,7 +17,11 @@ export interface StrictLogRate {
 export interface DayRow {
   task: Task
   wbs: string
-  depth: number
+  /**
+   * Names above this row, nearest parent first — what the list prints under it
+   * to say which branch it came from. Empty for a top-level task.
+   */
+  parents: string[]
   progress: number | null
   status: TaskStatus
   strict: boolean
@@ -340,13 +344,14 @@ export function milestonesOnDay(
 
 export type DayCellState =
   | { kind: 'future' }
-  | { kind: 'clear' } //已过去或就是今天，当天没有任何严格任务要写
+  | { kind: 'empty' } // 当天什么都没排，不该被评判
+  | { kind: 'clear' } //已过去或就是今天，当天有任务、但没有严格任务要写
   | { kind: 'owed'; done: number; total: number } // 有义务，一条没写（done 恒为 0）
   | { kind: 'partial'; pct: number; done: number; total: number }
   | { kind: 'full'; done: number; total: number }
 
 /**
- * Which of the calendar's five cell states a day is in.
+ * Which of the calendar's cell states a day is in.
  *
  * `strictLogRate` is deliberately left untouched: it answers "how much of that
  * day's strict work was logged", and it gives the same answer for a day that has
@@ -354,27 +359,32 @@ export type DayCellState =
  * window covers that day counts toward `total`. Whether the day has *happened*
  * is a presentation question, and it is settled here. Without that split, every
  * remaining day of the month would read as work missed.
+ *
+ * `worked` is the one thing the rate cannot say: whether anything was *on* the
+ * day at all. The two are not the same question, and the difference only shows
+ * on a day with nothing owed (`total === 0`), which is both "the work was done
+ * and accounted for" and "nothing was ever here". Both used to wear the same
+ * green ring — which is what a calendar of green boxes on days off was.
+ *
+ * Deliberately not a gate on this function: `total > 0` days are never 'clear'
+ * whatever `worked` says, so the overdue backlog — a strict task that goes on
+ * owing past its own end date, when `activeOnDay` is already false — cannot be
+ * hidden by this. Filtering the *computation* on "was anything on the day" did
+ * exactly that, and worse: a strict leaf owes a log every day from its start
+ * until it is finished, so that filter passes every day after the first one.
  */
-export function dayCellState(day: string, today: string, rate: StrictLogRate): DayCellState {
+export function dayCellState(
+  day: string,
+  today: string,
+  rate: StrictLogRate,
+  worked: boolean,
+): DayCellState {
   // yyyy-MM-dd sorts chronologically as a string.
   if (day > today) return { kind: 'future' }
-  if (rate.total === 0) return { kind: 'clear' }
+  if (rate.total === 0) return worked ? { kind: 'clear' } : { kind: 'empty' }
   if (rate.done === 0) return { kind: 'owed', done: 0, total: rate.total }
   if (rate.done === rate.total) return { kind: 'full', done: rate.done, total: rate.total }
   return { kind: 'partial', pct: rate.pct, done: rate.done, total: rate.total }
-}
-
-function depths(tasks: Task[]): Map<string, number> {
-  const children = buildChildrenMap(tasks)
-  const m = new Map<string, number>()
-  const walk = (pid: string | null, d: number) => {
-    for (const c of children.get(pid) ?? []) {
-      m.set(c.id, d)
-      walk(c.id, d + 1)
-    }
-  }
-  walk(null, 0)
-  return m
 }
 
 /**
@@ -393,7 +403,6 @@ export function daySummary(
   const states = dayStates(tasks, logs, day)
   const children = buildChildrenMap(tasks)
   const logged = loggedOnDay(logs, day)
-  const depth = depths(tasks)
   const order = new Map(projects.map((p, i) => [p.id, i]))
 
   // Numbering restarts per project, matching what the Gantt shows.
@@ -417,7 +426,7 @@ export function daySummary(
     // A task that ran out of window without finishing drops off its own
     // schedule, which would hide the most urgent work of all. It is listed with
     // an overdue badge — and, since `hasComeDue` keeps it owing a log, it is
-    // counted in the ring and badged "No log" like any other outstanding task.
+    // counted in the ring and marked like any other outstanding task.
     // The two agree because they are the same question asked twice. A simplified
     // task gets the same treatment now that the calendar no longer finishes it
     // on its own.
@@ -426,7 +435,10 @@ export function daySummary(
     rows.push({
       task: t,
       wbs: wbs.get(t.id) ?? '',
-      depth: depth.get(t.id) ?? 0,
+      // Filled in once the walk below has settled the order, and only for the
+      // rows that survive the leaf filter — a chain walked for a row that is
+      // about to be dropped is a walk spent on nothing.
+      parents: [],
       progress: st.progress,
       status: st.status,
       strict,
@@ -450,15 +462,12 @@ export function daySummary(
     a.wbs.localeCompare(b.wbs, undefined, { numeric: true }) ||
     a.task.name.localeCompare(b.task.name) ||
     a.task.id.localeCompare(b.task.id)
-  // Siblings that owe a log come first — they are what the ring above counts,
-  // so the day's obligations stay at the top of each group without the list
-  // having to be split in two to say so.
-  const cmpSiblings = (a: DayRow, b: DayRow) => (a.strict ? 0 : 1) - (b.strict ? 0 : 1) || cmp(a, b)
 
   // A tree, not a flat queue. Sorting the whole day by status rank read as "what
-  // do I handle first", but it scattered a task away from the parent it belongs
-  // to, and the rows have carried a `depth` that nothing used. Now a parent is
-  // followed by its own children and only siblings are ordered.
+  // do I handle first", but it scattered a task away from the branch it belongs
+  // to — and the branch is what the rows are annotated with now, so keeping a
+  // group's leaves adjacent is the only thing left of that complaint. The tree
+  // is built and then flattened: the *order* is the tree's, the list is not.
   //
   // A task whose parent is not on this day — the parent is done, or has not
   // started — is a root here rather than being dropped: the list is what is
@@ -477,24 +486,52 @@ export function daySummary(
     }
   }
 
-  roots.sort(cmpSiblings)
-  const ordered: DayRow[] = []
+  roots.sort(cmp)
+  const walked: DayRow[] = []
   const walk = (r: DayRow) => {
-    ordered.push(r)
+    walked.push(r)
     const ks = kids.get(r.task.id)
     if (!ks) return
-    ks.sort(cmpSiblings)
+    ks.sort(cmp)
     for (const k of ks) walk(k)
   }
   for (const r of roots) walk(r)
 
+  // Obligation first — over the whole list, not within each rung.
+  //
+  // Hoisting inside a sibling group was the smaller claim, and it was not the
+  // one being made: the day is a worklist, and a task that owes a log must not
+  // sit below a branch that does not merely because the tree put it there. The
+  // two halves are stable, so each keeps the tree's order inside itself and a
+  // branch's leaves stay adjacent wherever that order allowed them to.
+  const ordered = [...walked.filter((r) => r.strict), ...walked.filter((r) => !r.strict)]
+
   let logCount = 0
   for (const l of logs) if (l.date === day) logCount++
 
+  // Only the tasks that do the work.
+  //
+  // A parent is a container: `effectiveStates` derives its dates from its
+  // children, so a row for it was a line of the day spent saying what the rows
+  // indented under it were already saying. It is an annotation on them instead —
+  // which is also why the count over this list is now "how much is on the day"
+  // rather than "how many rows a tree takes to draw it".
+  //
+  // A child that is itself a to-do does not make a container. To-dos are
+  // unscheduled and take no part in the roll-up, so a task whose children are
+  // all to-dos keeps its own dates and is a leaf here, exactly as `TaskDialog`
+  // treats it when it leaves those dates editable.
+  const containers = new Set<string>()
+  for (const t of tasks) if (t.parentId != null && !t.isTodo) containers.add(t.parentId)
+  const taskById = new Map(tasks.map((t) => [t.id, t]))
+  const leaves = ordered.flatMap((r) =>
+    containers.has(r.task.id) ? [] : [{ ...r, parents: ancestorNames(r.task, taskById) }],
+  )
+
   return {
-    all: ordered,
-    strict: ordered.filter((r) => r.strict),
-    nonStrict: ordered.filter((r) => !r.strict),
+    all: leaves,
+    strict: leaves.filter((r) => r.strict),
+    nonStrict: leaves.filter((r) => !r.strict),
     ring: strictLogRate(tasks, logs, day),
     logCount,
   }

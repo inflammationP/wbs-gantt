@@ -243,6 +243,29 @@ body {
   box-shadow: -16px 0 32px rgb(0 0 0 / 0.35);
 }
 
+/* Fullscreen, where the overlay stops being the lesser loss.
+
+   The argument above is about arithmetic: at 1440 the board cannot spare 320,
+   let alone 640. At fullscreen it can, and once it can, squeezing is the better
+   deal of the two — the board is laid out into a space that fits it, instead of
+   being covered by a panel it never got to reflow around. The breakpoint is
+   where that stops being true, not where "fullscreen" starts: two panels plus
+   the sidebar still leave the board wider than a default window gives it with
+   none open, which is a window nobody complained about.
+
+   1600 rather than something rounder, because the sidebar is 190 and the two
+   panels are 320 each: the board is what is left. Below it, the overlay stands
+   on exactly the reasoning it was introduced for. */
+@media (min-width: 1600px) {
+  .side-panels {
+    position: static;
+    /* An in-flow panel has an edge of its own (`border-l border-border`); the
+       shadow belongs to the one floating over the board and reads as a seam
+       once there is nothing behind it. */
+    box-shadow: none;
+  }
+}
+
 /* ── The Logs page's two modes ──────────────────────────────────────────────
    Flipping between the logs and the notes replaces the whole grid, and a
    `transition` cannot express that: it animates a value that changed, and here

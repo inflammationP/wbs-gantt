@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
-import { Check, ChevronDown, ChevronRight, NotebookText, Pencil, ScrollText, TriangleAlert } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, NotebookText, Pencil, Plus, ScrollText, TriangleAlert } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { Chore, Habit, TaskLog } from '../types'
 import { DayRow, daySummary } from '../lib/dayTasks'
@@ -62,8 +62,14 @@ interface Props {
    * tick a chore is a second place for the two to disagree.
    */
   onAddChore?: (title: string) => void
-  /** Absent means habits are a record here too, on the same grounds. */
-  onAddHabit?: (title: string) => void
+  /**
+   * Absent means habits are a record here too, on the same grounds.
+   *
+   * A flag rather than the callback it was, because adding one no longer means
+   * typing a title here — it opens `HabitDialog`, which saves for itself. What
+   * is left to say is whether this board may write at all.
+   */
+  habitsEditable?: boolean
   onToggleHabit?: (id: string) => void
 }
 
@@ -77,7 +83,7 @@ interface Props {
  * real difference is the arrangement and whether the chores can be touched, so
  * that is all `layout` and `onAddChore` carry.
  */
-export function DayBoard({ day, dayChores, habits, layout, onAddChore, onAddHabit, onToggleHabit }: Props) {
+export function DayBoard({ day, dayChores, habits, layout, onAddChore, habitsEditable, onToggleHabit }: Props) {
   const t = useT()
   const tasks = useStore((s) => s.tasks)
   const logs = useStore((s) => s.logs)
@@ -133,43 +139,12 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, onAddHabi
   const rowProps = {
     expanded,
     day,
-    isFuture,
     onToggle: toggle,
     onWriteLog: (id: string) => setLogFor(id),
     onOpenTask: (id: string) => setSelected(id),
     projectName: (id: string) => projectOf(id)?.name ?? '',
     qualifiers,
   }
-
-  // The day opens at the first level: a parent is followed by its own children,
-  // and those children are what the row's chevron unfolds. The whole tree at
-  // once is the project's decomposition, which is a Gantt question — here the
-  // list is what the day is made of, and a three-level branch buries the rest of
-  // the day underneath one project.
-  //
-  // A row is drawn when every row it hangs from is open, which one pass with the
-  // ancestor chain answers: the list is pre-order, so the chain of the row being
-  // considered is exactly what is left of the stack once it has been trimmed
-  // back to that row's parent. A row whose parent is not on this day — finished,
-  // or not started — is its own root and stays visible whatever is open, which
-  // is the same rule `daySummary` used when it placed it at the top of the list.
-  const { rows: visibleRows, parents } = useMemo(() => {
-    const byId = new Map(summary.all.map((r) => [r.task.id, r]))
-    const out: DayRow[] = []
-    const parents = new Set<string>()
-    const chain: DayRow[] = []
-    for (const r of summary.all) {
-      const pid = r.task.parentId
-      if (pid == null || !byId.has(pid)) chain.length = 0
-      else {
-        parents.add(pid)
-        while (chain.length && chain[chain.length - 1].task.id !== pid) chain.pop()
-      }
-      if (chain.every((a) => expanded[a.task.id] === true)) out.push(r)
-      chain.push(r)
-    }
-    return { rows: out, parents }
-  }, [summary.all, expanded])
 
   // One list, not two. Splitting the day into "strict" and "the rest" put the
   // log obligations at the top, but it also meant calling every task one thing
@@ -188,10 +163,10 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, onAddHabi
       open={open.tasks}
       onToggle={() => setOpen((o) => ({ ...o, tasks: !o.tasks }))}
     >
-      {visibleRows.length === 0 ? (
+      {summary.all.length === 0 ? (
         <Empty>{t('day.nothingScheduled')}</Empty>
       ) : (
-        visibleRows.map((r) => <DayRowView key={r.task.id} row={r} hasKids={parents.has(r.task.id)} {...rowProps} />)
+        summary.all.map((r) => <DayRowView key={r.task.id} row={r} {...rowProps} />)
       )}
     </Section>
   )
@@ -203,7 +178,7 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, onAddHabi
   // when the caller offers a composer — which is the Today column, and it must
   // show even at zero, or there is nowhere to add the first one — or when there
   // is a habit to record.
-  const habitSection = (onAddHabit != null || habits.length > 0) && (
+  const habitSection = (habitsEditable || habits.length > 0) && (
     <Section
       title={t('habit.section')}
       // The fraction rather than the total: what the other sections count is how
@@ -212,7 +187,7 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, onAddHabi
       open={open.habits}
       onToggle={() => setOpen((o) => ({ ...o, habits: !o.habits }))}
     >
-      {onAddHabit && <HabitComposer onAdd={onAddHabit} />}
+      {habitsEditable && <HabitComposer />}
       {habits.length === 0 ? (
         <Empty>{t('habit.none')}</Empty>
       ) : (
@@ -454,20 +429,10 @@ function Empty({ children }: { children: ReactNode }) {
   return <div className="px-2 py-1 text-[12px] text-dim">{children}</div>
 }
 
-/**
- * How far one level of the task tree steps in.
- *
- * Smaller than the Gantt's 16: the day panel is 320px at its narrowest, and a
- * deep branch there would spend a fifth of the row on indentation alone.
- */
-const INDENT = 12
-
 function DayRowView({
   row,
-  hasKids,
   expanded,
   day,
-  isFuture,
   onToggle,
   onWriteLog,
   onOpenTask,
@@ -475,17 +440,9 @@ function DayRowView({
   qualifiers,
 }: {
   row: DayRow
-  /**
-   * Whether this row is hiding rows of its own. Every row carries the chevron —
-   * it is also how the progress bar is unfolded — so without a difference in
-   * weight a collapsed parent looks exactly like a leaf, and its branch looks
-   * like it is gone.
-   */
-  hasKids: boolean
   expanded: Record<string, boolean>
   /** The day this row is drawn for — the day a tick would be recorded against. */
   day: string
-  isFuture: boolean
   onToggle: (id: string) => void
   onWriteLog: (id: string) => void
   onOpenTask: (id: string) => void
@@ -500,6 +457,10 @@ function DayRowView({
   const toggleTaskDay = useStore((s) => s.toggleTaskDay)
   const meta = STATUS_META[row.status]
   const isOpen = expanded[row.task.id] === true
+  // The chain under the row, spent from the nearest parent outwards. Folded by
+  // default: the row already lives in one branch, and most of the time that
+  // branch is the whole answer.
+  const [pathOpen, setPathOpen] = useState(false)
   const finished = row.status === 'completed'
   // Two kinds of row, and the strike means the thing each of them is about.
   //
@@ -512,10 +473,6 @@ function DayRowView({
   // A plain task has no log to write, so it keeps the older meaning: struck
   // when the task is actually done.
   const struck = row.strict ? row.hasLog : finished
-  // A strict task owes a log once it has come due and is not finished — which,
-  // since an overdue task keeps owing one, is the same condition the ring
-  // counts. A day that has not arrived cannot be behind on anything.
-  const missingLog = row.strict && !row.hasLog && !row.pausedToday && !row.completedBefore && !finished && !isFuture
 
   return (
     <div className="group">
@@ -526,14 +483,17 @@ function DayRowView({
           The badges keep to the right via `ml-auto`. */}
       <div
         onClick={() => onToggle(row.task.id)}
-        style={{ paddingLeft: 8 + row.depth * INDENT }}
-        className="flex items-center gap-1.5 pr-2 h-7 rounded-[3px] hover:bg-panel2"
+        className="flex items-center gap-1.5 pl-2 pr-2 h-7 rounded-[3px] hover:bg-panel2"
       >
         <button
           aria-expanded={isOpen}
           className="min-w-0 flex items-center gap-1.5 text-left"
         >
-          <span className={`shrink-0 ${hasKids ? 'text-fg/70' : 'text-dim'}`}>
+          {/* No indentation and no difference in weight: every row here is a
+              task that does the work, so the chevron has one job left — the
+              progress bar under it. Where the row came from is the line below
+              it, not how far it is pushed in. */}
+          <span className="shrink-0 text-dim">
             {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
           </span>
           <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: sig(meta.token) }} />
@@ -600,12 +560,11 @@ function DayRowView({
           </button>
         )}
 
+        {/* Only the two states that say something the row does not already
+            say. There used to be a third, "No log" — the same amber the `*`
+            before the name wears, on a row where the `*` is either there or
+            not, so it never told anyone anything the name did not. */}
         <span className="ml-auto shrink-0 flex items-center gap-1.5">
-          {missingLog && (
-            <span className="shrink-0 inline-flex items-center gap-0.5 px-1 h-4 text-[9px] font-medium rounded-[2px] bg-today/15 text-today border border-today/30">
-              <TriangleAlert size={9} /> {t('day.noLog')}
-            </span>
-          )}
           {row.overdue && (
             <span className="shrink-0 px-1 h-4 inline-flex items-center text-[9px] font-medium rounded-[2px] bg-delayed/15 text-delayed border border-delayed/30">
               {t('manage.overdue')}
@@ -618,10 +577,38 @@ function DayRowView({
           )}
         </span>
       </div>
+      {/* Which branch this came from — the parent, as a footnote rather than as
+          a row of its own.
+          The name of the nearest parent is always here; the triangle, when
+          there is one, spends the rest of the chain, nearest outwards. So the
+          line answers "which one is this" for free, and "where is this in the
+          project" for one click, without either answer costing a row. */}
+      {row.parents.length > 0 && (
+        <div className="flex items-center gap-1 pl-2 pr-2 text-[10px] text-dim">
+          {row.parents.length > 1 ? (
+            <button
+              onClick={() => setPathOpen((o) => !o)}
+              aria-expanded={pathOpen}
+              aria-label={t('day.parentPath')}
+              className="shrink-0 text-dim hover:text-fg"
+            >
+              {pathOpen ? <ChevronDown size={9} /> : <ChevronRight size={9} />}
+            </button>
+          ) : (
+            // Holds the triangle's column, so the lines under a row with one
+            // parent and a row with several start at the same place.
+            <span className="shrink-0 w-[9px]" />
+          )}
+          <span className="truncate" title={[...row.parents].reverse().join(t('common.pathSeparator'))}>
+            {t('day.belongsTo')}{' '}
+            {pathOpen ? [...row.parents].reverse().join(t('common.pathSeparator')) : row.parents[0]}
+          </span>
+        </div>
+      )}
       {/* The bar stays mounted and animates both axes, so it genuinely grows
           rightward from zero instead of appearing at full width. */}
       <div className={`overflow-hidden transition-[height] duration-300 ease-out ${isOpen ? 'h-[30px]' : 'h-0'}`}>
-        <div style={{ paddingLeft: 32 + row.depth * INDENT }} className="pr-2 pt-1">
+        <div className="pl-8 pr-2 pt-1">
           <div className="h-1.5 bg-panel2 rounded-full overflow-hidden">
             <div
               className="h-full rounded-full transition-[width] duration-300 ease-out"
@@ -942,29 +929,29 @@ function HabitLine({
   )
 }
 
-/** The one-line field that adds a habit. The chore composer's twin. */
-function HabitComposer({ onAdd }: { onAdd: (title: string) => void }) {
+/**
+ * The button that adds a habit to this board.
+ *
+ * It opens `HabitDialog` rather than taking a title on the spot. A one-line field
+ * could only ever produce a habit with nothing but a name, and a habit is the one
+ * entry here made of more than that — which days it runs on, when it stops. So the
+ * old field's Enter key meant creating it and then finding its pencil, which is a
+ * worse way to say "I want to write this one down properly".
+ */
+function HabitComposer() {
   const t = useT()
-  const [text, setText] = useState('')
-
-  const submit = (e: FormEvent) => {
-    e.preventDefault()
-    const title = text.trim()
-    if (!title) return
-    onAdd(title)
-    setText('')
-  }
+  const [adding, setAdding] = useState(false)
 
   return (
-    <form onSubmit={submit} className="px-2 pb-1.5">
-      <input
-        className={inputCls}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder={t('habit.placeholder')}
-        aria-label={t('habit.placeholder')}
-      />
-    </form>
+    <div className="px-2 pb-1.5">
+      <button
+        onClick={() => setAdding(true)}
+        className="w-full h-7 inline-flex items-center justify-center gap-1 text-[12px] text-muted hover:text-fg border border-border rounded-[3px] hover:bg-panel2"
+      >
+        <Plus size={12} /> {t('habit.new')}
+      </button>
+      {adding && <HabitDialog onClose={() => setAdding(false)} />}
+    </div>
   )
 }
 

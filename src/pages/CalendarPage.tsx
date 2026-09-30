@@ -7,7 +7,7 @@ import { addMonths, startOfMonth, startOfWeek, addDays, toISO } from '../lib/dat
 import { formatLongDate, monthName, weekdayLabels } from '../lib/i18n'
 import { TFunc, useLang, useT } from '../lib/useT'
 import { effectiveStates } from '../lib/tree'
-import { DayCellState, DayMilestones, StrictLogRate, dayCellState, milestonesOnDay, strictLogRate } from '../lib/dayTasks'
+import { DayCellState, DayMilestones, StrictLogRate, activeOnDay, dayCellState, milestonesOnDay, strictLogRate } from '../lib/dayTasks'
 
 export function CalendarPage() {
   const t = useT()
@@ -38,6 +38,19 @@ export function CalendarPage() {
     for (const d of days) m.set(toISO(d), strictLogRate(tasks, logs, toISO(d)))
     return m
   }, [days, tasks, logs])
+
+  // Whether anything was *on* each day, which is not the same question as
+  // whether anything was owed on it. Swept here because the cells ask it 42
+  // times a render and it must not be recomputed on each hover; the answer is
+  // what tells a day off apart from a day that finished all of nothing.
+  const worked = useMemo(() => {
+    const s = new Set<string>()
+    for (const d of days) {
+      const iso = toISO(d)
+      if (tasks.some((task) => activeOnDay(task, iso))) s.add(iso)
+    }
+    return s
+  }, [days, tasks])
 
   // Beginnings and deadlines — the cell's contents. Swept the same way, for the
   // same reason.
@@ -109,8 +122,7 @@ export function CalendarPage() {
               const inMonth = d.getMonth() === cursor.getMonth()
               const isTodayD = iso === today
               const isSelected = iso === selectedDay
-              const rate = rings.get(iso) ?? { done: 0, total: 0, pct: 0 }
-              const state = dayCellState(iso, today, rate)
+              const state = dayCellState(iso, today, rings.get(iso) ?? NO_RATE, worked.has(iso))
               const ms = milestones.get(iso) ?? { starts: [], due: [] }
               // Deadlines first: what a calendar can show that the Gantt cannot.
               const items: { task: Task; due: boolean }[] = [
@@ -189,6 +201,10 @@ export function CalendarPage() {
   )
 }
 
+// For the day a cell looks up and does not find — only reachable if `days` and
+// the sweep ever fell out of step, which they do not.
+const NO_RATE: StrictLogRate = { done: 0, total: 0, pct: 0 }
+
 // An inset ring rather than a border colour: cells only carry `border-r` /
 // `border-b` (the grid's own edges), so colouring a border would light up two
 // sides and move the layout.
@@ -213,6 +229,9 @@ const MAX_PIPS = 6
 function coverageLabel(state: DayCellState, t: TFunc): string {
   switch (state.kind) {
     case 'future': return t('calendar.coverage.future')
+    // The same wording as `clear`, and it is the same fact: nothing was owed.
+    // An empty day is only told apart from a cleared one by not being marked.
+    case 'empty':
     case 'clear': return t('calendar.coverage.clear')
     case 'owed':
     case 'partial': return t('calendar.coverage.partial', { count: state.done, total: state.total })
@@ -260,9 +279,14 @@ function cellDeco(state: DayCellState): { overlay?: CSSProperties } {
       // Nothing has been owed yet, so nothing is marked. Not judging a day that
       // has not arrived is the whole reason this state exists.
       return {}
+    case 'empty':
+      // Nothing was ever put on this day, so there is nothing to answer for and
+      // nothing to mark. The ring below used to be drawn here too, which is
+      // what a calendar full of green boxes on days off was.
+      return {}
     case 'clear':
-      // Nothing was owed and the day is over. A quiet outline and no glow: an
-      // empty day must not outshine one that was actually worked.
+      // Work was on this day and none of it owed a log. A quiet outline and no
+      // glow: an empty day must not outshine one that was actually worked.
       return { overlay: { boxShadow: CLEAR_RING } }
     case 'owed':
       // The squares already say "nothing written"; no glow on a day that has

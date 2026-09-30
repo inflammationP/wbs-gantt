@@ -43,8 +43,9 @@ const server = await createServer({
   // ever generated and buries the one line this prints.
   optimizeDeps: { entries: [] },
 })
-const { compareSiblings, nameQualifiers, placeTasks, syncParentDates } = await server.ssrLoadModule('/src/lib/tree.ts')
+const { compareSiblings, effectiveStates, nameQualifiers, placeTasks, syncParentDates } = await server.ssrLoadModule('/src/lib/tree.ts')
 const { useStore } = await server.ssrLoadModule('/src/store/useStore.ts')
+const { readPriority } = await server.ssrLoadModule('/src/store/storage.ts')
 
 const task = (over) => ({
   id: 'a', name: 'a', description: '', parentId: null, projectId: 'p',
@@ -433,6 +434,58 @@ const cyclic = [N('c1', 'one', 'c2'), N('c2', 'one', 'c1')]
 const cyc = nameQualifiers(cyclic, cyclic)
 assert.deepEqual(cyc.get('c1'), ['one'], 'a cycle is walked once, not forever')
 assert.deepEqual(cyc.get('c2'), ['one'])
+
+// The priority a saved file carries, read at the trust boundary. It lives in
+// this file because nothing else loads the loader, and it is here at all because
+// the `'urgent'` line is the one thing in it that reads like dead code: every
+// board saved before that level was renamed still says the old word, and
+// `PRIORITY_META` has no entry for it — so dropping the line would take the
+// priority off every task on every existing board, quietly, at load time.
+assert.equal(readPriority('urgent'), 'top', 'the old name still reads as the level it was')
+assert.equal(readPriority('top'), 'top')
+assert.equal(readPriority('urgent'), readPriority('top'))
+// Anything unrecognised falls to the ordinary one rather than through: a value
+// with no entry in `PRIORITY_META` is a thrown exception on the first render
+// that shows the task, not a wrong colour.
+assert.equal(readPriority('nonsense'), 'medium')
+assert.equal(readPriority(undefined), 'medium')
+assert.equal(readPriority(null), 'medium')
+assert.equal(readPriority(3), 'medium')
+
+// --- what a finished task's window becomes ---
+// In a block of its own so the fixture names here cannot collide with the ones
+// declared above, all of which are top level.
+{
+  // --- what a finished task's window becomes ---
+
+  // A task finished on the 4th of a window running to the 20th ends on the 4th.
+  // The bar is drawn from this, so the old reading was a task still carrying
+  // sixteen days of work it had already handed in.
+  const log = (taskId, date, targetProgress = null) => ({
+    id: `${taskId}@${date}`, taskId, date, content: '', targetProgress, createdAt: '', updatedAt: '',
+  })
+  const finished = [task({ id: 'p' }), task({ id: 'k', parentId: 'p' })]
+  const earlyEnds = effectiveStates(finished, [log('k', '2026-09-04', 100)])
+  assert.equal(earlyEnds.get('k').end, '2026-09-04', 'a finished task ends the day it finished')
+  // …and the parent, whose span is read off its children's ends, comes in with it.
+  assert.equal(earlyEnds.get('p').end, '2026-09-04')
+  const synced = syncParentDates(finished, [log('k', '2026-09-04', 100)]).find((t) => t.id === 'p')
+  assert.equal(synced.endDate, '2026-09-04', 'and the write-back follows it')
+
+  // Unfinished is unchanged, and so is the stored plan: only the derived end
+  // moves, so a task taken back off completed gets its window back.
+  const open = effectiveStates([task({})], [])
+  assert.equal(open.get('a').end, '2026-09-20')
+  assert.equal(task({}).endDate, '2026-09-20')
+
+  // A completion logged before the start cannot invert the bar: `completedOn`
+  // refuses to name a finish outside the task's own window — the task reads "not
+  // started" on that day — so the derived end falls back to the planned one
+  // rather than being drawn right-to-left.
+  const backfill = effectiveStates([task({ startDate: '2026-09-10' })], [log('a', '2026-09-02', 100)])
+  assert.equal(backfill.get('a').end, '2026-09-20')
+  assert.equal(backfill.get('a').status, 'completed', 'it is still finished — just not on a day it could have been')
+}
 
 await server.close()
 console.log('task tree: ok')

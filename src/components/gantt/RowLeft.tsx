@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { MouseEvent } from 'react'
 import {
   CheckSquare,
@@ -61,6 +62,7 @@ interface Props {
    */
   onRowClick: (e: MouseEvent<HTMLElement>, row: RowTask) => void
   onAddChild: (row: RowTask) => void
+  onAddSibling: (row: RowTask) => void
   onEdit: (row: RowTask) => void
   onContext: (e: MouseEvent<HTMLDivElement>, row: RowTask) => void
 }
@@ -70,7 +72,7 @@ const stop = (fn: () => void) => (e: MouseEvent) => {
   fn()
 }
 
-export function RowLeft({ row, todo, editing, picked, onRowClick, onAddChild, onEdit, onContext }: Props) {
+export function RowLeft({ row, todo, editing, picked, onRowClick, onAddChild, onAddSibling, onEdit, onContext }: Props) {
   const t = useT()
   const { ask, element: dialogs } = useDialogs()
   const setSelected = useStore((s) => s.setSelected)
@@ -261,11 +263,21 @@ export function RowLeft({ row, todo, editing, picked, onRowClick, onAddChild, on
           </button>
         )}
         <div className={`flex items-center gap-0.5 transition-opacity ${selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-          {/* No "+" on a to-do: it can't be a parent, and a dialog that opened
-              on it would have to show "top level" while pointing at the to-do. */}
-          {!isTodo && (
-            <button onClick={(e) => { e.stopPropagation(); onAddChild(row) }} title={t('task.addSubtask')} className="p-1 text-dim hover:text-fg"><Plus size={13} /></button>
-          )}
+          {/* The "+" means "another task at this place", and a to-do's place
+              is beside it rather than under it: it can't be a parent, so
+              `onAddChild` would open a dialog showing "top level" while
+              pointing at the to-do. So the same button adds a *sibling* there,
+              which is the one "+" a to-do row has — and exactly what the
+              context menu does with its own pair on the same row. The new task
+              is a to-do for the same reason: a to-do's sibling is another one. */}
+          <button
+            onClick={(e) => { e.stopPropagation(); (isTodo ? onAddSibling : onAddChild)(row) }}
+            title={isTodo ? t('task.addSibling') : t('task.addSubtask')}
+            aria-label={isTodo ? t('task.addSibling') : t('task.addSubtask')}
+            className="p-1 text-dim hover:text-fg"
+          >
+            <Plus size={13} />
+          </button>
           <button onClick={(e) => { e.stopPropagation(); onEdit(row) }} title={t('common.edit')} className="p-1 text-dim hover:text-fg"><Pencil size={13} /></button>
           <button onClick={handleDelete} title={t('common.delete')} className="p-1 text-dim hover:text-delayed"><Trash2 size={13} /></button>
         </div>
@@ -292,6 +304,9 @@ function TodoGroupRow({
   onToggleExpanded: (id: string) => void
 }) {
   const t = useT()
+  const name = useStore((s) => s.todoFolders[row.id] ?? '')
+  const setTodoFolderName = useStore((s) => s.setTodoFolderName)
+  const [editingName, setEditingName] = useState(false)
   const { todoIds } = row
   const selected = todoIds.filter((id) => todo.selected.has(id))
   const allSelected = todoIds.length > 0 && selected.length === todoIds.length
@@ -299,6 +314,11 @@ function TodoGroupRow({
   // are small and this saves a click each time.
   const target = selected.length > 0 ? selected : todoIds
   const bySelection = selected.length > 0
+  // The row's own click folds it; a click in the name box is not that.
+  const commit = (value: string) => {
+    setTodoFolderName(row.id, value)
+    setEditingName(false)
+  }
 
   return (
     <div
@@ -319,13 +339,53 @@ function TodoGroupRow({
         <span className="shrink-0 flex items-center justify-center" style={{ width: GLYPH_W }}>
           <FolderOpen size={13} style={{ color: sig('todo') }} />
         </span>
-        <span className="truncate text-[12px] font-medium" style={{ color: sig('todo') }}>
-          {t('todo.folder', { count: todoIds.length })}
-        </span>
+        {/* Named by the user, or counted. A folder is a run of to-do rows and
+            nothing else — there is no record of it to hold a name — so what it
+            is called lives beside the tasks, keyed by the folder's own id; see
+            `todoFolders` in storage.ts. Unnamed folders read exactly as they
+            always did, and a named one keeps the count as a quiet suffix
+            because how much is folded away is the thing the line is for. */}
+        {editingName ? (
+          <input
+            autoFocus
+            defaultValue={name}
+            placeholder={t('todo.folderPlaceholder')}
+            onClick={(e) => e.stopPropagation()}
+            onBlur={(e) => commit(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') e.currentTarget.blur()
+              // Escape puts back what was there. Blurring is what commits, so
+              // the value has to be restored before the blur arrives.
+              if (e.key === 'Escape') {
+                e.currentTarget.value = name
+                e.currentTarget.blur()
+              }
+              e.stopPropagation()
+            }}
+            className="min-w-0 flex-1 h-5 px-1 bg-panel border border-accent rounded-[2px] text-[12px] text-fg outline-none"
+          />
+        ) : (
+          <>
+            <span className="truncate text-[12px] font-medium" style={{ color: sig('todo') }}>
+              {name || t('todo.folder', { count: todoIds.length })}
+            </span>
+            {name && <span className="shrink-0 text-[11px] text-dim">{todoIds.length}</span>}
+          </>
+        )}
       </div>
       <div className="shrink-0" style={{ width: COLS.progress }} />
       <div className="shrink-0" style={{ width: COLS.status }} />
       <div className="shrink-0 flex items-center justify-end pr-1 gap-0.5" style={{ width: COLS.actions }}>
+        {!editing && (
+          <button
+            onClick={stop(() => setEditingName(true))}
+            title={t('todo.renameFolder')}
+            aria-label={t('todo.renameFolder')}
+            className="p-1 text-dim hover:text-fg"
+          >
+            <Pencil size={13} />
+          </button>
+        )}
         {/* The ticks it drives are hidden in editing mode, so leaving this one
             out on its own would be a switch with nothing to switch. The two
             buttons beside it stay, acting on the whole folder — which is what

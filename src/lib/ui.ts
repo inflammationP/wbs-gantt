@@ -69,7 +69,7 @@ export const PRIORITY_META: Record<TaskPriority, PriorityMeta> = {
   low: { labelKey: 'priority.low', token: 'not-started' },
   medium: { labelKey: 'priority.medium', token: 'paused' },
   high: { labelKey: 'priority.high', token: 'in-progress' },
-  urgent: { labelKey: 'priority.urgent', token: 'delayed' },
+  top: { labelKey: 'priority.top', token: 'delayed' },
 }
 
 // To-dos have no priority. Everything that renders one goes through here so a
@@ -102,7 +102,7 @@ export function priorityWash(p: TaskPriority | null): string | undefined {
 }
 
 export const STATUS_ORDER: TaskStatus[] = ['todo', 'not-started', 'in-progress', 'completed', 'paused', 'delayed']
-export const PRIORITY_ORDER: TaskPriority[] = ['low', 'medium', 'high', 'urgent']
+export const PRIORITY_ORDER: TaskPriority[] = ['low', 'medium', 'high', 'top']
 
 // Project identity colours, chosen by the user in the project dialog. Not part
 // of any theme: a project is the same project whichever palette is on.

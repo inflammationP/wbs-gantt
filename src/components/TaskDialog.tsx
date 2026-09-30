@@ -90,7 +90,11 @@ export function TaskDialog({ onClose, existing, defaultParentId, defaultProjectI
   const wbs = useMemo(() => computeWbs(tasks.filter((t) => t.projectId === form.projectId)), [tasks, form.projectId])
 
   const isTodo = form.isTodo
-  const isLT = form.type === 'long-term'
+  // `!isTodo` and not just the field: with the type select off screen a to-do
+  // can still be carrying 'long-term' in the form from before the box was
+  // ticked, and every long-term rule below (no end date, no strict flag) would
+  // then apply to a task that has no type at all.
+  const isLT = !isTodo && form.type === 'long-term'
   const hasKids = existing ? tasks.some((t) => t.parentId === existing.id) : false
   /**
    * Whether this task's dates and progress mode are decided by its subtasks.
@@ -108,8 +112,12 @@ export function TaskDialog({ onClose, existing, defaultParentId, defaultProjectI
   // Turning the box on forces a phase (a to-do has no start, and long-term
   // goals are anchored to one) and drops the strict flag with the rest of the
   // schedule.
+  // The type is deliberately left alone. A to-do has none, so this no longer
+  // forces 'phase' on the way through — the field is not even on screen at this
+  // point, and un-ticking the box should not have quietly rewritten a choice
+  // the user made before ticking it.
   const setTodo = (on: boolean) =>
-    setForm((f) => (on ? { ...f, isTodo: on, type: 'phase', strictProgress: false } : { ...f, isTodo: on }))
+    setForm((f) => (on ? { ...f, isTodo: on, strictProgress: false } : { ...f, isTodo: on }))
 
   const submit = () => {
     const name = form.name.trim()
@@ -160,7 +168,10 @@ export function TaskDialog({ onClose, existing, defaultParentId, defaultProjectI
       name,
       description: form.description,
       projectId: form.projectId,
-      type: form.type,
+      // The one place the form's placeholder type is dropped: a to-do leaves
+      // here with no type, so nothing downstream can read 'phase' as a decision
+      // nobody made.
+      type: isTodo ? null : form.type,
       parentId: form.parentId,
       startDate: s,
       endDate: e,
@@ -188,13 +199,19 @@ export function TaskDialog({ onClose, existing, defaultParentId, defaultProjectI
           <input className={inputCls} autoFocus value={form.name} onChange={(e) => set('name', e.target.value)} placeholder={t('task.namePlaceholder')} />
         </Field>
 
-        <div className="grid grid-cols-2 gap-3">
-          <Field label={t('common.type')}>
-            <select className={inputCls} value={form.type} disabled={isTodo} onChange={(e) => setType(e.target.value as TaskType)}>
-              <option value="phase">{t('type.phase')}</option>
-              <option value="long-term">{t('type.longTerm')}</option>
-            </select>
-          </Field>
+        <div className={`grid ${isTodo ? 'grid-cols-1' : 'grid-cols-2'} gap-3`}>
+          {/* No field for a to-do. It was disabled there, which is worse than
+              absent: a greyed select asks a question and refuses the answer.
+              The type is asked in `StartTodoDialog`, when the to-do is given a
+              schedule and the question actually has an answer. */}
+          {!isTodo && (
+            <Field label={t('common.type')}>
+              <select className={inputCls} value={form.type} onChange={(e) => setType(e.target.value as TaskType)}>
+                <option value="phase">{t('type.phase')}</option>
+                <option value="long-term">{t('type.longTerm')}</option>
+              </select>
+            </Field>
+          )}
           <Field label={t('common.project')}>
             <select className={inputCls} value={form.projectId} onChange={(e) => { set('projectId', e.target.value); set('parentId', null) }}>
               {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}

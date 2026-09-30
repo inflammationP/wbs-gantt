@@ -175,7 +175,7 @@ export function LogsPage() {
         ) : (
           // Keyed on the mode so the swap remounts the grid and replays the
           // animation — a transition cannot express "the contents were replaced".
-          <div key={mode} className="swap-in grid gap-x-4 gap-y-6 grid-cols-[repeat(auto-fill,minmax(200px,1fr))]" style={{ maxWidth: 1120 }}>
+          <div key={mode} className="swap-in grid items-start gap-x-4 gap-y-6 grid-cols-[repeat(auto-fill,minmax(200px,1fr))]" style={{ maxWidth: 1120 }}>
             {visible.map(({ date, logs: dayLogs, note }) => {
               const d = toDate(date)
               // Group by task; show only parent (depth-0) items in the thumbnail
@@ -230,7 +230,7 @@ export function LogsPage() {
                   )}
                   <button
                     onClick={() => setSelectedDay(date)}
-                    className="relative w-full flex flex-col overflow-hidden rounded-2xl p-3.5 text-left bg-panel2 border border-border shadow-md transition-all hover:-translate-y-0.5 hover:shadow-xl hover:border-accent/60 h-[230px]"
+                    className="relative w-full flex flex-col overflow-hidden rounded-2xl p-3.5 text-left bg-panel2 border border-border shadow-md transition-all hover:-translate-y-0.5 hover:shadow-xl hover:border-accent/60 min-h-[230px]"
                   >
                     <div className="flex items-baseline gap-2 mb-2.5 pr-2">
                       <span className="text-[26px] font-bold leading-none text-fg">{d.getDate()}</span>
@@ -239,7 +239,7 @@ export function LogsPage() {
                         <div className="text-[11px] text-dim">{monthAbbr(lang, d.getMonth())} {d.getFullYear()}</div>
                       </div>
                     </div>
-                    <div className="flex-1 overflow-hidden space-y-2 pr-1">
+                    <div className="flex-1 space-y-2 pr-1">
                       {mode === 'logs'
                         ? preview.map((tp) => (
                             <div key={tp.taskId}>
@@ -251,7 +251,12 @@ export function LogsPage() {
                                 {tp.items.map((it, i) => (
                                   <div key={i} className="flex items-start gap-1.5 text-[12px] leading-snug">
                                     <span className="text-dim shrink-0">·</span>
-                                    <span className="min-w-0 truncate text-muted">{it.text}</span>
+                                    {/* Wrapped, not clipped. An item is the
+                                        thing the card is made of, and half of
+                                        one says less than the rest of it —
+                                        `break-words` because a pasted URL is
+                                        one word and would push the card open. */}
+                                    <span className="min-w-0 break-words text-muted">{it.text}</span>
                                   </div>
                                 ))}
                               </div>

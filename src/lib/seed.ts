@@ -12,6 +12,7 @@ export function buildSeed(): {
   chores: Chore[]
   habits: Habit[]
   notes: Note[]
+  todoFolders: Record<string, string>
 } {
-  return { projects: [], tasks: [], logs: [], chores: [], habits: [], notes: [] }
+  return { projects: [], tasks: [], logs: [], chores: [], habits: [], notes: [], todoFolders: {} }
 }

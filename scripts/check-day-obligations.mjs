@@ -97,31 +97,86 @@ const stated = [log('a', '2026-09-10', 100), log('a', '2026-09-12')]
 assert.deepEqual(owes([task({})], stated, '2026-09-20'), [])
 assert.equal(taskProgress(task({}), stated, new Date(2026, 8, 20)), 100)
 
+// --- what the Calendar draws on a day ---
+
+// The cell's own decision, and the one place the two "nothing owed" days come
+// apart. `worked` is the caller saying something was on the day; a day off and a
+// day that finished all of nothing are otherwise the same rate, and they used to
+// be the same green ring.
+const { dayCellState } = await server.ssrLoadModule('/src/lib/dayTasks.ts')
+const rate = (done, total) => ({ done, total, pct: total ? Math.round((done / total) * 100) : 0 })
+const cell = (day, worked, r = rate(0, 0)) => dayCellState(day, TODAY, r, worked).kind
+
+assert.equal(cell('2026-09-15', true), 'clear')
+assert.equal(cell('2026-09-15', false), 'empty')
+// Nothing has been put on a day that has not arrived, so it is not judged for
+// the work — worked or not.
+assert.equal(cell('2026-09-16', true), 'future')
+assert.equal(cell('2026-09-16', false), 'future')
+// Anything owed outranks both: the squares are drawn whatever was on the day,
+// which is what keeps an overdue backlog visible on a day it no longer covers.
+assert.equal(cell('2026-09-15', false, rate(0, 2)), 'owed')
+assert.equal(cell('2026-09-15', false, rate(1, 2)), 'partial')
+assert.equal(cell('2026-09-15', false, rate(2, 2)), 'full')
+
 // --- the order the day's list comes out in ---
 
 const PROJECTS = [{ id: 'p', name: 'p', color: '#888', description: '' }]
 /** The day's task ids, in the order the panel renders them. */
 const list = (tasks, day = TODAY) => daySummary(tasks, [], PROJECTS, day, day).all.map((r) => r.task.id)
 
-// A child follows its own parent, and among siblings the ones that owe a log
-// come first. The names are picked so that the sibling without the obligation
-// would win on WBS alone — `alpha` is numbered 1.1 and `zebra` 1.2 — which
-// makes this an assert about the obligation rule rather than about the
-// numbering happening to agree with it.
+const rowsFor = (tasks, day = TODAY) => daySummary(tasks, [], PROJECTS, day, day).all
+
+// Among siblings the ones that owe a log come first. The names are picked so
+// that the sibling without the obligation would win on WBS alone — `alpha` is
+// numbered 1.1 and `zebra` 1.2 — which makes this an assert about the
+// obligation rule rather than about the numbering happening to agree with it.
+//
+// `a` is absent, and that is the point: a parent is a container, so its row was
+// a line of the day spent saying what the rows under it said. It is the chain
+// on each of them now.
 const tree = [
   task({ id: 'a' }),
   task({ id: 'zebra', parentId: 'a', strictProgress: true }),
   task({ id: 'alpha', parentId: 'a', strictProgress: false }),
 ]
-assert.deepEqual(list(tree), ['a', 'zebra', 'alpha'])
+assert.deepEqual(list(tree), ['zebra', 'alpha'])
+assert.deepEqual(rowsFor(tree).map((r) => r.parents), [['a'], ['a']])
 
-// The sibling order is per group, not per list: below the root, `a`'s children
-// keep their own order even though other rows outrank them on status.
-assert.deepEqual(list([...tree, task({ id: 'z', endDate: '2026-09-14' })]), ['z', 'a', 'zebra', 'alpha'])
+// The order is still the tree's: a branch's leaves stay together and keep their
+// own order, even though the list that comes out of it is flat.
+assert.deepEqual(list([...tree, task({ id: 'z', endDate: '2026-09-14' })]), ['z', 'zebra', 'alpha'])
 
-// A task whose parent is not scheduled that day does not wait for it: the list
-// is what is on the day, and it becomes a root there.
-assert.deepEqual(list([task({ id: 'b', parentId: 'not-scheduled-today', strictProgress: true })]), ['b'])
+// And it is the whole list, not each rung. `first` is numbered 1 and comes
+// before `beta` at 2.1 on WBS alone, with nothing else to separate them — so
+// this is an assert about the hoist reaching across branches rather than about
+// the tree happening to agree with it.
+const across = [
+  task({ id: 'first', name: 'first', strictProgress: false }),
+  task({ id: 'holder', name: 'holder' }),
+  task({ id: 'beta', name: 'beta', parentId: 'holder' }),
+]
+assert.deepEqual(list(across), ['beta', 'first'])
+
+// A parent that is not on the day still names the branch. It has no row — the
+// rule is about what is scheduled, not about what is reachable — but the chain
+// is walked over the whole store, so the row it belongs to can still say where
+// it came from.
+const away = [
+  // Named, because the chain carries names and `task()` defaults every one of
+  // them to 'a' — an assertion on ids here would pass on the wrong thing.
+  task({ id: 'p', name: 'phase', startDate: '2026-10-01', endDate: '2026-10-05' }),
+  task({ id: 'b', parentId: 'p', strictProgress: true }),
+]
+assert.deepEqual(list(away), ['b'])
+assert.deepEqual(rowsFor(away)[0].parents, ['phase'])
+
+// A child that is itself a to-do does not make a container. To-dos are
+// unscheduled and take no part in the roll-up, so a task whose children are all
+// to-dos keeps its own dates and is a leaf here.
+const todoKid = [task({ id: 'a' }), task({ id: 't', parentId: 'a', isTodo: true, startDate: null, endDate: null })]
+assert.deepEqual(list(todoKid), ['a'])
+assert.deepEqual(rowsFor(todoKid)[0].parents, [])
 
 await server.close()
 console.log('day obligations: ok')

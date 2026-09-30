@@ -40,8 +40,14 @@ export function isPausedOnDay(task: Pausable, day: string): boolean {
  * pushes the end date out by however long the pause lasted, so the window grows
  * by exactly those days — count them and the task is capped below 100% forever,
  * with no day left on which it could have been advanced.
+ *
+ * Exported for `LogDialog`'s "advance one day" button, which splits 100 across this
+ * same span rather than counting its own days: the denominator a day is measured
+ * against has to be the one `tickProgress` and the auto-accumulate above use, or
+ * the number the button offers and the number the app would have derived would
+ * disagree.
  */
-function countableDays(task: Task, start: string, end: string): number {
+export function countableDays(task: Task, start: string, end: string): number {
   let n = 0
   for (let d = toDate(start), last = toDate(end); d <= last; d = addDays(d, 1)) {
     if (!isPausedOnDay(task, toISO(d))) n++
@@ -98,6 +104,30 @@ export function taskProgress(task: Task, logs: TaskLog[], onDate: Date): number 
   const totalDays = Math.max(1, countableDays(task, task.startDate, task.endDate))
   const loggedDays = new Set(own.map((l) => l.date)).size
   return Math.min(100, Math.round((loggedDays / totalDays) * 100))
+}
+
+/**
+ * The day a task was actually finished, or null while it is not.
+ *
+ * Asked by walking the days this task's number could have moved on and taking
+ * the first one where `taskProgress` reads 100 — the same function everything
+ * else reads, so "finished" means here exactly what it means anywhere. A strict
+ * task moves on its log dates and a plain one on its ticked days, and a task is
+ * one or the other, so the union of the two is the whole list of candidates.
+ *
+ * Not "the last log" and not "the last tick": a task can be finished early and
+ * then written about again — a diary entry the next morning must not push its
+ * completion a day later — and it can be backfilled, which is how a task
+ * finished last week gets logged today.
+ */
+export function completedOn(task: Task, logs: TaskLog[]): string | null {
+  const mine = logs.filter((l) => l.taskId === task.id)
+  const days = [...new Set([...mine.map((l) => l.date), ...(task.confirmedDays ?? [])])].sort()
+  for (const day of days) {
+    const p = taskProgress(task, mine.filter((l) => l.date <= day), toDate(day))
+    if (p != null && p >= 100) return day
+  }
+  return null
 }
 
 // Average progress over the given tasks, ignoring long-term goals (which have none).

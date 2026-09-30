@@ -102,10 +102,17 @@ interface Props {
   onSel: (next: Set<string>) => void
   onContext: (e: MouseEvent<HTMLDivElement>, row: RowTask) => void
   onAddChild: (row: RowTask) => void
+  /**
+   * A sibling of the row — same parent, same project, same kind. Separate from
+   * `onAddChild` because a to-do has no children to add: the row's "+" is the
+   * sibling button there, which is what the context menu already does with its
+   * own pair.
+   */
+  onAddSibling: (row: RowTask) => void
   onEdit: (row: RowTask) => void
 }
 
-export function GanttChart({ rows, range, todo, editing, sel, onSel, onContext, onAddChild, onEdit }: Props) {
+export function GanttChart({ rows, range, todo, editing, sel, onSel, onContext, onAddChild, onAddSibling, onEdit }: Props) {
   const t = useT()
   const lang = useLang()
   const viewMode = useStore((s) => s.viewMode)
@@ -615,6 +622,7 @@ export function GanttChart({ rows, range, todo, editing, sel, onSel, onContext, 
                 picked={picking(row.id)}
                 onRowClick={onRowClick}
                 onAddChild={onAddChild}
+                onAddSibling={onAddSibling}
                 onEdit={onEdit}
                 onContext={onContext}
               />

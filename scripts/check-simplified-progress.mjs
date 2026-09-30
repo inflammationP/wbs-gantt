@@ -17,7 +17,7 @@ import assert from 'node:assert/strict'
 import { createServer } from 'vite'
 
 const server = await createServer({ server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' })
-const { taskProgress } = await server.ssrLoadModule('/src/lib/progress.ts')
+const { taskProgress, completedOn } = await server.ssrLoadModule('/src/lib/progress.ts')
 
 /** Local midnight, the way `toDate` builds the dates the app passes in. */
 const on = (iso) => {
@@ -47,6 +47,15 @@ const task = (over) => ({
   updatedAt: '',
   ...over,
 })
+
+/** A log entry — what moves a strict task's number, where a tick moves a plain one. */
+const log = (taskId, date, targetProgress = null) => ({
+  id: `${taskId}@${date}`, taskId, date, content: '', targetProgress, createdAt: '', updatedAt: '',
+})
+
+/** The same task keeping a log instead of ticking days. The fixture is the
+    plain one, because that is what this file is about. */
+const strict = (over = {}) => task({ strictProgress: true, ...over })
 
 /** Progress of a simplified task, with `days` ticked off, read on `when`. */
 const pct = (days, when = '2026-09-05', over = {}) =>
@@ -95,6 +104,29 @@ assert.equal(pct([], '2026-08-31'), null)
 
 // A task with no dates cannot be counted on any day.
 assert.equal(taskProgress(task({ startDate: null, endDate: null }), [], on('2026-09-05')), 0)
+
+// --- the day a task was actually finished ---
+
+// A strict task's day is its log's, and the *first* log that reads 100 is the
+// one — not the last log it has. A diary entry the next morning carries no
+// target, states nothing, and must not push the completion a day later.
+const early = [log('a', '2026-09-01', 40), log('a', '2026-09-03', 100), log('a', '2026-09-05')]
+assert.equal(completedOn(strict(), early), '2026-09-03')
+
+// Backfilled: one log, written today, about a day three days ago. The day it
+// says is the day it means.
+assert.equal(completedOn(strict(), [log('a', '2026-09-02', 100)]), '2026-09-02')
+
+// Finished at the end of the window, and never finished at all.
+assert.equal(completedOn(strict(), [log('a', '2026-09-05', 100)]), '2026-09-05')
+assert.equal(completedOn(strict(), [log('a', '2026-09-03', 80)]), null)
+assert.equal(completedOn(strict(), []), null)
+
+// A plain task is finished when every countable day has been ticked, so the day
+// it finished is the day of the tick that completed the set.
+const window = ['2026-09-01', '2026-09-02', '2026-09-03', '2026-09-04', '2026-09-05']
+assert.equal(completedOn(task({ confirmedDays: window }), []), '2026-09-05')
+assert.equal(completedOn(task({ confirmedDays: window.slice(0, 4) }), []), null)
 
 await server.close()
 console.log('simplified progress: ok')

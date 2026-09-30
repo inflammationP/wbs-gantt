@@ -345,6 +345,7 @@ export function GanttPage() {
         onSel={setSel}
         onContext={handleContext}
         onAddChild={(r) => openCreate(r.id)}
+        onAddSibling={(r) => openCreate(r.task.parentId, r.task.projectId, r.task.isTodo)}
         onEdit={openEdit}
       />
 

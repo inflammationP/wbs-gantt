@@ -48,7 +48,8 @@ export interface NewTaskInput {
   description?: string
   parentId?: string | null
   projectId: string
-  type?: TaskType
+  /** null creates a to-do with no type — see `Task.type`. */
+  type?: TaskType | null
   isTodo?: boolean
   startDate: string | null
   endDate: string | null
@@ -102,6 +103,11 @@ export interface StartTodoInput {
   id: string
   startDate: string
   endDate: string
+  /**
+   * What the to-do turns out to be, asked here because this is the first moment
+   * the question has an answer — see the note on `Task.type`.
+   */
+  type: TaskType
   strictProgress: boolean
   priority: TaskPriority
 }
@@ -146,6 +152,8 @@ interface State {
   chores: Chore[]
   habits: Habit[]
   notes: Note[]
+  /** What the user calls each to-do folder, by `todoGroupId` — see `storage.ts`. */
+  todoFolders: Record<string, string>
   activeView: AppView
   // Bumped by `openGantt` and used as the Gantt page's React key, so clicking
   // the nav item remounts it rather than reusing the mounted one.
@@ -267,6 +275,8 @@ interface State {
   addChore: (title: string, date: string) => void
   updateChore: (id: string, patch: Partial<Chore>) => void
   toggleChore: (id: string) => void
+  /** Name a to-do folder, or clear the name by passing a blank one. */
+  setTodoFolderName: (groupId: string, name: string) => void
   deleteChore: (id: string) => void
 
   /**
@@ -353,6 +363,7 @@ if (!loaded) {
     chores: initial.chores,
     habits: initial.habits,
     notes: initial.notes,
+    todoFolders: initial.todoFolders,
   })
 }
 
@@ -467,6 +478,7 @@ export const useStore = create<State>()((set, get) => ({
   chores: initial.chores,
   habits: initial.habits,
   notes: initial.notes,
+  todoFolders: initial.todoFolders,
   lastUndo: null,
   activeView: 'gantt',
   ganttKey: 0,
@@ -608,7 +620,10 @@ export const useStore = create<State>()((set, get) => ({
         description: input.description ?? '',
         parentId,
         projectId,
-        type: isLT ? 'long-term' : 'phase',
+        // A to-do is created without one. Falling through to the 'phase' this
+        // line used to write for everything would put a type on the task that
+        // the panel then reported back as if it had been chosen.
+        type: isTodo ? null : isLT ? 'long-term' : 'phase',
         isTodo,
         startDate: isTodo ? null : input.startDate,
         endDate: isTodo || isLT ? null : input.endDate,
@@ -922,6 +937,10 @@ export const useStore = create<State>()((set, get) => ({
                 endDate: null,
                 strictProgress: false,
                 priority: null,
+                // Dropped with the other scheduling fields, and for the same
+                // reason: a to-do has no type. It comes back from
+                // `startTodoTasks` with the one the user picks at that point.
+                type: null,
                 paused: false,
                 pauseDate: null,
                 updatedAt: now,
@@ -951,6 +970,7 @@ export const useStore = create<State>()((set, get) => ({
           return {
             ...t,
             isTodo: false,
+            type: e.type,
             startDate: start,
             endDate: end,
             strictProgress: e.strictProgress,
@@ -991,6 +1011,19 @@ export const useStore = create<State>()((set, get) => ({
         }
       }),
     })),
+
+  // Blank clears the entry rather than storing one: `normalize` drops empty
+  // names on the way in for the same reason, and a folder with no name has to
+  // read as unnamed on both paths or a cleared name would come back after a
+  // reload.
+  setTodoFolderName: (groupId, name) =>
+    set((s) => {
+      const trimmed = name.trim()
+      const next = { ...s.todoFolders }
+      if (trimmed) next[groupId] = trimmed
+      else delete next[groupId]
+      return { todoFolders: next }
+    }),
 
   toggleChore: (id) =>
     set((s) => ({
@@ -1130,6 +1163,7 @@ export const useStore = create<State>()((set, get) => ({
       chores: data.chores ?? [],
       habits: data.habits ?? [],
       notes: data.notes ?? [],
+      todoFolders: data.todoFolders ?? {},
       selectedTaskId: null,
       selectedProjectId: null,
       projectFilter: 'all',
@@ -1340,7 +1374,8 @@ useStore.subscribe((state, prev) => {
     state.logs !== prev.logs ||
     state.chores !== prev.chores ||
     state.habits !== prev.habits ||
-    state.notes !== prev.notes
+    state.notes !== prev.notes ||
+    state.todoFolders !== prev.todoFolders
   ) {
     saveData({
       projects: state.projects,
@@ -1349,6 +1384,7 @@ useStore.subscribe((state, prev) => {
       chores: state.chores,
       habits: state.habits,
       notes: state.notes,
+      todoFolders: state.todoFolders,
     })
   }
 })

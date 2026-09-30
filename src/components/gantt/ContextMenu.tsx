@@ -75,7 +75,12 @@ export function ContextMenu({ menu, onClose, onAddChild, onAddSibling, onEdit, o
         <Item icon={<Plus size={13} />} label={t('task.addSibling')} onClick={() => { onAddSibling(menu.row); onClose() }} />
         <div className="my-1 border-t border-line" />
         <Item icon={<Pencil size={13} />} label={t('common.edit')} onClick={() => { onEdit(menu.row); onClose() }} />
-        {menu.row.eff.status === 'in-progress' || menu.row.eff.status === 'delayed' ? (
+        {/* No item on a row with subtasks. Past the status gate below it would
+            open a dialog that refuses to render, so the item would do nothing
+            at all — and a menu entry that does nothing is worse than one that
+            was never there. The panel is where the reason is legible: it says
+            the progress is rolled up from the children. */}
+        {!menu.row.hasKids && (menu.row.eff.status === 'in-progress' || menu.row.eff.status === 'delayed') ? (
           <Item icon={<NotebookText size={13} />} label={t('log.write')} onClick={() => { onWriteLog(menu.row); onClose() }} />
         ) : null}
         <Item icon={<CornerUpLeft size={13} />} label={t('gantt.moveToTopLevel')} onClick={() => { onOutdent(menu.row); onClose() }} />

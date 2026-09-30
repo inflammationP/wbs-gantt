@@ -78,7 +78,6 @@ function Column({
   const habits = useStore((s) => s.habits)
   const today = useStore((s) => s.today)
   const addChore = useStore((s) => s.addChore)
-  const addHabit = useStore((s) => s.addHabit)
   const toggleHabit = useStore((s) => s.toggleHabit)
 
   // Which day this is decides which question is being asked of the chores, and
@@ -116,7 +115,7 @@ function Column({
         habits={dayHabits}
         layout="side"
         onAddChore={(title) => addChore(title, date)}
-        onAddHabit={editable ? addHabit : undefined}
+        habitsEditable={editable}
         onToggleHabit={editable ? toggleHabit : undefined}
       />
     </section>

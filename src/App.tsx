@@ -23,6 +23,8 @@ export default function App() {
   const ganttKey = useStore((s) => s.ganttKey)
   const selectedDay = useStore((s) => s.selectedDay)
   const selectedTaskId = useStore((s) => s.selectedTaskId)
+  const setSelected = useStore((s) => s.setSelected)
+  const setSelectedDay = useStore((s) => s.setSelectedDay)
   const selectedExists = useStore((s) => s.tasks.some((t) => t.id === s.selectedTaskId))
   const selectedProject = useStore((s) => s.projects.find((p) => p.id === s.selectedProjectId))
   const tasks = useStore((s) => s.tasks)
@@ -34,6 +36,28 @@ export default function App() {
   useEffect(() => {
     syncParentDates()
   }, [tasks, syncParentDates])
+
+  // The day panel and the task panel belong to the board — and the Gantt and
+  // the Calendar are one zone, not two: a panel opened on either survives a
+  // switch to the other, because it has not left the board. Only leaving for a
+  // different page closes it. Parked instead, it came back the next time the
+  // board was opened — a panel read and moved on from, still on screen an hour
+  // later, over a board that has scrolled somewhere else since. Closing is an
+  // act, and it has to hold.
+  //
+  // Keyed on the view alone, which is the whole trick. Run on every render and
+  // it would also slam the task panel shut on the pages that legitimately open
+  // one — the Manage list and the Today board both do, and they keep it until
+  // the next page switch like everywhere else. Leaving a page is the event;
+  // sitting on one is not.
+  useEffect(() => {
+    if (view === 'gantt' || view === 'calendar') return
+    // `setSelected(null)` drops the project too, which costs nothing here: the
+    // only thing that opens a project panel is the sidebar's project row, and
+    // that switches to the Gantt in the same breath.
+    setSelected(null)
+    setSelectedDay(null)
+  }, [view, setSelected, setSelectedDay])
 
   // The update check the app fires on the user's behalf at startup — the same
   // call the Settings button makes, with nothing to tell them apart. In
