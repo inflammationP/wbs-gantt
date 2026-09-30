@@ -484,76 +484,77 @@
 | 377 | `update.availableTitle` | Update available | 发现新版本 |
 | 378 | `update.availableBody` | Version {version} has been released. You are on {current}. | 新版本 {version} 已发布，当前版本为 {current}。 |
 | 379 | `update.notes` | Release notes | 更新说明 |
-| 380 | `update.noNotes` | This release came with no release notes. | 本次发布未填写更新说明。 |
-| 381 | `update.downloadAndInstall` | Download and install | 下载并安装 |
-| 382 | `update.installing` | Downloading… | 正在下载… |
-| 383 | `update.installFailed` | The update could not be installed: {message} | 更新安装失败：{message} |
-| 384 | `update.later` | Later | 以后再说 |
-| 385 | `update.snooze` | Ignore for {days} days | {days} 天内不再提醒 |
-| 386 | `update.nagTitle` | It has been a while | 已经很久没有更新了 |
-| 387 | `update.nagBody` | It has been over a month since this app last reached GitHub. Take a look for bug fixes and new features? | 要不要连上 GitHub 看一眼有没有 bug 修复和新功能呢？ |
-| 388 | `update.nagGo` | Go to Settings | 去设置看看 |
-| 389 | `update.connectTitle` | Want a stable GitHub connection? | 想稳定连接 GitHub？ |
-| 390 | `update.connectBody` | Watt Toolkit (formerly Steam++) is a free, open-source network accelerator. It speeds up both the GitHub website and Release downloads. | Watt Toolkit（原 Steam++）是免费开源的多平台网络加速工具，可以加速 GitHub 网页和 Release 下载。 |
-| 391 | `update.connectLink` | Download from steampp.net | 前往官网下载（steampp.net） |
-| 392 | `update.opensource` | GitHub is the largest home of open-source software — operating systems, frameworks, ready-made tools, most of it free to use, study and build on. This project’s source and releases live there too. | GitHub 是全球最大的开源社区，托管着数以亿计的开源项目 —— 从操作系统、开发框架到各类现成工具，绝大多数都可以免费使用、学习和二次开发。本项目的源码和版本更新也发布在这里。 |
-| 393 | `update.openRepo` | View on GitHub | 在 GitHub 上查看 |
-| 394 | `theme.graphite.name` | Graphite | 石墨 |
-| 395 | `theme.graphite.hint` | Near-black, neutral | 近黑 · 中性 |
-| 396 | `theme.slate.name` | Slate | 板岩 |
-| 397 | `theme.slate.hint` | Mid grey-blue, cool | 中灰蓝 · 偏冷 |
-| 398 | `theme.ember.name` | Ember | 余烬 |
-| 399 | `theme.ember.hint` | Hazel-black, warm | 榛黑 · 偏暖 |
-| 400 | `theme.paper.name` | Paper | 纸张 |
-| 401 | `theme.paper.hint` | Light, crisp | 浅色 · 清爽 |
-| 402 | `swatch.groupChrome` | Interface | 界面 |
-| 403 | `swatch.groupSignals` | Meaning | 语义 |
-| 404 | `swatch.bg` | Background | 底色 |
-| 405 | `swatch.panel` | Panel | 面板 |
-| 406 | `swatch.panel2` | Field | 输入框 |
-| 407 | `swatch.stripe` | Alt. row | 斑马行 |
-| 408 | `swatch.border` | Border | 边框 |
-| 409 | `swatch.line` | Divider | 分隔线 |
-| 410 | `swatch.fg` | Text | 正文 |
-| 411 | `swatch.muted` | Secondary text | 次要文字 |
-| 412 | `swatch.dim` | Faint text | 弱化文字 |
-| 413 | `swatch.accent` | Accent | 强调色 |
+| 380 | `update.history` | Older releases this update brings along ({count}) | 本次将连带更新的历史版本内容（{count} 个版本） |
+| 381 | `update.noNotes` | This release came with no release notes. | 本次发布未填写更新说明。 |
+| 382 | `update.downloadAndInstall` | Download and install | 下载并安装 |
+| 383 | `update.installing` | Downloading… | 正在下载… |
+| 384 | `update.installFailed` | The update could not be installed: {message} | 更新安装失败：{message} |
+| 385 | `update.later` | Later | 以后再说 |
+| 386 | `update.snooze` | Ignore for {days} days | {days} 天内不再提醒 |
+| 387 | `update.nagTitle` | It has been a while | 已经很久没有更新了 |
+| 388 | `update.nagBody` | It has been over a month since this app last reached GitHub. Take a look for bug fixes and new features? | 要不要连上 GitHub 看一眼有没有 bug 修复和新功能呢？ |
+| 389 | `update.nagGo` | Go to Settings | 去设置看看 |
+| 390 | `update.connectTitle` | Want a stable GitHub connection? | 想稳定连接 GitHub？ |
+| 391 | `update.connectBody` | Watt Toolkit (formerly Steam++) is a free, open-source network accelerator. It speeds up both the GitHub website and Release downloads. | Watt Toolkit（原 Steam++）是免费开源的多平台网络加速工具，可以加速 GitHub 网页和 Release 下载。 |
+| 392 | `update.connectLink` | Download from steampp.net | 前往官网下载（steampp.net） |
+| 393 | `update.opensource` | GitHub is the largest home of open-source software — operating systems, frameworks, ready-made tools, most of it free to use, study and build on. This project’s source and releases live there too. | GitHub 是全球最大的开源社区，托管着数以亿计的开源项目 —— 从操作系统、开发框架到各类现成工具，绝大多数都可以免费使用、学习和二次开发。本项目的源码和版本更新也发布在这里。 |
+| 394 | `update.openRepo` | View on GitHub | 在 GitHub 上查看 |
+| 395 | `theme.graphite.name` | Graphite | 石墨 |
+| 396 | `theme.graphite.hint` | Near-black, neutral | 近黑 · 中性 |
+| 397 | `theme.slate.name` | Slate | 板岩 |
+| 398 | `theme.slate.hint` | Mid grey-blue, cool | 中灰蓝 · 偏冷 |
+| 399 | `theme.ember.name` | Ember | 余烬 |
+| 400 | `theme.ember.hint` | Hazel-black, warm | 榛黑 · 偏暖 |
+| 401 | `theme.paper.name` | Paper | 纸张 |
+| 402 | `theme.paper.hint` | Light, crisp | 浅色 · 清爽 |
+| 403 | `swatch.groupChrome` | Interface | 界面 |
+| 404 | `swatch.groupSignals` | Meaning | 语义 |
+| 405 | `swatch.bg` | Background | 底色 |
+| 406 | `swatch.panel` | Panel | 面板 |
+| 407 | `swatch.panel2` | Field | 输入框 |
+| 408 | `swatch.stripe` | Alt. row | 斑马行 |
+| 409 | `swatch.border` | Border | 边框 |
+| 410 | `swatch.line` | Divider | 分隔线 |
+| 411 | `swatch.fg` | Text | 正文 |
+| 412 | `swatch.muted` | Secondary text | 次要文字 |
+| 413 | `swatch.dim` | Faint text | 弱化文字 |
+| 414 | `swatch.accent` | Accent | 强调色 |
 
 ## getting started
 
 | # | key | English | 中文 |
 |---|-----|---------|------|
-| 414 | `guide.title` | Getting started | 开始使用 |
-| 415 | `guide.dismiss` | Hide this | 收起 |
-| 416 | `guide.done` | You are set up. | 已经上手了。 |
-| 417 | `guide.read` | Read this | 看说明 |
-| 418 | `guide.close` | Got it | 知道了 |
-| 419 | `guide.goThere` | Take me there | 带我去 |
-| 420 | `guide.step.language` | Pick your language in {settings} | 在{settings}里选界面语言 |
-| 421 | `guide.step.project` | Create a project in {manage} | 在{manage}里新建一个项目 |
-| 422 | `guide.step.parentTask` | Add a parent task inside it | 在这个项目下新建一个父任务 |
-| 423 | `guide.step.strictChild` | Nest a strict subtask under that task | 在父任务下挂一个严格子任务 |
-| 424 | `guide.step.endDate` | How a parent’s dates are worked out | 父任务的日期是怎么来的 |
-| 425 | `guide.step.log` | Write a log on the strict subtask | 给严格子任务写一条任务日志 |
-| 426 | `guide.step.tour` | Look around: Logs, Manage, Calendar, Settings | 逛一圈：日志 · 管理 · 日历 · 设置 |
-| 427 | `guide.explain.language.title` | Interface language | 界面语言 |
-| 428 | `guide.explain.language.p1` | The interface comes in {langs}. It opens in English — if that is not your language, switch it in Settings, under Language. Everything follows at once, this card included. | 界面有 {langs} 三种。默认打开是 English —— 如果你不读英文，到设置里的「语言」换一下。换完立刻生效，这张卡片也会跟着变。 |
-| 429 | `guide.explain.language.skip` | Not now | 先不用 |
-| 430 | `guide.explain.endDate.title` | How a parent’s dates are worked out | 父任务的日期是怎么来的 |
-| 431 | `guide.explain.endDate.p1` | A phase parent keeps no schedule of its own — it starts when its earliest subtask starts and ends when its latest one ends. Give a subtask dates outside the parent’s and the parent stretches out to meet them. | 阶段任务的父任务自己不排期 —— 它从最早开始的子任务开始、到最晚结束的子任务结束。给某个子任务的日期超出父任务的范围，父任务就会撑出去跟上它。 |
-| 432 | `guide.explain.endDate.p2` | The interface says as much: open a phase parent for editing and both date fields are greyed out. Drag any subtask and the parent follows, at both ends. Its progress works the same way — the average of its subtasks’ — which is why it will not let you type one in either. | 这一点界面上就写着：打开一个阶段父任务的编辑框，开始日期和结束日期两栏都是灰的。你拖动任何一个子任务，父任务两头都会跟着走。进度同理 —— 父任务的进度是子任务进度的平均，所以它也不让你手填。 |
-| 433 | `guide.explain.endDate.p3` | Long-term goals are the exception. They have a start and no end, so a parent of that kind has nothing to stretch — which is why it shows a start date and nothing else. | 长期目标是例外。它只有开始、没有结束，所以这种父任务没有东西可撑 —— 这就是它只显示一个开始日期的原因。 |
-| 434 | `guide.explain.strict.title` | Strict and non-strict: where progress comes from | 严格与非严格：进度从哪来 |
-| 435 | `guide.explain.strict.p1` | The difference is where the number comes from, not how it is drawn. | 差别在于这个数字从哪来，而不在于它怎么画。 |
-| 436 | `guide.explain.strict.p2` | A simplified task counts the days you tick off. On a day you did the work you click its box once, and a day you did not tick counts for nothing, however long ago its window closed. A window that closes without every day ticked reads late, not done. | 简化任务数的是你点过的天。哪一天做了，就在那天点一次框；没点的日子一分不算，窗口过去多久都一样。窗口走完还没点满，它读作逾期，而不是完成。 |
-| 437 | `guide.explain.strict.p3` | A strict task counts only logs. With no log at all it stays at 0%, long after its window has closed. Once there are logs, one of two things decides the number: the latest log that carries a target progress is taken at its word; if none carries one, progress accrues as logged days ÷ the window’s days — so a day you skip is a day genuinely lost. | 严格任务只认日志。一条日志都没有，它就一直是 0%，哪怕窗口早就过去了。有了日志之后，两种情况决定这个数字：最新一条日志填了目标进度，就以它为准；一条都没填，就按「写过日志的天数 ÷ 窗口总天数」累积 —— 所以漏掉一天，就是实打实地少一格。 |
-| 438 | `guide.explain.strict.p4` | That is what a strict task is for: a progress figure that carries a reason beside it, rather than a bare number. | 这就是严格任务的意义：进度旁边带着一句「为什么」，而不只是一个数字。 |
-| 439 | `guide.explain.tour.title` | A look around | 逛一圈 |
-| 440 | `guide.explain.tour.intro` | These four pages all read the board you have just built, so there is something to see on each of them even while it is still small. One line on each: | 这四个页面读的都是你刚建起来的看板 —— 就算它还很小，每个页面上也有东西可看。各一句： |
-| 441 | `guide.explain.tour.logs` | Logs — everything written, collected by day; a strict task’s entries carry their target progress too. The switcher in the corner shows just the notes instead — what you write for its own sake, and which never becomes a task. | 日志 —— 所有写过的内容按天汇总；严格任务的条目还带着目标进度。右上角可以切到记事本 —— 那是你为自己写的东西，永远不会变成任务。 |
-| 442 | `guide.explain.tour.manage` | Manage — the overview: what is on today, what is coming, what has slipped, then a year of completion shading, and projects and tasks broken out below. | Manage —— 整体概览：今天该做什么、接下来是什么、哪些逾期了，往下是一年的完成热力图，再往下按项目和任务分列。 |
-| 443 | `guide.explain.tour.calendar` | Calendar — the month at a glance. A cell’s shade is how much of that day’s strict work was logged, and days carrying milestones or overdue work are marked. | 日历 —— 整月一屏。每格的深浅是当天严格任务的日志覆盖率，有里程碑或逾期任务的日子会标出来。 |
-| 444 | `guide.explain.tour.settings` | Settings — three languages and four colour schemes, switchable whenever you like. | 设置 —— 三种语言、四套配色，随时可切。 |
+| 415 | `guide.title` | Getting started | 开始使用 |
+| 416 | `guide.dismiss` | Hide this | 收起 |
+| 417 | `guide.done` | You are set up. | 已经上手了。 |
+| 418 | `guide.read` | Read this | 看说明 |
+| 419 | `guide.close` | Got it | 知道了 |
+| 420 | `guide.goThere` | Take me there | 带我去 |
+| 421 | `guide.step.language` | Pick your language in {settings} | 在{settings}里选界面语言 |
+| 422 | `guide.step.project` | Create a project in {manage} | 在{manage}里新建一个项目 |
+| 423 | `guide.step.parentTask` | Add a parent task inside it | 在这个项目下新建一个父任务 |
+| 424 | `guide.step.strictChild` | Nest a strict subtask under that task | 在父任务下挂一个严格子任务 |
+| 425 | `guide.step.endDate` | How a parent’s dates are worked out | 父任务的日期是怎么来的 |
+| 426 | `guide.step.log` | Write a log on the strict subtask | 给严格子任务写一条任务日志 |
+| 427 | `guide.step.tour` | Look around: Logs, Manage, Calendar, Settings | 逛一圈：日志 · 管理 · 日历 · 设置 |
+| 428 | `guide.explain.language.title` | Interface language | 界面语言 |
+| 429 | `guide.explain.language.p1` | The interface comes in {langs}. It opens in English — if that is not your language, switch it in Settings, under Language. Everything follows at once, this card included. | 界面有 {langs} 三种。默认打开是 English —— 如果你不读英文，到设置里的「语言」换一下。换完立刻生效，这张卡片也会跟着变。 |
+| 430 | `guide.explain.language.skip` | Not now | 先不用 |
+| 431 | `guide.explain.endDate.title` | How a parent’s dates are worked out | 父任务的日期是怎么来的 |
+| 432 | `guide.explain.endDate.p1` | A phase parent keeps no schedule of its own — it starts when its earliest subtask starts and ends when its latest one ends. Give a subtask dates outside the parent’s and the parent stretches out to meet them. | 阶段任务的父任务自己不排期 —— 它从最早开始的子任务开始、到最晚结束的子任务结束。给某个子任务的日期超出父任务的范围，父任务就会撑出去跟上它。 |
+| 433 | `guide.explain.endDate.p2` | The interface says as much: open a phase parent for editing and both date fields are greyed out. Drag any subtask and the parent follows, at both ends. Its progress works the same way — the average of its subtasks’ — which is why it will not let you type one in either. | 这一点界面上就写着：打开一个阶段父任务的编辑框，开始日期和结束日期两栏都是灰的。你拖动任何一个子任务，父任务两头都会跟着走。进度同理 —— 父任务的进度是子任务进度的平均，所以它也不让你手填。 |
+| 434 | `guide.explain.endDate.p3` | Long-term goals are the exception. They have a start and no end, so a parent of that kind has nothing to stretch — which is why it shows a start date and nothing else. | 长期目标是例外。它只有开始、没有结束，所以这种父任务没有东西可撑 —— 这就是它只显示一个开始日期的原因。 |
+| 435 | `guide.explain.strict.title` | Strict and non-strict: where progress comes from | 严格与非严格：进度从哪来 |
+| 436 | `guide.explain.strict.p1` | The difference is where the number comes from, not how it is drawn. | 差别在于这个数字从哪来，而不在于它怎么画。 |
+| 437 | `guide.explain.strict.p2` | A simplified task counts the days you tick off. On a day you did the work you click its box once, and a day you did not tick counts for nothing, however long ago its window closed. A window that closes without every day ticked reads late, not done. | 简化任务数的是你点过的天。哪一天做了，就在那天点一次框；没点的日子一分不算，窗口过去多久都一样。窗口走完还没点满，它读作逾期，而不是完成。 |
+| 438 | `guide.explain.strict.p3` | A strict task counts only logs. With no log at all it stays at 0%, long after its window has closed. Once there are logs, one of two things decides the number: the latest log that carries a target progress is taken at its word; if none carries one, progress accrues as logged days ÷ the window’s days — so a day you skip is a day genuinely lost. | 严格任务只认日志。一条日志都没有，它就一直是 0%，哪怕窗口早就过去了。有了日志之后，两种情况决定这个数字：最新一条日志填了目标进度，就以它为准；一条都没填，就按「写过日志的天数 ÷ 窗口总天数」累积 —— 所以漏掉一天，就是实打实地少一格。 |
+| 439 | `guide.explain.strict.p4` | That is what a strict task is for: a progress figure that carries a reason beside it, rather than a bare number. | 这就是严格任务的意义：进度旁边带着一句「为什么」，而不只是一个数字。 |
+| 440 | `guide.explain.tour.title` | A look around | 逛一圈 |
+| 441 | `guide.explain.tour.intro` | These four pages all read the board you have just built, so there is something to see on each of them even while it is still small. One line on each: | 这四个页面读的都是你刚建起来的看板 —— 就算它还很小，每个页面上也有东西可看。各一句： |
+| 442 | `guide.explain.tour.logs` | Logs — everything written, collected by day; a strict task’s entries carry their target progress too. The switcher in the corner shows just the notes instead — what you write for its own sake, and which never becomes a task. | 日志 —— 所有写过的内容按天汇总；严格任务的条目还带着目标进度。右上角可以切到记事本 —— 那是你为自己写的东西，永远不会变成任务。 |
+| 443 | `guide.explain.tour.manage` | Manage — the overview: what is on today, what is coming, what has slipped, then a year of completion shading, and projects and tasks broken out below. | Manage —— 整体概览：今天该做什么、接下来是什么、哪些逾期了，往下是一年的完成热力图，再往下按项目和任务分列。 |
+| 444 | `guide.explain.tour.calendar` | Calendar — the month at a glance. A cell’s shade is how much of that day’s strict work was logged, and days carrying milestones or overdue work are marked. | 日历 —— 整月一屏。每格的深浅是当天严格任务的日志覆盖率，有里程碑或逾期任务的日子会标出来。 |
+| 445 | `guide.explain.tour.settings` | Settings — three languages and four colour schemes, switchable whenever you like. | 设置 —— 三种语言、四套配色，随时可切。 |
 
 ---
 

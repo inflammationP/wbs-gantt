@@ -106,6 +106,12 @@ export const PRIORITY_ORDER: TaskPriority[] = ['low', 'medium', 'high', 'top']
 
 // Project identity colours, chosen by the user in the project dialog. Not part
 // of any theme: a project is the same project whichever palette is on.
+//
+// One per hue family, so twelve projects can be told apart. Appended to, never
+// reordered: the first project of a new board takes `[0]`, the next `[1]`, and
+// so on (`ManagePage`), so moving an existing entry would repaint the defaults
+// under everyone who is looking.
 export const PROJECT_COLORS = [
   '#60a5fa', '#4ade80', '#fb923c', '#a78bfa', '#2dd4bf', '#f472b6', '#fbbf24', '#94a3b8',
+  '#f87171', '#22d3ee', '#a3e635', '#e879f9',
 ]

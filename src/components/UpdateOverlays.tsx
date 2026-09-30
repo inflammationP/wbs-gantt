@@ -65,6 +65,7 @@ function UpdateNag() {
 function UpdateDialog() {
   const t = useT()
   const info = useStore((s) => s.updateInfo)
+  const history = useStore((s) => s.updateHistory)
   const installing = useStore((s) => s.updateInstalling)
   const error = useStore((s) => s.updateError)
   const installUpdate = useStore((s) => s.installUpdate)
@@ -94,6 +95,31 @@ function UpdateDialog() {
       <div className="mt-1 max-h-[40vh] overflow-auto whitespace-pre-wrap leading-relaxed text-[12px] text-muted bg-panel2 border border-border rounded-[3px] p-3">
         {info.notes.trim() || t('update.noNotes')}
       </div>
+
+      {/* The versions stepped over on the way here. A native `<details>`: the
+          open/closed state is the platform's, so there is nothing to keep in
+          React. Absent entirely when nothing was skipped — and when the list is
+          still in flight, which is why there is no loading state: an empty
+          section and one that never loads look the same, deliberately.
+          Collapsed by default because the release being offered is the one the
+          user is deciding about; these are what they missed. */}
+      {history.length > 0 && (
+        <details className="mt-3">
+          <summary className="cursor-pointer text-[11px] text-dim hover:text-fg">
+            {t('update.history', { count: history.length })}
+          </summary>
+          <div className="mt-2 max-h-[30vh] overflow-auto space-y-3">
+            {history.map((r) => (
+              <div key={r.version}>
+                <div className="text-[11px] font-semibold text-fg">v{r.version}</div>
+                <div className="mt-0.5 whitespace-pre-wrap leading-relaxed text-[12px] text-muted">
+                  {r.notes || t('update.noNotes')}
+                </div>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
 
       {error && <p className="mt-3 text-[11px] text-delayed">{t('update.installFailed', { message: error })}</p>}
 

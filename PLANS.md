@@ -22,6 +22,7 @@
 | 2026-09-28 | 任务结构管理：项目行 + 编辑模式拖拽（v0.9.0） | [2026-09-28-task-tree-drag.md](docs/plans/2026-09-28-task-tree-drag.md) | 待提交 | `dba4d07d` |
 | 2026-09-30 | 归档（v0.11.0） | [2026-09-30-archive.md](docs/plans/2026-09-30-archive.md) | 待提交 | 本次 |
 | 2026-09-30 | 撤销补齐 + 删掉任务条拖动（v0.11.0） | [2026-09-30-undo-coverage.md](docs/plans/2026-09-30-undo-coverage.md) | 待提交 | 本次 |
+| 2026-10-01 | 项目色扩容 + 更新对话框的历史版本（v0.12.0） | [2026-10-01-project-colors-update-history.md](docs/plans/2026-10-01-project-colors-update-history.md) | 待提交 | `fd99cdcb` |
 
 > **2026-09-17 那两份都带一节「获批之后的修订」，读的时候要看那一节。**
 > 《日志进度：两个格子，必填》三条：报错时两格一起标红、必填提示要指明是哪个格子、推翻了获批方案里「增量可为负」这条。

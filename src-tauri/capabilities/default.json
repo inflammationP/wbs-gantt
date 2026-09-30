@@ -16,6 +16,9 @@
       "allow": [
         {
           "url": "https://www.pushplus.plus/*"
+        },
+        {
+          "url": "https://api.github.com/*"
         }
       ]
     }

@@ -44,6 +44,121 @@ export type CheckResult =
     }
   | { kind: 'error'; detail: string }
 
+/** One release's own notes, as the dialog shows them. */
+export interface ReleaseNotes {
+  version: string
+  notes: string
+}
+
+/**
+ * Every published release, with the notes each one was released with.
+ *
+ * That `body` is the same text `latest.json` calls `notes` — `release.mjs`
+ * writes both from one prompt at publish time — is what makes this endpoint
+ * usable as the app's history: the notes the dialog shows for the version on
+ * offer and the notes it shows for the versions before it are the same kind of
+ * thing, written the same way. `per_page=100` is the API's ceiling and far past
+ * this project's count of releases.
+ */
+const RELEASES_URL = 'https://api.github.com/repos/inflammationP/wbs-gantt/releases?per_page=100'
+
+/**
+ * The bare placeholder `release.mjs` publishes when nobody typed notes.
+ *
+ * Treated as empty so the dialog's own translated "no release notes" line shows
+ * instead — that English sentence in the middle of a Chinese bullet list reads
+ * as a bug.
+ */
+const NO_NOTES = 'No release notes.'
+
+/** `'v0.9.0'` and `'0.9.0'` both read as `[0, 9, 0]`. */
+function versionParts(v: string): number[] {
+  return v.replace(/^v/, '').split('.').map((n) => parseInt(n, 10) || 0)
+}
+
+/**
+ * Numeric, segment by segment.
+ *
+ * Not a string compare, and that is the whole reason this exists: `'0.9.0' >
+ * '0.10.0'` as strings, which would file the newer release away as older and
+ * silently drop it from the list.
+ */
+function compareVersions(a: string, b: string): number {
+  const x = versionParts(a)
+  const y = versionParts(b)
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    const diff = (x[i] ?? 0) - (y[i] ?? 0)
+    if (diff !== 0) return diff
+  }
+  return 0
+}
+
+/**
+ * The releases between what is installed and what is on offer, newest first.
+ *
+ * Strictly between: a version's own notes are already in the dialog above this
+ * list, and the version being run needs no introduction. An empty answer means
+ * "nothing was skipped", which is also the condition for hiding the section —
+ * so this function and the UI agree by construction.
+ */
+export function releasesBetween(
+  releases: ReleaseNotes[],
+  current: string,
+  target: string,
+): ReleaseNotes[] {
+  return releases
+    .filter((r) => compareVersions(r.version, current) > 0 && compareVersions(r.version, target) < 0)
+    .sort((a, b) => compareVersions(b.version, a.version))
+}
+
+/**
+ * Cached for the session: the dialog can be closed and re-opened, and a manual
+ * check can follow a launch check, but the answer is the same list either way.
+ * Only ever written after a successful parse, so a failure is retried rather
+ * than remembered.
+ */
+let releaseCache: ReleaseNotes[] | null = null
+
+/**
+ * What the versions in between had to say.
+ *
+ * Fetched rather than shipped, because it cannot be shipped: the notes for
+ * 0.10.0 have to be readable by someone still on 0.9.0, and any copy baked into
+ * that build predates them.
+ *
+ * Every failure returns an empty list. The user this happens to — the one who
+ * cannot reach GitHub — already has the "automatic updates are unavailable"
+ * banner to explain it, and this list is the one part of the update check that
+ * does not affect whether the update can be installed. `kind: 'error'` exists
+ * for the part that does; a second notice here would be noise about something
+ * nobody has to act on.
+ */
+export async function fetchReleaseHistory(current: string, target: string): Promise<ReleaseNotes[]> {
+  if (!isTauri()) return []
+
+  try {
+    if (!releaseCache) {
+      const { fetch } = await import('@tauri-apps/plugin-http')
+      const res = await fetch(RELEASES_URL, {
+        headers: { Accept: 'application/vnd.github+json' },
+        connectTimeout: CHECK_TIMEOUT_MS,
+      })
+      if (!res.ok) return []
+      const json = (await res.json()) as { tag_name?: string; body?: string; draft?: boolean }[]
+      releaseCache = json
+        .filter((r) => !r.draft && r.tag_name)
+        .map((r) => {
+          const body = (r.body ?? '').trim()
+          return { version: r.tag_name!.replace(/^v/, ''), notes: body === NO_NOTES ? '' : body }
+        })
+    }
+    return releasesBetween(releaseCache, current, target)
+  } catch (err) {
+    console.warn('Release history unavailable:', err)
+    return []
+  }
+}
+
 /**
  * Ask GitHub whether there is a newer build.
  *

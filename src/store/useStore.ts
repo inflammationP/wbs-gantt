@@ -25,7 +25,7 @@ import { logStamp, restamp } from '../lib/logs'
 import { applyLang, Lang, translate } from '../lib/i18n'
 import { applyTheme, ThemeId } from '../lib/theme'
 import { buildSeed } from '../lib/seed'
-import { checkForUpdate, isTauri, CheckResult } from '../lib/updater'
+import { checkForUpdate, fetchReleaseHistory, isTauri, CheckResult, ReleaseNotes } from '../lib/updater'
 import {
   CopyKey,
   CopyOverrides,
@@ -193,6 +193,13 @@ interface State {
   // preferences and live in `Prefs`.
   updatePhase: UpdatePhase
   updateInfo: AvailableUpdate | null
+  /**
+   * The releases skipped over, newest first — empty when none were, which is
+   * also what hides the dialog's folded section. Filled in after the dialog is
+   * already up: it is a fetch, and the version number and install button do not
+   * wait on it.
+   */
+  updateHistory: ReleaseNotes[]
   updateInstalling: boolean
   /** Why the install failed, if it did. */
   updateError: string | null
@@ -513,6 +520,7 @@ export const useStore = create<State>()((set, get) => ({
   todoNoteDismissed: prefs.todoNoteDismissed,
   updatePhase: 'idle',
   updateInfo: null,
+  updateHistory: [],
   updateInstalling: false,
   updateError: null,
   nagOpen: false,
@@ -1279,7 +1287,10 @@ export const useStore = create<State>()((set, get) => ({
     // fires twice in development, and a second check while one is in flight is
     // never what anyone wanted.
     if (useStore.getState().updatePhase === 'checking') return
-    set({ updatePhase: 'checking', updateError: null })
+    // Emptied up front, not when the answer arrives: checking again against a
+    // different version would otherwise leave the previous version's history
+    // sitting under the new release's notes until the fetch came back.
+    set({ updatePhase: 'checking', updateError: null, updateHistory: [] })
 
     const result = await checkForUpdate()
 
@@ -1318,6 +1329,17 @@ export const useStore = create<State>()((set, get) => ({
     // silencing the prompt must never amount to hiding the update.
     const snoozed = isSnoozed()
     if (!snoozed) set({ updateInfo: result })
+
+    // The skipped versions are a second request, fetched after the dialog is
+    // already up rather than before: the version number, the notes and the
+    // install button do not wait behind it, and the folded section appears when
+    // — or never — it arrives. Nothing is fetched for a snoozed update, since
+    // nobody is looking at a dialog.
+    if (!snoozed) {
+      const history = await fetchReleaseHistory(result.current, result.version)
+      // Unless a check that started while this one was in flight has taken over.
+      if (useStore.getState().updateInfo === result) set({ updateHistory: history })
+    }
   },
 
   installUpdate: async () => {
