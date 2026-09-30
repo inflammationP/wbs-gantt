@@ -16,7 +16,7 @@ import {
   Row,
 } from '../lib/tree'
 import { loadData, saveData, loadPrefs, savePrefs, PersistedData, Prefs } from './storage'
-import { editDivider } from '../lib/logs'
+import { logStamp, restamp } from '../lib/logs'
 import { applyLang, Lang, translate } from '../lib/i18n'
 import { applyTheme, ThemeId } from '../lib/theme'
 import { buildSeed } from '../lib/seed'
@@ -850,7 +850,18 @@ export const useStore = create<State>()((set, get) => ({
           l.id === existing.id
             ? {
                 ...l,
-                content: `${l.content}\n${editDivider(new Date())}\n${input.content}`,
+                // The blank line is the boundary between the two writes; the
+                // reading for it is attributed rather than typed into the text.
+                // Through `restamp` because a write can also *change* what is
+                // already there — the log editor sends the whole box — and a
+                // paragraph that was edited has to say so in its own corner.
+                ...(() => {
+                  const body = l.content.trim() ? `${l.content}\n\n${input.content}` : input.content
+                  return {
+                    content: body,
+                    stamps: restamp(l.content, l.stamps ?? [], body, logStamp(new Date())),
+                  }
+                })(),
                 // A null says nothing, so it must not wipe a number an earlier
                 // write for the day put there.
                 targetProgress: input.targetProgress ?? l.targetProgress,
@@ -874,7 +885,8 @@ export const useStore = create<State>()((set, get) => ({
           // as "each write is preceded by its time" rather than "each write
           // *after the first*" — and so a day's entry always opens with when it
           // was written, not just where it was added to.
-          content: `${editDivider(new Date())}\n${input.content}`,
+          content: input.content,
+          stamps: restamp('', [], input.content, logStamp(new Date())),
           targetProgress: input.targetProgress ?? null,
           createdAt: now,
           updatedAt: now,
@@ -885,7 +897,20 @@ export const useStore = create<State>()((set, get) => ({
   },
   updateLog: (id, patch) =>
     set((s) => ({
-      logs: s.logs.map((l) => (l.id === id ? { ...l, ...patch, updatedAt: new Date().toISOString() } : l)),
+      logs: s.logs.map((l) => {
+        if (l.id !== id) return l
+        // A content change is an edit like any other, so it goes through the
+        // same comparison an append does — otherwise editing an entry's text
+        // would shuffle its paragraphs under readings that no longer belong to
+        // them. Guarded on the text actually differing, because the editor
+        // sends the whole box back on every save and each stamp would otherwise
+        // claim the paragraph was touched again.
+        const stamps =
+          patch.content != null && patch.content !== l.content
+            ? restamp(l.content, l.stamps ?? [], patch.content, logStamp(new Date()))
+            : l.stamps
+        return { ...l, ...patch, stamps, updatedAt: new Date().toISOString() }
+      }),
     })),
   deleteLog: (id) =>
     set((s) => ({ logs: s.logs.filter((l) => l.id !== id) })),
@@ -1052,10 +1077,14 @@ export const useStore = create<State>()((set, get) => ({
         return existing ? { notes: s.notes.filter((n) => n.date !== date) } : {}
       }
       const updatedAt = new Date().toISOString()
+      // The notebook's stamps work exactly as the log's do, and through the
+      // same comparison: the box is one textarea, so which paragraph an edit
+      // changed is worked out rather than told.
+      const stamps = restamp(existing?.body ?? '', existing?.stamps ?? [], text, logStamp(new Date()))
       return {
         notes: existing
-          ? s.notes.map((n) => (n.date === date ? { ...n, body: text, updatedAt } : n))
-          : [...s.notes, { date, body: text, updatedAt }],
+          ? s.notes.map((n) => (n.date === date ? { ...n, body: text, stamps, updatedAt } : n))
+          : [...s.notes, { date, body: text, stamps, updatedAt }],
       }
     }),
   appendNote: (date, body) =>
@@ -1063,14 +1092,16 @@ export const useStore = create<State>()((set, get) => ({
       const text = body.trim()
       if (!text) return {}
       const existing = s.notes.find((n) => n.date === date)
+      const updatedAt = new Date().toISOString()
+      const next = existing ? `${existing.body}\n\n${text}` : text
+      // Same comparison as `setNote`: adding a paragraph is a save like any
+      // other, and the ones already there keep the readings they were written
+      // under rather than being restamped by the addition below them.
+      const stamps = restamp(existing?.body ?? '', existing?.stamps ?? [], next, logStamp(new Date()))
       return {
         notes: existing
-          ? s.notes.map((n) =>
-              n.date === date
-                ? { ...n, body: `${n.body}\n\n${text}`, updatedAt: new Date().toISOString() }
-                : n,
-            )
-          : [...s.notes, { date, body: text, updatedAt: new Date().toISOString() }],
+          ? s.notes.map((n) => (n.date === date ? { ...n, body: next, stamps, updatedAt } : n))
+          : [...s.notes, { date, body: next, stamps, updatedAt }],
       }
     }),
 

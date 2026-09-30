@@ -1,5 +1,6 @@
-import { Chore, Habit, Note, Project, Task, TaskLog, TaskPriority } from '../types'
+import { Chore, Habit, Note, Project, Stamp, Task, TaskLog, TaskPriority } from '../types'
 import { DEFAULT_LANG, isLang, Lang } from '../lib/i18n'
+import { liftTimes, paragraphs } from '../lib/logs'
 import { DEFAULT_THEME, isThemeId, ThemeId } from '../lib/theme'
 import { ALL_DAYS } from '../lib/habits'
 import { PRIORITY_ORDER } from '../lib/ui'
@@ -469,7 +470,10 @@ function normalize(data: PersistedData): LoadedData {
     logs: (data.logs ?? []).map((l) => ({
       ...l,
       date: l.date ?? '',
-      content: l.content ?? '',
+      // The stamps move out of the text the first time a board written before
+      // they had a field is read, and the call does nothing after that. See
+      // `liftTimes`.
+      ...stampsOf(l),
       targetProgress: l.targetProgress ?? null,
     })),
   }
@@ -493,6 +497,33 @@ function normalize(data: PersistedData): LoadedData {
 export function readPriority(v: unknown): TaskPriority {
   if (v === 'urgent') return 'top'
   return PRIORITY_ORDER.includes(v as TaskPriority) ? (v as TaskPriority) : 'medium'
+}
+
+/**
+ * An entry's stamps, wherever the board on disk was written.
+ *
+ * Two older shapes to read: the reading typed into the content as a `— HH:MM —`
+ * line (everything before stamps were a field), and a plain `times` list from
+ * the build that lifted them out but had nowhere to put *which* paragraph each
+ * one opened. Both resolve to one stamp per paragraph here, which is the only
+ * shape the rest of the app knows.
+ */
+function stampsOf(l: { content?: string; times?: unknown; stamps?: unknown }): { content: string; stamps: Stamp[] } {
+  if (Array.isArray(l.stamps)) {
+    const stamps = l.stamps.filter(
+      (s): s is Stamp => !!s && typeof s === 'object' && typeof (s as Stamp).at === 'string',
+    )
+    return { content: l.content ?? '', stamps: paragraphs(l.content ?? '').map((_, i) => stamps[i] ?? { at: '' }) }
+  }
+  const raw = l.content ?? ''
+  const lifted = liftTimes(raw)
+  if (Array.isArray(l.times)) {
+    // The order is the order they were written in, and every write opened a
+    // paragraph — so the list lines up with the blocks, shortest wins.
+    const times = l.times.filter((t): t is string => typeof t === 'string')
+    return { content: lifted.text, stamps: lifted.stamps.map((s, i) => (times[i] != null && !s.at ? { at: times[i] } : s)) }
+  }
+  return { content: raw, stamps: lifted.stamps }
 }
 
 /**

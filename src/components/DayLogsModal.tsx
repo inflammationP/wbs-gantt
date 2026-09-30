@@ -72,7 +72,7 @@ export function DayLogsModal({
                   <div key={log.id} className="border border-border rounded-lg p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
-                        <LogLines content={log.content} />
+                        <LogLines content={log.content} stamps={log.stamps} />
                         {log.targetProgress != null && (
                           <div className="text-[11px] text-dim mt-1.5">{t('common.targetProgress', { percent: log.targetProgress })}</div>
                         )}

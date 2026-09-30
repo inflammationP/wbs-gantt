@@ -170,10 +170,36 @@ export interface Habit {
  * not the heatmap — the isolation is structural rather than a check each of
  * those places has to remember, exactly as it is for `Chore` and `Habit`.
  */
+/**
+ * One paragraph's provenance: when it was written, and every later edit that
+ * changed it.
+ *
+ * A paragraph is a blank-line-separated block — the unit both texts already
+ * have, and the one the log's own display has always drawn a rule in front of.
+ * `at` is the write that created it; `edited` is the writes that came back and
+ * changed it, oldest first.
+ *
+ * The list is the record and the corner prints its last entry: what a reader
+ * wants from a paragraph is when it was last touched, but the fact that it was
+ * touched three times happened, and throwing it away at the moment of writing
+ * would be a decision the data cannot take back.
+ *
+ * Optional, and one per block in order. A block with no entry is drawn with no
+ * stamp at all, which is what a hand-edited file or a body from before this
+ * existed should look like rather than a wrong time.
+ */
+export interface Stamp {
+  /** `HH:MM`, local. */
+  at: string
+  edited?: string[]
+}
+
 export interface Note {
   date: string // yyyy-MM-dd, and the identity of the note
   body: string // free text; a newline is a newline
   updatedAt: string
+  /** One per paragraph of `body` — see `Stamp`. */
+  stamps?: Stamp[]
 }
 
 export interface TaskLog {
@@ -181,6 +207,20 @@ export interface TaskLog {
   taskId: string
   date: string // yyyy-MM-dd
   content: string // raw text; newline = item, leading tabs = nesting
+  /**
+   * One entry per paragraph of `content`, in order — see `Stamp`. The first
+   * paragraph's `at` is when the entry was written, so it always opens with a
+   * reading rather than only where more was added to.
+   *
+   * A field rather than a line in `content`, where it used to live: a stamp
+   * inside the user's text is a stamp they can edit or delete, and the only
+   * right answer here is the clock. What separates one write from the next is
+   * the blank line between them, which is the writer's own paragraph break.
+   *
+   * Optional because every entry written before this existed has its stamps
+   * still in the content — `liftTimes` in `lib/logs.ts` moves them on load.
+   */
+  stamps?: Stamp[]
   targetProgress?: number | null // 0..100, strict phase tasks only
   createdAt: string
   updatedAt: string

@@ -202,7 +202,7 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
                       <button onClick={() => deleteLog(log.id)} title={t('common.delete')} className="p-0.5 text-dim hover:text-delayed"><Trash2 size={12} /></button>
                     </div>
                   </div>
-                  <LogLines content={log.content} />
+                  <LogLines content={log.content} stamps={log.stamps} />
                   {log.targetProgress != null && (
                     <div className="text-[11px] text-dim mt-1">{t('common.targetProgress', { percent: log.targetProgress })}</div>
                   )}

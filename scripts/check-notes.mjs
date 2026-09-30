@@ -163,6 +163,63 @@ move(D2, D3, 'tuesday\n\nmonday')
 assert.equal(noteOn(read(), D2), null)
 assert.equal(noteOn(read(), D3).body, 'fresh\n\ntuesday\n\nmonday', 'and onto an occupied day too')
 
+// --- what a body's paragraphs are, and what a save did to them ---
+//
+// Here because this is the script that owns stored text bodies, and because
+// the attribution is a judgement `restamp` makes rather than something the
+// editor is told: if it reads an edit as a replacement, a paragraph silently
+// loses the day it was written on.
+
+const { liftTimes, restamp } = await server.ssrLoadModule('/src/lib/logs.ts')
+
+// A body written before the reading was a field: one line per write, the clock
+// in front of the text it stamps.
+const lifted = liftTimes('— 09:30 —\n抢修\n— 14:05 —\n回归')
+assert.equal(lifted.text, '抢修\n\n回归', 'the boundary they marked is a paragraph break')
+assert.deepEqual(lifted.stamps, [{ at: '09:30' }, { at: '14:05' }], 'and each block keeps the reading that opened it')
+
+// Idempotent, which is what makes it safe to run on every load: the second pass
+// finds nothing to lift and leaves the body alone.
+const again = liftTimes(lifted.text)
+assert.equal(again.text, lifted.text)
+assert.deepEqual(again.stamps, [{ at: '' }, { at: '' }], 'a block with no stamp gets none, not the one above it')
+assert.equal(liftTimes('— 09:30 —\n抢修').text, '抢修')
+
+// Writing more at the bottom: the paragraphs already there are untouched, and
+// the new one is stamped with this save.
+const entry = '抢修\n\n回归'
+const was = [{ at: '09:30' }, { at: '14:05' }]
+assert.deepEqual(restamp(entry, was, entry + '\n\n复盘', '16:20'),
+  [{ at: '09:30' }, { at: '14:05' }, { at: '16:20' }])
+
+// Going back and changing one already there: it keeps the day it was written
+// on and gains this one, which is the whole point of the corner reading.
+assert.deepEqual(restamp(entry, was, '抢修\n\n回归完毕', '16:20'),
+  [{ at: '09:30' }, { at: '14:05', edited: ['16:20'] }])
+
+// …and twice, which is a list and not a flag.
+assert.deepEqual(restamp(entry, [{ at: '09:30' }, { at: '14:05', edited: ['16:20'] }], '抢修\n\n回归了', '18:00'),
+  [{ at: '09:30' }, { at: '14:05', edited: ['16:20', '18:00'] }])
+
+// A wholesale rewrite is an edit of the paragraphs that were there, not a
+// deletion of all of them: identity here is the slot, so the first two keep what
+// they were written under and the third is one that was started.
+assert.deepEqual(restamp(entry, was, '一\n\n二\n\n三', '16:20'),
+  [{ at: '09:30', edited: ['16:20'] }, { at: '14:05', edited: ['16:20'] }, { at: '16:20' }])
+
+// Inserting one in the middle does not shift the readings of the ones after it:
+// the unchanged paragraphs are matched, so the insertion lands in a run of its
+// own and is the only thing that reads as new.
+assert.deepEqual(restamp(entry, was, '抢修\n\n新的\n\n回归', '16:20'),
+  [{ at: '09:30' }, { at: '16:20' }, { at: '14:05' }])
+
+// Deleting the last paragraph leaves the ones before it alone.
+assert.deepEqual(restamp(entry, was, '抢修', '16:20'), [{ at: '09:30' }])
+
+// A paragraph written and changed in the same save is new, not edited: there
+// was nothing there to edit.
+assert.deepEqual(restamp('', [], '新的', '16:20'), [{ at: '16:20' }])
+
 await server.close()
 console.log('notes: ok')
 process.exit(0)

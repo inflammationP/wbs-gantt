@@ -21,7 +21,7 @@ export function NoteViewDialog({ day, onClose }: { day: string; onClose: () => v
   return (
     <Modal title={formatLongDate(lang, toDate(day))} onClose={onClose} width={620}>
       <div className="text-[13px] font-semibold text-fg mb-2">{t('notes.title')}</div>
-      <NoteCard body={note?.body ?? null} />
+      <NoteCard body={note?.body ?? null} stamps={note?.stamps} />
     </Modal>
   )
 }

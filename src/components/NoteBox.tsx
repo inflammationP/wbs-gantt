@@ -124,7 +124,7 @@ function NoteEditor({
     // The empty state says "none", not "write here": the invitation is the Edit
     // button in the heading above, and two ways of saying the same thing is one
     // too many.
-    return <NoteCard body={stored?.body ?? null} />
+    return <NoteCard body={stored?.body ?? null} stamps={stored?.stamps} />
   }
 
   return (
