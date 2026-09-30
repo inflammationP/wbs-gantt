@@ -9,7 +9,6 @@ import { SettingsPage } from './pages/SettingsPage'
 import { TaskDetailPanel } from './components/TaskDetailPanel'
 import { ProjectDetailPanel } from './components/ProjectDetailPanel'
 import { DayDetailPanel } from './components/DayDetailPanel'
-import { GettingStarted } from './components/GettingStarted'
 import { UpdateOverlays } from './components/UpdateOverlays'
 import { useStore } from './store/useStore'
 import { useT } from './lib/useT'
@@ -78,19 +77,13 @@ export default function App() {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-bg text-fg">
       <Sidebar />
-      {/* `relative` is what the getting-started card positions against. It has to
-          sit inside `main` rather than fixed to the viewport: the detail panels
-          below are in-flow siblings that already occupy the window's right edge,
-          so a viewport-anchored card would land on top of the panel the guide
-          just told the user to open. Anchored here, it stops where they begin. */}
-      <main className="relative flex-1 flex flex-col min-w-0 overflow-hidden">
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {view === 'gantt' && <GanttPage key={ganttKey} />}
         {view === 'today' && <TodayPage />}
         {view === 'logs' && <LogsPage />}
         {view === 'manage' && <ManagePage />}
         {view === 'calendar' && <CalendarPage />}
         {view === 'settings' && <SettingsPage />}
-        <GettingStarted />
         <UpdateOverlays />
       </main>
       {/* Sits left of the task panel, so opening a task from a day keeps the

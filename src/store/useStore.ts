@@ -179,10 +179,6 @@ interface State {
   projectFilter: string
   lang: Lang
   theme: ThemeId
-  // Persisted alongside lang/theme — see `Prefs` in store/storage.ts for why the
-  // guide's state lives with the preferences rather than with the work data.
-  guideDismissed: boolean
-  guideDone: string[]
   /**
    * The to-do note in the task dialog has been acknowledged. A preference, not
    * view state: it survives a reload, and it is not part of an imported board.
@@ -344,10 +340,7 @@ interface State {
 
   importData: (data: PersistedData) => void
 
-  dismissGuide: () => void
-  showGuide: () => void
   dismissTodoNote: () => void
-  markGuideDone: (stepId: string) => void
 
   runUpdateCheck: () => Promise<void>
   installUpdate: () => Promise<void>
@@ -421,8 +414,6 @@ function persistPrefs(): void {
   const {
     lang,
     theme,
-    guideDismissed,
-    guideDone,
     todoNoteDismissed,
     updateAnchorAt,
     nagShownAt,
@@ -439,8 +430,6 @@ function persistPrefs(): void {
   savePrefs({
     lang,
     theme,
-    guideDismissed,
-    guideDone,
     todoNoteDismissed,
     updateAnchorAt,
     nagShownAt,
@@ -515,8 +504,6 @@ export const useStore = create<State>()((set, get) => ({
   projectFilter: 'all',
   lang: prefs.lang,
   theme: prefs.theme,
-  guideDismissed: prefs.guideDismissed,
-  guideDone: prefs.guideDone,
   todoNoteDismissed: prefs.todoNoteDismissed,
   updatePhase: 'idle',
   updateInfo: null,
@@ -1256,25 +1243,10 @@ export const useStore = create<State>()((set, get) => ({
       lastUndo: null,
     }),
 
-  dismissGuide: () => {
-    set({ guideDismissed: true })
-    persistPrefs()
-  },
-  showGuide: () => {
-    set({ guideDismissed: false })
-    persistPrefs()
-  },
-  // One way, unlike the guide's pair: the note is an explanation, and a way to
-  // ask for it back would be a setting nobody would ever find.
+  // One way: the note is an explanation, and a way to ask for it back would be a
+  // setting nobody would ever find.
   dismissTodoNote: () => {
     set({ todoNoteDismissed: true })
-    persistPrefs()
-  },
-  markGuideDone: (stepId) => {
-    // Guarded both ways: re-opened dialogs and revisited pages are the same
-    // milestone twice, and the list is what the guide counts.
-    if (useStore.getState().guideDone.includes(stepId)) return
-    set((s) => ({ guideDone: [...s.guideDone, stepId] }))
     persistPrefs()
   },
 

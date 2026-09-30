@@ -267,9 +267,9 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
             {/* A task with children takes its progress from them, so the strict
                 flag is inert on it (`isStrictLeaf` requires no children). Saying
                 "Strict (log-based)" here contradicted every other surface —
-                the day ring, the Calendar, and the guide's own reminder, which
-                all correctly ignore it — and made a strict parent look like a
-                task that owed a daily log. */}
+                the day ring and the Calendar, which both correctly ignore it —
+                and made a strict parent look like a task that owed a daily
+                log. */}
             {hasKids ? t('task.modeRolledUp') : task.strictProgress ? t('task.modeStrict') : t('task.modeAuto')}
           </ReadOnlyField>
         )}

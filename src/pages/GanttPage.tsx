@@ -7,7 +7,7 @@ import { addDays } from '../lib/dates'
 import { formatDateRange } from '../lib/i18n'
 import { Dict } from '../lib/i18n'
 import { useLang, useT } from '../lib/useT'
-import { Segmented } from '../components/ui'
+import { Modal, Segmented } from '../components/ui'
 import { GanttChart } from '../components/gantt/GanttChart'
 import { RowTask, archiveCascade, isArchived, todoCascadeIds } from '../lib/tree'
 import { ArchiveActions, TodoActions } from '../components/gantt/RowLeft'
@@ -73,6 +73,9 @@ export function GanttPage() {
   const [menu, setMenu] = useState<MenuState | null>(null)
   const [logDialog, setLogDialog] = useState<{ taskId: string; existing?: TaskLog | null } | null>(null)
   const [startTodo, setStartTodo] = useState<string[] | null>(null)
+  // Shown in place of the task dialog while the board has no project — see
+  // `openCreate`.
+  const [noProject, setNoProject] = useState(false)
   const [editing, setEditing] = useState(false)
   // What editing mode has picked out. Held here rather than in the chart because
   // two things read it: the rows, which paint it and drag it, and the bar above
@@ -118,7 +121,8 @@ export function GanttPage() {
   // both. A mode you can only leave by finding the button that renamed itself is
   // a mode people get stuck in; but Escape is also how the context menu and the
   // dialogs close, and one keypress cannot mean two things at the same level.
-  const overlayOpen = menu !== null || dialog !== null || logDialog !== null || startTodo !== null
+  const overlayOpen =
+    menu !== null || dialog !== null || logDialog !== null || startTodo !== null || noProject
   const hasSelection = sel.size > 0
   useEffect(() => {
     if (!editing || overlayOpen) return
@@ -131,8 +135,18 @@ export function GanttPage() {
     return () => window.removeEventListener('keydown', onKey)
   }, [editing, overlayOpen, hasSelection])
 
-  const openCreate = (parentId?: string | null, projectId?: string, isTodo?: boolean) =>
+  // Every way into the new-task dialog goes through here — the toolbar's button,
+  // and the row menus' "add subtask" / "add sibling" — so the one guard covers
+  // all of them. A board with no project has nothing to put a task in: the
+  // dialog's project picker would offer an empty list, and whatever it saved
+  // would belong to no project on the board.
+  const openCreate = (parentId?: string | null, projectId?: string, isTodo?: boolean) => {
+    if (projects.length === 0) {
+      setNoProject(true)
+      return
+    }
     setDialog({ mode: 'create', parentId, projectId, isTodo })
+  }
   const openEdit = (row: RowTask) => setDialog({ mode: 'edit', task: row.task })
   const openLog = (row: RowTask) => setLogDialog({ taskId: row.id })
 
@@ -442,8 +456,43 @@ export function GanttPage() {
           covers them. */}
       {lastUndo && <UndoStrip undo={lastUndo} onUndo={undoLast} />}
 
+      {noProject && <NoProjectDialog onClose={() => setNoProject(false)} />}
+
       {dialogs}
     </div>
+  )
+}
+
+/**
+ * What a board with no projects says instead of the task dialog.
+ *
+ * A dialog rather than a one-line notice, because this is the first thing a new
+ * board can be asked and the answer is structural rather than administrative: a
+ * task has to live in a project, and a project is the root of the tree. So the
+ * prompt is followed by the two paragraphs that say what that means.
+ *
+ * It stands in for the dialog rather than warning beside it — hence the button
+ * only acknowledging, with nothing to save.
+ */
+function NoProjectDialog({ onClose }: { onClose: () => void }) {
+  const t = useT()
+  return (
+    <Modal title={t('common.noticeTitle')} onClose={onClose} width={520}>
+      <div className="space-y-3 text-[12px] leading-relaxed text-muted">
+        <p className="text-fg">{t('gantt.noProject', { manage: t('nav.manage') })}</p>
+        <p>{t('gantt.noProject.p1')}</p>
+        <p>{t('gantt.noProject.p2')}</p>
+      </div>
+      <div className="flex justify-end pt-4">
+        <button
+          onClick={onClose}
+          autoFocus
+          className="h-8 px-4 text-[12px] font-medium bg-accent text-on-accent rounded-[3px]"
+        >
+          {t('common.gotIt')}
+        </button>
+      </div>
+    </Modal>
   )
 }
 

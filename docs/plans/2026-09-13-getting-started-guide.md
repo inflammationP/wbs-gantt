@@ -1,5 +1,7 @@
 # 应用内入门指引：六步顺序流程 + 说明弹窗
 
+> **现状（后来补记）：这份计划做出来的东西已经整块移除了。** 卡片、四个讲解弹窗、侧栏底部的 `?` 按钮，连同 `src/lib/guide.ts` 与 `src/components/GettingStarted.tsx` 一起删掉，`guideDismissed` / `guideDone` 两个偏好也不再读写；默认语言同时从 English 改成中文。下面是当时的计划原文，保留作记录，**不代表现在的实现** —— 现在是什么样见 `FEATURES.md` 第 14 节。
+
 ## Context
 
 main 的 `buildSeed()` 是刻意留空的桩，新用户打开就是一块空看板，没有任何引导。

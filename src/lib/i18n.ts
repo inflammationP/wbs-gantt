@@ -43,11 +43,8 @@ export const LANGS: Lang[] = ['en', 'zh', 'fr']
  *
  * Lives here rather than in `store/storage.ts` so that `DEFAULT_PREFS` and any
  * reader that needs to ask "is this still the default?" agree by construction.
- * The getting-started guide is such a reader: its first step asks the user to
- * pick a language, and someone who has already switched has answered it without
- * ever opening the dialog.
  */
-export const DEFAULT_LANG: Lang = 'en'
+export const DEFAULT_LANG: Lang = 'zh'
 
 /**
  * Each language names itself, so the picker needs no translation of its own —
@@ -169,6 +166,16 @@ const en = {
   'gantt.view.year': 'Year',
   'gantt.backToToday': 'Back to Today',
   'gantt.newTask': 'New task',
+  // Shown in place of the task dialog when the board has no project yet. A task
+  // has to live in one, so the dialog's project picker would have nothing to
+  // offer and a saved task would be a row nothing can place.
+  'gantt.noProject': 'A task has to live in a project — create one first, in {manage}, on the left sidebar.',
+  // The same dialog's two explainer paragraphs: what the tree is, and what a
+  // project is for.
+  'gantt.noProject.p1':
+    'WBS-gantt manages projects and tasks much the way an operating system manages files — a directory tree. A project is the root directory at the very top, and every task filed under one is a file or a folder. A file has to live under a root, so a task needs a project chosen for it before it can be created. I do recommend reading the network of tasks you are about to build this way, because… that is how the software is designed.',
+  'gantt.noProject.p2':
+    'Beyond giving a task somewhere to exist, a project is only a label for sorting. Read it as the “topic” of the tasks created under it: it gives them a category, so that they can be managed by category — which is the other reason to file your tasks under projects.',
   'gantt.deleteTask': 'Delete "{name}"?',
   'gantt.deleteTaskWithSubtasks': 'Delete "{name}" and all its subtasks?',
   'gantt.deleteTodos': {
@@ -631,67 +638,6 @@ const en = {
   'swatch.muted': 'Secondary text',
   'swatch.dim': 'Faint text',
   'swatch.accent': 'Accent',
-
-  // --- getting started ---
-  // The six-step card. Step labels are instructions rather than descriptions:
-  // they are read by someone looking at a nearly empty board.
-  'guide.title': 'Getting started',
-  'guide.dismiss': 'Hide this',
-  'guide.done': 'You are set up.',
-  'guide.read': 'Read this',
-  'guide.close': 'Got it',
-  'guide.goThere': 'Take me there',
-  // `{settings}` / `{manage}` are the sidebar's own words for those pages, passed
-  // in by the card — a step that says where to click must name the page the way
-  // the navigation names it, and this reprases itself in three languages.
-  'guide.step.language': 'Pick your language in {settings}',
-  'guide.step.project': 'Create a project in {manage}',
-  'guide.step.parentTask': 'Add a parent task inside it',
-  'guide.step.strictChild': 'Nest a strict subtask under that task',
-  'guide.step.endDate': 'How a parent’s dates are worked out',
-  'guide.step.log': 'Write a log on the strict subtask',
-  'guide.step.tour': 'Look around: Logs, Manage, Calendar, Settings',
-  // The explanation dialogs. The two about derivation have to stay true to
-  // src/lib/tree.ts (`syncParentDates`) and src/lib/progress.ts (`autoProgress` /
-  // `taskProgress`) — a guide that describes the rules wrongly is worse than no
-  // guide, so change the copy when the rule changes.
-  // The language names ride in as a parameter rather than being written into each
-  // translation: someone who has landed in a language they do not read needs to
-  // recognise their own on sight, and English / 中文 / Français do that in any
-  // surrounding language.
-  'guide.explain.language.title': 'Interface language',
-  'guide.explain.language.p1':
-    'The interface comes in {langs}. It opens in English — if that is not your language, switch it in Settings, under Language. Everything follows at once, this card included.',
-  'guide.explain.language.skip': 'Not now',
-  'guide.explain.endDate.title': 'How a parent’s dates are worked out',
-  'guide.explain.endDate.p1':
-    'A phase parent keeps no schedule of its own — it starts when its earliest subtask starts and ends when its latest one ends. Give a subtask dates outside the parent’s and the parent stretches out to meet them.',
-  'guide.explain.endDate.p2':
-    'The interface says as much: open a phase parent for editing and both date fields are greyed out. Drag any subtask and the parent follows, at both ends. Its progress works the same way — the average of its subtasks’ — which is why it will not let you type one in either.',
-  // The form offers long-term goals as parents too, so this dialog has to
-  // account for one: `syncParentDates` skips them, and they carry no end date to
-  // stretch, which the two paragraphs above would otherwise misdescribe.
-  'guide.explain.endDate.p3':
-    'Long-term goals are the exception. They have a start and no end, so a parent of that kind has nothing to stretch — which is why it shows a start date and nothing else.',
-  'guide.explain.strict.title': 'Strict and non-strict: where progress comes from',
-  'guide.explain.strict.p1': 'The difference is where the number comes from, not how it is drawn.',
-  'guide.explain.strict.p2':
-    'A simplified task counts the days you tick off. On a day you did the work you click its box once, and a day you did not tick counts for nothing, however long ago its window closed. A window that closes without every day ticked reads late, not done.',
-  'guide.explain.strict.p3':
-    'A strict task counts only logs. With no log at all it stays at 0%, long after its window has closed. Once there are logs, one of two things decides the number: the latest log that carries a target progress is taken at its word; if none carries one, progress accrues as logged days ÷ the window’s days — so a day you skip is a day genuinely lost.',
-  'guide.explain.strict.p4':
-    'That is what a strict task is for: a progress figure that carries a reason beside it, rather than a bare number.',
-  'guide.explain.tour.title': 'A look around',
-  'guide.explain.tour.intro':
-    'These four pages all read the board you have just built, so there is something to see on each of them even while it is still small. One line on each:',
-  'guide.explain.tour.logs':
-    'Logs — everything written, collected by day; a strict task’s entries carry their target progress too. The switcher in the corner shows just the notes instead — what you write for its own sake, and which never becomes a task.',
-  'guide.explain.tour.manage':
-    'Manage — the overview: what is on today, what is coming, what has slipped, then a year of completion shading, and projects and tasks broken out below.',
-  'guide.explain.tour.calendar':
-    'Calendar — the month at a glance. A cell’s shade is how much of that day’s strict work was logged, and days carrying milestones or overdue work are marked.',
-  'guide.explain.tour.settings':
-    'Settings — three languages and four colour schemes, switchable whenever you like.',
 }
 
 export type Dict = typeof en
@@ -793,6 +739,11 @@ const zh: Dict = {
   'gantt.view.year': '年',
   'gantt.backToToday': '回到今天',
   'gantt.newTask': '新建任务',
+  'gantt.noProject': '任务要放在项目里 —— 请先在左侧导航栏「{manage}」中新建一个项目。',
+  'gantt.noProject.p1':
+    'WBS-gantt 管理项目和任务的方式与电脑操作系统管理文件的方式（目录树）很像。在这里，项目（project）是最顶层的根目录，而每个项目下属的所有任务都可以视作一个文件 / 文件夹。显然文件得存放在根目录下，所以在新建任务前，需要为其指定一个项目。我十分推荐你这样理解你未来即将构建的任务网络，因为……软件就是这么设计的。',
+  'gantt.noProject.p2':
+    '除了为任务的存在提供一个地基之外，项目只是一个分类用的标签。不妨把它理解为在它下面建立的任务的「主题」。它为这些任务定义了一个类别，以便按类管理。所以从管理的角度来看，将任务分类在项目下也是十分必要的。',
   'gantt.deleteTask': '确定删除“{name}”？',
   'gantt.deleteTaskWithSubtasks': '确定删除“{name}”及其所有子任务？',
   'gantt.deleteTodos': {
@@ -1185,49 +1136,6 @@ const zh: Dict = {
   'swatch.muted': '次要文字',
   'swatch.dim': '弱化文字',
   'swatch.accent': '强调色',
-
-  'guide.title': '开始使用',
-  'guide.dismiss': '收起',
-  'guide.done': '已经上手了。',
-  'guide.read': '看说明',
-  'guide.close': '知道了',
-  'guide.goThere': '带我去',
-  'guide.step.language': '在{settings}里选界面语言',
-  'guide.step.project': '在{manage}里新建一个项目',
-  'guide.step.parentTask': '在这个项目下新建一个父任务',
-  'guide.step.strictChild': '在父任务下挂一个严格子任务',
-  'guide.step.endDate': '父任务的日期是怎么来的',
-  'guide.step.log': '给严格子任务写一条任务日志',
-  'guide.step.tour': '逛一圈：日志 · 管理 · 日历 · 设置',
-  'guide.explain.language.title': '界面语言',
-  'guide.explain.language.p1':
-    '界面有 {langs} 三种。默认打开是 English —— 如果你不读英文，到设置里的「语言」换一下。换完立刻生效，这张卡片也会跟着变。',
-  'guide.explain.language.skip': '先不用',
-  'guide.explain.endDate.title': '父任务的日期是怎么来的',
-  'guide.explain.endDate.p1':
-    '阶段任务的父任务自己不排期 —— 它从最早开始的子任务开始、到最晚结束的子任务结束。给某个子任务的日期超出父任务的范围，父任务就会撑出去跟上它。',
-  'guide.explain.endDate.p2':
-    '这一点界面上就写着：打开一个阶段父任务的编辑框，开始日期和结束日期两栏都是灰的。你拖动任何一个子任务，父任务两头都会跟着走。进度同理 —— 父任务的进度是子任务进度的平均，所以它也不让你手填。',
-  'guide.explain.endDate.p3':
-    '长期目标是例外。它只有开始、没有结束，所以这种父任务没有东西可撑 —— 这就是它只显示一个开始日期的原因。',
-  'guide.explain.strict.title': '严格与非严格：进度从哪来',
-  'guide.explain.strict.p1': '差别在于这个数字从哪来，而不在于它怎么画。',
-  'guide.explain.strict.p2':
-    '简化任务数的是你点过的天。哪一天做了，就在那天点一次框；没点的日子一分不算，窗口过去多久都一样。窗口走完还没点满，它读作逾期，而不是完成。',
-  'guide.explain.strict.p3':
-    '严格任务只认日志。一条日志都没有，它就一直是 0%，哪怕窗口早就过去了。有了日志之后，两种情况决定这个数字：最新一条日志填了目标进度，就以它为准；一条都没填，就按「写过日志的天数 ÷ 窗口总天数」累积 —— 所以漏掉一天，就是实打实地少一格。',
-  'guide.explain.strict.p4':
-    '这就是严格任务的意义：进度旁边带着一句「为什么」，而不只是一个数字。',
-  'guide.explain.tour.title': '逛一圈',
-  'guide.explain.tour.intro':
-    '这四个页面读的都是你刚建起来的看板 —— 就算它还很小，每个页面上也有东西可看。各一句：',
-  'guide.explain.tour.logs':
-    '日志 —— 所有写过的内容按天汇总；严格任务的条目还带着目标进度。右上角可以切到记事本 —— 那是你为自己写的东西，永远不会变成任务。',
-  'guide.explain.tour.manage':
-    'Manage —— 整体概览：今天该做什么、接下来是什么、哪些逾期了，往下是一年的完成热力图，再往下按项目和任务分列。',
-  'guide.explain.tour.calendar':
-    '日历 —— 整月一屏。每格的深浅是当天严格任务的日志覆盖率，有里程碑或逾期任务的日子会标出来。',
-  'guide.explain.tour.settings': '设置 —— 三种语言、四套配色，随时可切。',
 }
 
 const fr: Dict = {
@@ -1330,6 +1238,11 @@ const fr: Dict = {
   'gantt.view.year': 'Année',
   'gantt.backToToday': 'Revenir à aujourd’hui',
   'gantt.newTask': 'Nouvelle tâche',
+  'gantt.noProject': 'Une tâche doit vivre dans un projet — créez-en un d’abord, dans {manage}, sur la barre latérale de gauche.',
+  'gantt.noProject.p1':
+    'WBS-gantt gère les projets et les tâches à peu près comme un système d’exploitation gère ses fichiers : une arborescence. Un projet est le dossier racine, tout en haut, et chaque tâche qu’il contient est un fichier ou un dossier. Un fichier se range bien sous une racine : une tâche a donc besoin d’un projet avant de pouvoir être créée. Je vous conseille vraiment de lire ainsi le réseau de tâches que vous allez bâtir, parce que… c’est comme ça que le logiciel est conçu.',
+  'gantt.noProject.p2':
+    'À part donner aux tâches un endroit où exister, un projet n’est qu’une étiquette de classement. Voyez-le comme le « thème » des tâches créées en dessous : il leur donne une catégorie, donc une façon de les gérer par catégorie. Classer ses tâches dans des projets est donc nécessaire aussi du point de vue de la gestion.',
   'gantt.deleteTask': 'Supprimer « {name} » ?',
   'gantt.deleteTaskWithSubtasks': 'Supprimer « {name} » et toutes ses sous-tâches ?',
   'gantt.deleteTodos': {
@@ -1740,50 +1653,6 @@ const fr: Dict = {
   'swatch.muted': 'Texte secondaire',
   'swatch.dim': 'Texte estompé',
   'swatch.accent': 'Accent',
-
-  'guide.title': 'Premiers pas',
-  'guide.dismiss': 'Masquer',
-  'guide.done': 'Vous voilà paré.',
-  'guide.read': 'Lire l’explication',
-  'guide.close': 'Compris',
-  'guide.goThere': 'M’y emmener',
-  'guide.step.language': 'Choisir la langue dans {settings}',
-  'guide.step.project': 'Créer un projet dans {manage}',
-  'guide.step.parentTask': 'Ajouter une tâche parente dedans',
-  'guide.step.strictChild': 'Rattacher une sous-tâche stricte à cette tâche',
-  'guide.step.endDate': 'D’où viennent les dates d’une tâche parente',
-  'guide.step.log': 'Écrire un journal sur la sous-tâche stricte',
-  'guide.step.tour': 'Un tour : Journaux · Gestion · Calendrier · Paramètres',
-  'guide.explain.language.title': 'Langue de l’interface',
-  'guide.explain.language.p1':
-    'L’interface existe en {langs}. Elle s’ouvre en anglais — si ce n’est pas votre langue, changez-la dans Paramètres, à la rubrique Langue. Tout suit aussitôt, cette carte comprise.',
-  'guide.explain.language.skip': 'Plus tard',
-  'guide.explain.endDate.title': 'D’où viennent les dates d’une tâche parente',
-  'guide.explain.endDate.p1':
-    'Une tâche parente de phase ne porte pas de planning à elle : elle commence avec sa sous-tâche la plus précoce et se termine avec la plus tardive. Donnez à une sous-tâche des dates en dehors de celles du parent et le parent s’étire pour les rejoindre.',
-  'guide.explain.endDate.p2':
-    'L’interface le dit elle-même : ouvrez un parent de phase en édition et les deux champs de date sont grisés. Déplacez une sous-tâche et le parent suit, aux deux extrémités. Son avancement fonctionne de même — la moyenne de celui de ses sous-tâches — et c’est pourquoi il ne vous laisse pas non plus le saisir.',
-  'guide.explain.endDate.p3':
-    'Les objectifs à long terme font exception. Ils ont un début et pas de fin : un tel parent n’a donc rien à étirer — d’où la date de début seule.',
-  'guide.explain.strict.title': 'Stricte ou non : d’où vient l’avancement',
-  'guide.explain.strict.p1': 'La différence tient à l’origine du nombre, pas à sa représentation.',
-  'guide.explain.strict.p2':
-    'Une tâche simplifiée compte les jours que vous cochez. Un jour où vous l’avez faite, vous cochez sa case une fois ; un jour non coché ne compte pas, même si sa fenêtre est refermée depuis longtemps. Une fenêtre qui se referme sans tous les jours cochés se lit en retard, pas terminée.',
-  'guide.explain.strict.p3':
-    'Une tâche stricte ne compte que les journaux. Sans aucun journal, elle reste à 0 %, longtemps après la fermeture de sa fenêtre. Dès qu’il y en a, deux choses décident du nombre : le dernier journal portant un avancement cible fait foi ; si aucun n’en porte, l’avancement s’accumule en jours journalisés ÷ jours de la fenêtre — un jour sauté est donc un jour réellement perdu.',
-  'guide.explain.strict.p4':
-    'C’est là l’objet d’une tâche stricte : un avancement accompagné d’une raison, et pas seulement d’un nombre.',
-  'guide.explain.tour.title': 'Un tour rapide',
-  'guide.explain.tour.intro':
-    'Ces quatre pages lisent toutes le tableau que vous venez de bâtir : il y a donc quelque chose à voir sur chacune, même réduite. Une ligne pour chacune :',
-  'guide.explain.tour.logs':
-    'Journaux — tout ce qui a été écrit, rassemblé par jour ; les entrées d’une tâche stricte portent aussi leur avancement cible. Le sélecteur dans le coin n’affiche que les notes — ce que vous écrivez pour vous, et qui ne devient jamais une tâche.',
-  'guide.explain.tour.manage':
-    'Gestion — la vue d’ensemble : ce qui est au programme aujourd’hui, ce qui arrive, ce qui a glissé, puis une année de complétion en nuance, et les projets et les tâches détaillés en dessous.',
-  'guide.explain.tour.calendar':
-    'Calendrier — le mois d’un coup d’œil. La nuance d’une case indique la part du travail strict journalisée ce jour-là, et les jours portant un jalon ou du retard sont signalés.',
-  'guide.explain.tour.settings':
-    'Paramètres — trois langues et quatre jeux de couleurs, à changer quand vous voulez.',
 }
 
 const DICTS: Record<Lang, Dict> = { en, zh, fr }

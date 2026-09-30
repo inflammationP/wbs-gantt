@@ -13,7 +13,7 @@
 | 2026-09-12 | 甘特图日期范围 | [2026-09-12-timeline-range.md](docs/plans/2026-09-12-timeline-range.md) | `faf113e` v0.2.2 | `c8603167` |
 | 2026-09-13 | 日历改造 | [2026-09-13-calendar.md](docs/plans/2026-09-13-calendar.md) | `8b493a3` v0.2.3 | `c8603167` |
 | 2026-09-13 | 设置页：语言与主题 | [2026-09-13-settings-i18n-theme.md](docs/plans/2026-09-13-settings-i18n-theme.md) | `169e89b` added a settings page with three languages and four colour themes | `1559b7da` |
-| 2026-09-13 | 入门引导（计划里是六步，做成七步） | [2026-09-13-getting-started-guide.md](docs/plans/2026-09-13-getting-started-guide.md) | `63bd162` guidance for beginners，后续修补在 `b5fbf54` | `1559b7da` |
+| 2026-09-13 | 入门引导（计划里是六步，做成七步；**后来整块移除**，见 `FEATURES.md` 第 14 节） | [2026-09-13-getting-started-guide.md](docs/plans/2026-09-13-getting-started-guide.md) | `63bd162` guidance for beginners，后续修补在 `b5fbf54` | `1559b7da` |
 | 2026-09-14 | 父任务的待填提醒与批量填写 | [2026-09-14-parent-subtask-logs.md](docs/plans/2026-09-14-parent-subtask-logs.md) | `a8a0939` Parent tasks now show which subtasks still owe a log today… | `1559b7da` |
 | 2026-09-14 | 设置页「版本 / 更新」区块 | [2026-09-14-update-ui.md](docs/plans/2026-09-14-update-ui.md) | `cec6c40` 0.3.3 updated auto update check and install（v0.3.3） | 本次 |
 | 2026-09-17 | 日志进度：两个格子，必填 | [2026-09-17-log-progress-required.md](docs/plans/2026-09-17-log-progress-required.md) | 待提交 | 本次 |
