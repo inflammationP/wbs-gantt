@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { FolderTree, NotebookText, Pencil, Trash2, X } from 'lucide-react'
 import { Task, TaskLog } from '../types'
 import { useStore } from '../store/useStore'
-import { computeWbs, effectiveStates, nameQualifiers, todoCascadeIds } from '../lib/tree'
+import { computeWbs, effectiveStates, isArchived, nameQualifiers, todoCascadeIds } from '../lib/tree'
 import { logsForTask } from '../lib/logs'
 import { LogLines } from './LogLines'
 import { hasStrictLeafUnder, pendingLogsUnder } from '../lib/dayTasks'
@@ -44,6 +44,8 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
   const pauseTask = useStore((s) => s.pauseTask)
   const resumeTask = useStore((s) => s.resumeTask)
   const setTaskTodo = useStore((s) => s.setTaskTodo)
+  const unarchiveTasks = useStore((s) => s.unarchiveTasks)
+  const withUndo = useStore((s) => s.withUndo)
 
   const [logDialog, setLogDialog] = useState<{ existing?: TaskLog | null } | null>(null)
   const [treeOpen, setTreeOpen] = useState(false)
@@ -70,7 +72,11 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
   const subtasks = tasks.filter((t) => t.parentId === task.id)
   const hasKids = subtasks.length > 0
   const projectTasks = tasks.filter((t) => t.projectId === task.projectId)
-  const wbs = computeWbs(projectTasks).get(task.id) ?? ''
+  // Numbered over the live tasks, matching the board: a filed-away task has
+  // given its number up, and this is what keeps the panel from printing last
+  // week's number beside a task the tree no longer counts. For the archived task
+  // itself the answer is nothing, and the header prints a dash.
+  const wbs = computeWbs(projectTasks.filter((t) => !isArchived(t))).get(task.id) ?? ''
   const effMap = effectiveStates(projectTasks, logs)
   const eff = effMap.get(task.id)
   const effProgress = eff?.progress ?? null
@@ -88,17 +94,38 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
   const taskStatus = eff?.status ?? 'not-started'
   const meta = STATUS_META[taskStatus]
   const prio = priorityMeta(task.priority)
-  const isLoggable = taskStatus === 'in-progress' || taskStatus === 'delayed'
+  // Filed away is read-only: every button below is either about the schedule it
+  // no longer has or about writing something new into it, and the row is not on
+  // the board for either. The way back is the one thing this panel offers, and
+  // it is offered at the top.
+  const filed = isArchived(task)
+  const isLoggable = !filed && (taskStatus === 'in-progress' || taskStatus === 'delayed')
   const pausedDays = task.paused && task.pauseDate ? Math.max(0, diffDays(toDate(task.pauseDate), new Date())) : 0
 
-  // Parking a task as a to-do wipes the schedule of its whole unfinished
-  // branch, so say how much is about to go before doing it.
+  // Parking wipes the schedule of the whole unfinished branch, so the count goes
+  // in the question.
   const handleSetTodo = () => {
     const extra = todoCascadeIds(tasks, logs, task.id).length - 1
     const message = extra > 0
       ? t('task.setAsTodoConfirmMany', { name: task.name, count: extra })
       : t('task.setAsTodoConfirm', { name: task.name })
-    ask(message, () => setTaskTodo(task.id))
+    ask(message, () => withUndo(t('gantt.undoTodo', { what: task.name }), () => setTaskTodo(task.id)))
+  }
+
+  const handlePause = () => {
+    ask(t('task.pauseConfirm', { name: task.name }), () =>
+      withUndo(t('gantt.undoPause', { what: task.name }), () => pauseTask(task.id)),
+    )
+  }
+
+  const handleResume = () => {
+    ask(t('task.resumeConfirm', { name: task.name }), () =>
+      withUndo(t('gantt.undoResume', { what: task.name }), () => resumeTask(task.id)),
+    )
+  }
+
+  const handleUnarchive = () => {
+    withUndo(t('gantt.undoUnarchive', { what: task.name }), () => unarchiveTasks([task.id]))
   }
 
   return (
@@ -122,6 +149,13 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
           <span className="w-2 h-2 rounded-full" style={{ background: project.color }} />
           {project.name}
           {hasKids && <span className="text-dim">· {t('task.subtaskCount', { count: subtasks.length })}</span>}
+          {/* Dim and not a signal colour: "archived" is not a status, and the
+              status this task has is already on the row it wears in the drawer. */}
+          {filed && (
+            <span className="shrink-0 px-1 h-4 inline-flex items-center text-[9px] font-medium rounded-[2px] bg-panel2 text-dim border border-border">
+              {t('archive.badge')}
+            </span>
+          )}
         </div>
       </div>
 
@@ -254,11 +288,20 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
           )}
         </div>
 
-        {/* schedule — for a to-do, replaced by the one thing there is to do
-            with one. There used to be a note above the button explaining that
-            it had no schedule yet and listing what it would be asked for when
-            it started; the button says both. */}
-        {task.isTodo ? (
+        {/* The schedule block, or whatever has taken its place: for a to-do the
+            one button there is to press, for a filed-away task the way back and
+            nothing else — not even a line saying so, because the button is the
+            whole of it. There used to be a note above the to-do button
+            explaining that it had no schedule yet and listing what it would be
+            asked for when it started; the button says both. */}
+        {filed ? (
+          <button
+            onClick={handleUnarchive}
+            className="w-full h-8 text-[12px] font-medium bg-accent text-on-accent rounded-[3px] hover:brightness-110"
+          >
+            {t('task.unarchive')}
+          </button>
+        ) : task.isTodo ? (
           <button
             onClick={() => setStartTodo([task.id])}
             className="w-full h-8 text-[12px] font-medium bg-accent text-on-accent rounded-[3px] hover:brightness-110"
@@ -274,7 +317,7 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
                 count: pausedDays,
               })}
             </div>
-            <button onClick={() => resumeTask(task.id)} className="mt-2 w-full h-8 text-[12px] font-medium bg-accent text-on-accent rounded-[3px] hover:brightness-110">
+            <button onClick={handleResume} className="mt-2 w-full h-8 text-[12px] font-medium bg-accent text-on-accent rounded-[3px] hover:brightness-110">
               {t('task.resume')}
             </button>
           </div>
@@ -298,7 +341,7 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
               // spacing, because they are one choice with two answers.
               <div className="space-y-1.5">
                 {taskStatus !== 'not-started' && (
-                  <button onClick={() => pauseTask(task.id)} className="w-full h-7 text-[12px] text-muted hover:text-fg border border-border rounded-[3px]">
+                  <button onClick={handlePause} className="w-full h-7 text-[12px] text-muted hover:text-fg border border-border rounded-[3px]">
                     {t('task.pause')}
                   </button>
                 )}
@@ -383,7 +426,7 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
             wall of rows pushing everything below it off the screen. Hidden when
             the project has nothing else in it, which is the one case where the
             drawing would be a single name. */}
-        {projectTasks.length > 1 && (
+        {projectTasks.length > 1 && !filed && (
           <button
             onClick={() => setTreeOpen(true)}
             className="w-full h-7 inline-flex items-center justify-center gap-1.5 text-[12px] text-muted hover:text-fg border border-border rounded-[3px]"

@@ -1,9 +1,20 @@
 import { Chore, Project, Task, TaskLog, TaskPriority, TaskType } from '../types'
 import { addDays, toISO } from './dates'
 
-// The demo dataset new installs open with. Dates are day offsets from today
-// (`d(offset)`), so it never goes stale — a task described as "in progress"
-// always straddles the current date, however long ago this file was written.
+// The demo dataset, kept for putting a filled board in front of yourself.
+// `src/lib/seed.ts` is an empty stub now, so this no longer reaches a new
+// install — `scripts/demo-seed.mjs` writes it out as a JSON file and you import
+// that by hand.
+//
+// The name is where it came from, not what it holds: it was `seed.ts` the last
+// time that file was taken off `main`, and the specs below have been added to
+// since — the archive (`archived`), and the two shapes a log's timestamps come
+// in (see `LOG_SPECS`). Anything a later build can do that this dataset cannot
+// show is a feature nobody can see without building it first.
+//
+// Dates are day offsets from today (`d(offset)`), so it never goes stale — a
+// task described as "in progress" always straddles the current date, however
+// long ago this file was written.
 //
 // `progress` and `status` are deliberately absent: both are derived now
 // (src/lib/progress.ts, src/lib/tree.ts). What they derive to depends on the
@@ -43,6 +54,12 @@ interface Spec {
   priority?: TaskPriority
   desc?: string
   tags?: string[]
+  // Day offset it was filed away on. Set on the **root** of an archived branch
+  // and nowhere else, on purpose: the app archives a whole subtree and repairs a
+  // live child under an archived parent on the way in (`storage.ts`
+  // `repairArchive`), and the demo script asserts that the children below come
+  // back archived without the file having said so.
+  archived?: number
 }
 
 const PROJECTS: Project[] = [
@@ -53,6 +70,16 @@ const PROJECTS: Project[] = [
   { id: 'personal', name: 'Personal', color: '#2dd4bf', description: 'Personal goals' },
 ]
 
+// Two entries below exist for the archive, and they are the two halves of it:
+// one branch is **already filed away** (so the drawer at the bottom of the left
+// column is not empty the moment this board is imported), and one is **finished
+// and still on the board** (so there is something to press 归档 on, and to watch
+// what that does to the numbers around it).
+//
+// Any status can be filed away, so the sharpest case is one of the existing
+// ones: archive `team-vision` — strict, still running, and a child of
+// `team-algo`. The parent's percentage must not move. A roll-up that skipped
+// filed-away children would drop it the moment the child went into the drawer.
 const SPECS: Spec[] = [
   // Long-term goals (open-ended: real start, no end)
   { id: 'fr-goal', name: 'Become conversational', project: 'french', type: 'long-term', start: -120, desc: 'Open-ended goal — no end date, no progress.' },
@@ -62,7 +89,7 @@ const SPECS: Spec[] = [
   // STM32
   { id: 'stm-chassis', name: 'Chassis & Drive', project: 'stm32', start: -14, end: 35, desc: 'Parent whose end date is synced from its children.' },
   { id: 'stm-motor', name: 'Motor driver board', parent: 'stm-chassis', project: 'stm32', start: -14, end: 9 },
-  { id: 'stm-motor-sch', name: 'Schematic design', parent: 'stm-motor', project: 'stm32', start: -14, end: -8, confirmed: [-14, -13, -12, -11, -10, -9, -8], desc: 'Every tickable day ticked and the window closed → 100%, completed.' },
+  { id: 'stm-motor-sch', name: 'Schematic design', parent: 'stm-motor', project: 'stm32', start: -14, end: -8, confirmed: [-14, -13, -12, -11, -10, -9, -8], desc: 'Every tickable day ticked and the window closed → 100%, completed. Archive this one to see the rule that matters: it is a finished child of a parent that is still running, and the parent’s number must not move when it is filed away.' },
   { id: 'stm-motor-pcb', name: 'PCB layout', parent: 'stm-motor', project: 'stm32', start: -8, end: 0, confirmed: [-8, -7, -6, -5, -4, -3, -2, -1, 0], desc: 'Closes today with every day ticked, so it reads 100% while still on today’s list — shows as struck through.' },
   { id: 'stm-motor-test', name: 'Bring-up & test', parent: 'stm-motor', project: 'stm32', start: 0, end: 9, strict: true, priority: 'high', desc: 'Strict task with a log written today.' },
   { id: 'stm-mach', name: 'Chassis machining', parent: 'stm-chassis', project: 'stm32', start: 14, end: 34 },
@@ -76,6 +103,16 @@ const SPECS: Spec[] = [
 
   // Competition Team
   { id: 'team-design', name: 'Conceptual design', project: 'team', start: -30, end: -16, confirmed: [-30, -29, -28, -27, -26, -25, -24, -23, -22, -21, -20, -19, -18, -17, -16], priority: 'high', desc: 'Reaches the left end of the axis — the range starts 30 days back — and is ticked the whole way, so it closed at 100%.' },
+  // --- Finished, still on the board, waiting to be filed away. ---
+  // The one to press 归档 on. Three things it shows that a plain finished leaf
+  // cannot: the confirmation counts the to-do underneath it (a to-do is left out
+  // of its parent's roll-up, so it cannot stop the parent from reading as done —
+  // which is why the warning exists), the branch goes as one piece, and the
+  // numbering below it closes up. Its bar stops at the axis start rather than
+  // past it, so the timeline does not move when the branch leaves.
+  { id: 'team-proto', name: 'Prototype build', project: 'team', start: -28, end: -15, desc: 'Complete and still on the board — this is the one to archive. Watch the numbers around it: a finished child of a live parent takes nothing with it.' },
+  { id: 'team-proto-frame', name: 'Frame assembly', parent: 'team-proto', project: 'team', start: -28, end: -15, confirmed: [-28, -27, -26, -25, -24, -23, -22, -21, -20, -19, -18, -17, -16, -15], desc: 'Finished, and the reason its parent reads as complete.' },
+  { id: 'team-todo-bom', name: 'Settle the BOM', parent: 'team-proto', project: 'team', isTodo: true, desc: 'Never scheduled, never finished, and sitting inside a complete branch. Archiving the branch takes this with it, and the confirmation says how many like it are going.' },
   { id: 'team-sim', name: 'Dynamics simulation', project: 'team', start: -26, end: -14, strict: true, desc: 'Third strict task in the early window — three to cover on those days, so the ring shows thirds rather than only halves.' },
   { id: 'team-mech', name: 'Mechanical', project: 'team', start: -14, end: -2, confirmed: [-14, -13, -12, -11, -10, -9, -8, -7, -6, -5, -4, -3], priority: 'high', desc: 'A closed window with one day never ticked — reads overdue rather than done. The calendar used to finish this one on its own.' },
   { id: 'team-elec', name: 'Electrical', project: 'team', start: -5, end: 25, confirmed: [-5, -4, -3, -2, -1, 0], desc: 'Ticked every day so far — a simplified task kept up with, so its number matches the share of the window elapsed.' },
@@ -94,6 +131,20 @@ const SPECS: Spec[] = [
   { id: 'co-python', name: 'Python', project: 'course', start: -30, end: -1, confirmed: [-30, -29, -28, -27, -26, -24, -23, -22, -21, -20, -18, -17, -16, -15, -14, -12, -11, -10, -8, -7, -6, -4, -3, -1], desc: 'A closed window with six days never ticked → overdue. Under the old rule a closed window read 100% of its own accord; now only the days you ticked count, so this is the state that did not use to exist.' },
   { id: 'co-stats', name: 'Probability & Statistics', project: 'course', start: -28, end: -12, strict: true, priority: 'high', desc: 'Strict, window closed, and no target on any log — the other sample of the pre-mandatory shape, settling at the share of days actually logged.' },
   { id: 'co-pytorch', name: 'PyTorch', project: 'course', start: 0, end: 30 },
+  // --- Already filed away. ---
+  // The drawer at the bottom of the left column holds this branch on import, so
+  // the archive is visible without using the feature first. Three things to look
+  // at: it reaches back to -60 while the axis still starts at -30 (a filed-away
+  // task is not on the schedule, so the timeline ignores it), the to-do inside
+  // went with it (that is what the cascade is for), and the whole branch is
+  // read-only until it is brought back.
+  //
+  // Only the root carries `archived`: the children are archived on the way in by
+  // `normalize`'s repair, which is the same code that rescues a hand-edited file.
+  // `scripts/demo-seed.mjs` asserts they come back filed away.
+  { id: 'co-found', name: 'Foundations', project: 'course', start: -60, end: -44, archived: -7, desc: 'Finished and filed away a week ago. Find it in the Archived group at the bottom of the left column; it comes back from there, or from Manage.' },
+  { id: 'co-found-git', name: 'Git & tooling', parent: 'co-found', project: 'course', start: -60, end: -45, confirmed: [-60, -59, -58, -57, -56, -55, -54, -53, -52, -51, -50, -49, -48, -47, -46, -45], desc: 'Finished, and filed away with its parent.' },
+  { id: 'co-todo-notes', name: 'Rewrite the lecture notes', parent: 'co-found', project: 'course', isTodo: true, desc: 'A to-do that went into the archive with its parent. It never stopped being unfinished — which is exactly why the confirmation counts them before it files a branch away.' },
   { id: 'co-mlp', name: 'MLP', parent: 'co-pytorch', project: 'course', start: 0, end: 12 },
   { id: 'co-cnn', name: 'CNN', parent: 'co-pytorch', project: 'course', start: 12, end: 30 },
 
@@ -109,6 +160,21 @@ interface LogSpec {
   offset: number
   content: string
   targetProgress: number | null
+  /**
+   * The clock readings, one per paragraph, as `TaskLog.stamps` holds them.
+   *
+   * Two shapes appear below on purpose, because both still exist in the wild and
+   * only one of them is what the app writes now:
+   *
+   *   - **`stamps` set** — the current shape. The reading is a field, the text is
+   *     only the text, and the editor never shows the time.
+   *   - **a `— HH:MM —` line at the top of `content`, no `stamps`** — what every
+   *     build before v0.10.0 wrote into the body itself. Loading it lifts the
+   *     line out and leaves the reading in the field; if that ever stops
+   *     happening, the entry draws the clock twice, once from the field and once
+   *     from the text. One log below is left in this shape so that stays visible.
+   */
+  stamps?: string[]
 }
 
 // A month of history, today included.
@@ -124,7 +190,11 @@ interface LogSpec {
 const LOG_SPECS: LogSpec[] = [
   // --- Unité 4, a strict unit closed out over three weeks. The gaps (-27, -24,
   //     -21, -19, -16, -14, -12, -10) are intentional. ---
-  { id: 'log-fr-u4-29', taskId: 'fr-u4', offset: -29, content: '- Leçon 1: passé composé\n\t- avoir + participe passé\n- 20 new words into Anki', targetProgress: 8 },
+  // The **old shape**: the reading is the first line of the body, and there is no
+  // `stamps` beside it — the way every build before v0.10.0 wrote a log. Loading
+  // this one lifts `— 08:40 —` out of the text and into the field; the body keeps
+  // the paragraph it opened. Open it in the panel and there is one clock, not two.
+  { id: 'log-fr-u4-29', taskId: 'fr-u4', offset: -29, content: '— 08:40 —\n- Leçon 1: passé composé\n\t- avoir + participe passé\n- 20 new words into Anki', targetProgress: 8 },
   { id: 'log-fr-u4-28', taskId: 'fr-u4', offset: -28, content: '- Drill: passé composé vs imparfait\n- Weak spot: agreement with être verbs', targetProgress: 12 },
   { id: 'log-fr-u4-26', taskId: 'fr-u4', offset: -26, content: '- Leçon 2: pronoms objets\n\t- le / la / les go before the verb\n- Listening: 15 min RFI journal', targetProgress: 20 },
   { id: 'log-fr-u4-25', taskId: 'fr-u4', offset: -25, content: '- Shadowing practice, 15 min\n- Read the transcript twice', targetProgress: 25 },
@@ -215,7 +285,12 @@ const LOG_SPECS: LogSpec[] = [
   { id: 'log-fr-anki-1', taskId: 'fr-anki', offset: -1, content: '- 15 new cards, 95 reviews\n\t- Retention 88%', targetProgress: null },
   { id: 'log-fr-anki-2', taskId: 'fr-anki', offset: -2, content: '- 40 new cards, 120 reviews', targetProgress: null },
   { id: 'log-stm-can-2', taskId: 'stm-can', offset: -2, content: '- Read the RM reference manual, CAN chapter\n- Nothing on the bus yet', targetProgress: 10 },
-  { id: 'log-stm-can-0', taskId: 'stm-can', offset: 0, content: '- CAN frames TX/RX at 500 kbps\n\t- Filter mask was wrong, fixed\n- Next: error-frame handling', targetProgress: 50 },
+  // The **current shape**: the reading is a field, so the editor never shows it
+  // and cannot lose it. This is today's log on a strict task — the one place the
+  // time rule is easiest to see, since the day panel is where you land first.
+  // Deliberately not 09:00 like `createdAt`: the rule is drawn from the field,
+  // and a reading that happens to equal the record’s own stamp would hide that.
+  { id: 'log-stm-can-0', taskId: 'stm-can', offset: 0, content: '- CAN frames TX/RX at 500 kbps\n\t- Filter mask was wrong, fixed\n- Next: error-frame handling', targetProgress: 50, stamps: ['11:20'] },
   { id: 'log-stm-pid-2', taskId: 'stm-pid', offset: -2, content: '- Chose the control loop structure\n- Step response baseline captured', targetProgress: 5 },
   { id: 'log-stm-pid-1', taskId: 'stm-pid', offset: -1, content: '- 1 kHz PID loop running\n\t- 30% overshoot at Kp=2.0\n- Next: lower Kp, add D term', targetProgress: 15 },
   { id: 'log-stm-motor-test-0', taskId: 'stm-motor-test', offset: 0, content: '- Flashed bring-up firmware\n\t- Encoder counts stable at 1 kHz\n\t- Closed-loop spin test OK\n- Next: current-loop calibration', targetProgress: 25 },
@@ -232,6 +307,7 @@ function makeLogs(d: (offset: number) => string): TaskLog[] {
       taskId: s.taskId,
       date: d(s.offset),
       content: s.content,
+      ...(s.stamps ? { stamps: s.stamps.map((t) => ({ at: t })) } : {}),
       targetProgress: s.targetProgress,
       createdAt: at,
       updatedAt: at,
@@ -305,6 +381,11 @@ export function buildSeed(): { projects: Project[]; tasks: Task[]; logs: TaskLog
       dependencies: [],
       createdAt: now,
       updatedAt: now,
+      // Evening, so it is plainly the moment it was filed away rather than the
+      // day the work ended. Absent on everything else — `undefined` drops out of
+      // the JSON rather than being written as a null the app would have to read
+      // around.
+      archivedAt: s.archived === undefined ? undefined : new Date(`${d(s.archived)}T18:00:00`).toISOString(),
     }
   })
 

@@ -1,6 +1,7 @@
 import { Chore, Habit, Note, Project, Stamp, Task, TaskLog, TaskPriority } from '../types'
 import { DEFAULT_LANG, isLang, Lang } from '../lib/i18n'
 import { liftTimes, paragraphs } from '../lib/logs'
+import { isArchived } from '../lib/tree'
 import { DEFAULT_THEME, isThemeId, ThemeId } from '../lib/theme'
 import { ALL_DAYS } from '../lib/habits'
 import { PRIORITY_ORDER } from '../lib/ui'
@@ -369,22 +370,82 @@ export function savePrefs(prefs: Prefs): void {
  * files the note under no day and hides it — where inventing one would drop it
  * into some day's card on a date nobody chose.
  */
-function collapseNotes(raw: { date?: string; body?: string; updatedAt?: string }[]): Note[] {
+function collapseNotes(raw: { date?: string; body?: string; updatedAt?: string; stamps?: unknown }[]): Note[] {
   const byDate = new Map<string, Note>()
   for (const n of raw) {
     const date = n.date ?? ''
     const body = (n.body ?? '').trim()
     if (!body) continue
     const seen = byDate.get(date)
+    // The readings come through with the body they belong to, in the same
+    // paragraph order. This function *rebuilds* the note, so whatever it does
+    // not copy is not merely unread — the next save writes the rebuilt entry
+    // back, and a reading dropped here is gone from the file too. It is also
+    // the one part of an entry the user cannot type again: the clock is not
+    // something they can retype after the fact.
+    const stamps = [...(seen?.stamps ?? []), ...readStamps(n.stamps)]
     byDate.set(date, {
       date,
       body: seen ? `${seen.body}\n\n${body}` : body,
       // The later of the two, so a collapsed pair keeps saying when the day was
       // last written rather than when its first half was.
       updatedAt: seen && seen.updatedAt > (n.updatedAt ?? '') ? seen.updatedAt : (n.updatedAt ?? ''),
+      stamps,
     })
   }
   return [...byDate.values()]
+}
+
+/**
+ * A live task under a filed-away parent, put back into the shape the app keeps.
+ *
+ * Archiving always takes the whole branch — `archiveTasks` cascades, and the
+ * panel and the menus offer it on a branch and on nothing else — so this can
+ * only arrive from a hand-edited file or a JSON export someone assembled. It
+ * still has to be repaired rather than tolerated, because the cost of tolerating
+ * it is not a strange-looking row: the tree only walks down from the roots, so
+ * a task whose parent is filed away is a task that appears on no screen at all,
+ * with nothing to say it was there. Filed away is the reading that keeps it.
+ *
+ * The nearest archived ancestor's own moment is copied down rather than a fresh
+ * one, so the branch says it was archived together.
+ */
+function repairArchive(tasks: Task[]): Task[] {
+  const byId = new Map(tasks.map((t) => [t.id, t]))
+  let changed = false
+  const next = tasks.map((t) => {
+    if (isArchived(t)) return t
+    // `seen` because a hand-edited file can hold a cycle, and this walk would
+    // not return — the same guard `ancestorNames` and the store's unarchive use.
+    const seen = new Set<string>([t.id])
+    let parentId = t.parentId
+    while (parentId != null && !seen.has(parentId)) {
+      seen.add(parentId)
+      const parent = byId.get(parentId)
+      if (!parent) break
+      if (isArchived(parent)) {
+        changed = true
+        return { ...t, archivedAt: parent.archivedAt }
+      }
+      parentId = parent.parentId
+    }
+    return t
+  })
+  return changed ? next : tasks
+}
+
+/**
+ * The stamps out of a saved entry, keeping only the ones that are readings.
+ *
+ * Shared by the log and the notebook, both of which arrive from a hand-edited
+ * file or a JSON export: `at` is drawn as text and indexed by paragraph, so a
+ * value that is not a string is not a wrong clock — it is the first `TimeRule`
+ * of the entry throwing on render.
+ */
+function readStamps(v: unknown): Stamp[] {
+  return Array.isArray(v)
+    ? v.filter((s): s is Stamp => !!s && typeof s === 'object' && typeof (s as Stamp).at === 'string')
+    : []
 }
 
 // Normalize data loaded from disk or import: backfill `type`/`strictProgress`,
@@ -438,7 +499,7 @@ function normalize(data: PersistedData): LoadedData {
     // file or a JSON export, and a value that is not a string would be rendered
     // as a folder name and stored back on the next save.
     todoFolders: readFolderNames(data.todoFolders),
-    tasks: data.tasks.map((t) => {
+    tasks: repairArchive(data.tasks.map((t) => {
       const isLT = t.type === 'long-term'
       const isTodo = t.isTodo === true
       return {
@@ -465,8 +526,12 @@ function normalize(data: PersistedData): LoadedData {
         // order implementation-defined. Anything that is not a finite number
         // reads as "no opinion", which is the state every task starts in.
         order: Number.isFinite(t.order) ? (t.order as number) : undefined,
+        // Read as a moment or as nothing. Only ever truth-tested — but it is
+        // also written straight back to disk on the next save, so a value that
+        // is not one the app wrote has to be dropped here rather than carried.
+        archivedAt: isInstant(t.archivedAt) ? t.archivedAt : undefined,
       }
-    }),
+    })),
     logs: (data.logs ?? []).map((l) => ({
       ...l,
       date: l.date ?? '',
@@ -502,28 +567,45 @@ export function readPriority(v: unknown): TaskPriority {
 /**
  * An entry's stamps, wherever the board on disk was written.
  *
- * Two older shapes to read: the reading typed into the content as a `— HH:MM —`
- * line (everything before stamps were a field), and a plain `times` list from
- * the build that lifted them out but had nowhere to put *which* paragraph each
- * one opened. Both resolve to one stamp per paragraph here, which is the only
- * shape the rest of the app knows.
+ * Three shapes to read: the reading typed into the content as a `— HH:MM —`
+ * line (everything before stamps were a field), a plain `times` list from the
+ * build that lifted the readings out but had nowhere to put *which* paragraph
+ * each one opened, and the field itself. All three resolve to one stamp per
+ * paragraph here, which is the only shape the rest of the app knows.
+ *
+ * The lift runs on every load, not only on the shape that has no field yet.
+ * The first build to *have* the field lifted the readings but left the lines in
+ * the text, so every entry read by it now carries both — and a board saved
+ * since has both on disk. Running it again is what takes those lines out; on a
+ * body already through it, there is nothing to lift and the text comes back
+ * unchanged, which is what makes it safe here every time. What it must not do
+ * is leave `— 14:05 —` sitting in a paragraph while the paragraph above it wears
+ * the reading: that is the same clock drawn twice.
+ *
+ * Exported for `scripts/check-notes.mjs`, which is where the three shapes are
+ * pinned.
  */
-function stampsOf(l: { content?: string; times?: unknown; stamps?: unknown }): { content: string; stamps: Stamp[] } {
-  if (Array.isArray(l.stamps)) {
-    const stamps = l.stamps.filter(
-      (s): s is Stamp => !!s && typeof s === 'object' && typeof (s as Stamp).at === 'string',
-    )
-    return { content: l.content ?? '', stamps: paragraphs(l.content ?? '').map((_, i) => stamps[i] ?? { at: '' }) }
+export function stampsOf(l: { content?: string; times?: unknown; stamps?: unknown }): { content: string; stamps: Stamp[] } {
+  const { text, stamps: lifted } = liftTimes(l.content ?? '')
+  const stored = readStamps(l.stamps)
+  // The order is the order they were written in, and every write opened a
+  // paragraph — so the list lines up with the blocks, shortest wins.
+  const times = Array.isArray(l.times) ? l.times.filter((t): t is string => typeof t === 'string') : null
+  return {
+    content: text,
+    // Read in that order of preference, because the oldest shape is also the
+    // one that lost the most: a reading already in the field knows which
+    // paragraph it opened, a lifted one only knows the line it came out of, and
+    // a `times` list knows neither — it just counts. Whichever answers, the
+    // count has to match the paragraphs or the readings are drawn against the
+    // wrong text.
+    stamps: paragraphs(text).map((_, i) => {
+      const kept = stored[i]
+      if (kept?.at) return kept
+      const line = lifted[i]
+      return line?.at ? line : { at: times?.[i] ?? '' }
+    }),
   }
-  const raw = l.content ?? ''
-  const lifted = liftTimes(raw)
-  if (Array.isArray(l.times)) {
-    // The order is the order they were written in, and every write opened a
-    // paragraph — so the list lines up with the blocks, shortest wins.
-    const times = l.times.filter((t): t is string => typeof t === 'string')
-    return { content: lifted.text, stamps: lifted.stamps.map((s, i) => (times[i] != null && !s.at ? { at: times[i] } : s)) }
-  }
-  return { content: raw, stamps: lifted.stamps }
 }
 
 /**

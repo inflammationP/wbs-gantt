@@ -3,6 +3,7 @@ import { ChevronRight } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { CopyKey, DigestCategory, DigestItem, collectDay, copy } from '../lib/reminder'
 import { strictLogRate } from '../lib/dayTasks'
+import { liveTasks } from '../lib/tree'
 import { sig } from '../lib/ui'
 import { addDays, toDate, toISO } from '../lib/dates'
 import { Lang, formatShortDate } from '../lib/i18n'
@@ -85,7 +86,12 @@ export function DailyReport({ onClose }: { onClose: () => void }) {
   }, [tasks, logs, yesterday])
 
   const cats = useMemo(
-    () => collectDay({ tasks, logs, chores, habits }, today, leadDays),
+    // Filed-away work is not coming up: the report is the same list the push is
+    // built from (`scheduleReminderSync`), and the two have to agree about what
+    // is due. The log rate above is not filtered — obligations drop archived
+    // tasks themselves, and they are the only part of that number that could
+    // have counted one.
+    () => collectDay({ tasks: liveTasks(tasks), logs, chores, habits }, today, leadDays),
     [tasks, logs, chores, habits, today, leadDays],
   )
 

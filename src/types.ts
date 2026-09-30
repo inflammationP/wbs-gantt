@@ -57,6 +57,22 @@ export interface Task {
    * group is either wholly ordered or not ordered at all.
    */
   order?: number
+  /**
+   * When the task was filed away, as an ISO instant. Absent means it is on the
+   * board.
+   *
+   * A field rather than a collection of its own, and not a matter of taste: a
+   * new collection has to be named in six places (the store's state, its
+   * initial write, `importData`, the save subscriber's condition *and* its
+   * literal, `exportJson`, `parseImport`), and every one of them that is missed
+   * drops the data silently on the next save. A task field rides through all of
+   * them by object spread.
+   *
+   * Archiving is only ever offered on a task that is completed, and it takes
+   * the whole subtree with it — a child left live under an archived parent is a
+   * task nothing can draw and nothing can reach. See `archiveTasks`.
+   */
+  archivedAt?: string
   tags: string[]
   dependencies: string[] // task ids
   createdAt: string

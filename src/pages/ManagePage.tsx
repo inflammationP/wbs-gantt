@@ -7,7 +7,7 @@ import { addDays, toDate, toISO, todayISO } from '../lib/dates'
 import { PROJECT_COLORS, STATUS_META, STATUS_ORDER, priorityMeta, priorityWash, sig, sigText } from '../lib/ui'
 import { formatShortDate, weekdayLabels } from '../lib/i18n'
 import { useLang, useT } from '../lib/useT'
-import { compareSiblings, computeWbs, effectiveStates } from '../lib/tree'
+import { archivedRoots, collectDescendants, compareSiblings, computeWbs, effectiveStates, isArchived, liveTasks } from '../lib/tree'
 import { ALL_DAYS } from '../lib/habits'
 import { useDialogs } from '../components/dialogs'
 import { HabitDialog } from '../components/HabitDialog'
@@ -37,6 +37,7 @@ export function ManagePage() {
   const deleteHabit = useStore((s) => s.deleteHabit)
   const todayStamp = useStore((s) => s.today)
   const setSelected = useStore((s) => s.setSelected)
+  const unarchiveTasks = useStore((s) => s.unarchiveTasks)
   const setActiveView = useStore((s) => s.setActiveView)
   const setProjectFilter = useStore((s) => s.setProjectFilter)
   const addProject = useStore((s) => s.addProject)
@@ -55,14 +56,24 @@ export function ManagePage() {
   const weekISO = toISO(addDays(new Date(), 7))
 
   const eff = useMemo(() => effectiveStates(tasks, logs), [tasks, logs, todayStamp])
+  // Filed-away work is out of everything on this page that answers "what does
+  // the board look like now": the counts, the table, the numbering. The roll-ups
+  // are not — `eff` above is taken over every task, so filing a finished branch
+  // away cannot move a parent's progress or a project's percentage. Archiving
+  // changes what is listed, never what is computed; the same split `buildRows`
+  // and `daySummary` make.
+  const live = useMemo(() => liveTasks(tasks), [tasks])
   // Every count on this page is over leaf tasks, matching what the Gantt shows
   // as work.
-  const leaves = useMemo(() => tasks.filter((task) => !tasks.some((x) => x.parentId === task.id)), [tasks])
+  const leaves = useMemo(() => live.filter((task) => !live.some((x) => x.parentId === task.id)), [live])
   // The first level of each project — the branches a project is divided into.
   // Deliberately not "tasks that have children": a first-level task with no
   // children of its own *is* the whole branch, and counting it out would make
   // this figure disagree with the WBS the Gantt prints beside it.
-  const parents = useMemo(() => tasks.filter((task) => task.parentId === null), [tasks])
+  const parents = useMemo(() => live.filter((task) => task.parentId === null), [live])
+  // The branches filed away: one entry per branch, which is what the drawer's
+  // rows and the unarchive button both act on.
+  const archived = useMemo(() => archivedRoots(tasks), [tasks])
 
   const overview = useMemo(() => {
     const overdue = leaves.filter((task) => eff.get(task.id)?.status === 'delayed')
@@ -90,7 +101,7 @@ export function ManagePage() {
     }
   }, [leaves, eff, today, weekISO])
 
-  const wbs = useMemo(() => computeWbs(tasks), [tasks])
+  const wbs = useMemo(() => computeWbs(live), [live])
   const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? ''
 
   // The Gantt's own sibling order, from the Gantt's own function: to-dos last,
@@ -101,7 +112,7 @@ export function ManagePage() {
   // one on its own is invisible until two tasks happen to tie; together with the
   // project lines now drawn in the Gantt, they read as two pages disagreeing.
   const projectRank = new Map(projects.map((p, i) => [p.id, i]))
-  const filtered = tasks
+  const filtered = live
     .filter((task) => statusFilter === 'all' || eff.get(task.id)?.status === statusFilter)
     .sort(
       (a, b) =>
@@ -109,14 +120,20 @@ export function ManagePage() {
         compareSiblings(a, b),
     )
 
+  // The project card's numbers. Counts come from the live tasks; the percentage
+  // is taken over every leaf the project has, archived ones included, because it
+  // is a rate and not a tally — the day a finished branch is filed away is not
+  // the day a project gets less done.
   const statsFor = (pid: string) => {
     const ptasks = tasks.filter((task) => task.projectId === pid)
-    const pleaves = ptasks.filter((task) => !tasks.some((x) => x.parentId === task.id))
+    const leavesOf = (list: Task[]) => list.filter((task) => !tasks.some((x) => x.parentId === task.id))
+    const pleaves = leavesOf(ptasks)
+    const plive = leavesOf(live.filter((task) => task.projectId === pid))
     const peff = effectiveStates(ptasks, logs)
     const ps = pleaves.map((task) => peff.get(task.id)?.progress).filter((p): p is number => p != null)
     const pct = ps.length ? Math.round(ps.reduce((s, x) => s + x, 0) / ps.length) : 0
-    const done = pleaves.filter((task) => peff.get(task.id)?.status === 'completed').length
-    return { total: ptasks.length, leaves: pleaves.length, pct, done }
+    const done = plive.filter((task) => peff.get(task.id)?.status === 'completed').length
+    return { total: ptasks.filter((task) => !isArchived(task)).length, leaves: plive.length, pct, done }
   }
 
   return (
@@ -287,7 +304,7 @@ export function ManagePage() {
 
           <div className="flex items-center justify-between mb-3">
             <div className="text-[12px] text-muted">
-              {t('manage.filteredCount', { filtered: filtered.length, count: tasks.length })}
+              {t('manage.filteredCount', { filtered: filtered.length, count: live.length })}
             </div>
             <select className="h-8 px-2 bg-panel2 border border-border rounded-[3px] text-[12px]" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as TaskStatus | 'all')}>
               <option value="all">{t('manage.allStatuses')}</option>
@@ -318,6 +335,51 @@ export function ManagePage() {
                 </button>
               )
             })}
+          </div>
+        </div>
+
+        {/* ---- Filed away ---- */}
+        {/* The second of the two places archived work can be found, and the one
+            that exists for looking rather than for finding: the board's drawer
+            is at the bottom of a column that is already busy, and this page is
+            where the whole board is meant to be summed up. A branch is one row
+            here, the same unit the drawer's rows are, because that is what
+            "bring it back" acts on. */}
+        <div>
+          <h2 className="text-[14px] font-semibold text-fg mb-3">
+            {t('archive.title', { count: tasks.length - live.length })}
+          </h2>
+          <div className="bg-panel border border-border rounded-[3px] overflow-hidden">
+            {archived.length === 0 ? (
+              <div className="px-4 py-3 text-[12px] text-dim">{t('archive.empty')}</div>
+            ) : (
+              archived.map((task) => {
+                const inside = 1 + collectDescendants(tasks, task.id).length
+                return (
+                  <div key={task.id} className="flex items-center gap-3 px-4 py-2.5 border-b border-border last:border-b-0">
+                    <span
+                      className="w-1.5 h-1.5 rounded-full shrink-0"
+                      style={{ background: projects.find((p) => p.id === task.projectId)?.color }}
+                    />
+                    <button onClick={() => setSelected(task.id)} className="min-w-0 flex-1 truncate text-left text-[13px] text-fg/90 hover:text-fg">
+                      {task.name}
+                    </button>
+                    <span className="shrink-0 text-[11px] text-dim">{projectName(task.projectId)}</span>
+                    {/* The size of the branch, and only when it is more than the
+                        one row standing for it. */}
+                    {inside > 1 && (
+                      <span className="shrink-0 text-[11px] text-dim">{t('common.taskCount', { count: inside })}</span>
+                    )}
+                    <button
+                      onClick={() => unarchiveTasks([task.id])}
+                      className="shrink-0 h-7 px-2.5 text-[11px] font-medium text-accent hover:bg-accent/10 border border-border rounded-[3px]"
+                    >
+                      {t('task.unarchive')}
+                    </button>
+                  </div>
+                )
+              })
+            )}
           </div>
         </div>
       </div>

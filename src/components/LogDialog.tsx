@@ -5,7 +5,7 @@ import { useStore } from '../store/useStore'
 import { Task, TaskLog } from '../types'
 import { addDays, toDate, toISO, todayISO } from '../lib/dates'
 import { isStrictLeaf } from '../lib/dayTasks'
-import { buildChildrenMap } from '../lib/tree'
+import { buildChildrenMap, isArchived } from '../lib/tree'
 import { countableDays, taskProgress } from '../lib/progress'
 import { useT } from '../lib/useT'
 
@@ -91,7 +91,12 @@ export function LogDialog({ taskId, existing, defaultDate, onClose }: Props) {
   // button — and this is the line that makes the rule true rather than merely
   // well hidden. Without it the rule lives in each of those places, and the
   // fifth one added later will not remember.
-  if (!existing && tasks.some((x) => x.parentId === task.id)) return null
+  // `existing` deliberately not part of the archived half: editing and deleting
+  // a log an archived task already has is allowed, because a log is a record of
+  // what was written rather than a field of the task. Only *starting* a new one
+  // is blocked —  the day panel that used to be the other way in no longer lists
+  // the row.
+  if (!existing && (tasks.some((x) => x.parentId === task.id) || isArchived(task))) return null
 
   const task_ = task
 

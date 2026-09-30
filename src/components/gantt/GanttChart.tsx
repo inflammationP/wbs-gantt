@@ -1,13 +1,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent, PointerEvent } from 'react'
-import { Row, RowTask, buildRows, collectDescendants, placeTasks } from '../../lib/tree'
+import { Row, RowTask, buildRows, collectDescendants, isArchived, placeTasks } from '../../lib/tree'
 import { buildTimeline, dateToX, DateRange, FOCUS_OFFSET_PX } from '../../lib/timeline'
 import { startOfDay, toDate } from '../../lib/dates'
 import { useStore } from '../../store/useStore'
 import { useLang, useT } from '../../lib/useT'
 import { TimelineHeader } from './TimelineHeader'
 import { GridBackground } from './GridBackground'
-import { RowLeft, LeftHeader, LEFT_WIDTH, TodoActions } from './RowLeft'
+import { RowLeft, LeftHeader, LEFT_WIDTH, ArchiveActions, TodoActions } from './RowLeft'
 import { TaskBar } from './TaskBar'
 
 const HEADER_H = 52
@@ -20,7 +20,14 @@ const rowHeight = (depth: number) => ROW_HEIGHT[Math.min(depth, 2)]
 // A project's line is drawn at the smallest of those heights. It is a rule
 // between groups rather than a step in the hierarchy, so it does not indent and
 // does not grow — the top-level tasks under it keep their own size.
-const heightOf = (row: Row) => (row.kind === 'project' ? ROW_HEIGHT[2] : rowHeight(row.depth))
+const heightOf = (row: Row) =>
+  // A project's line is drawn at the smallest height whatever it holds: it is a
+  // rule between groups rather than a step in the hierarchy, so it does not
+  // indent and does not grow. The archive drawer is the other way round — it
+  // wears the top-level height so that it reads as a header over the rows inside
+  // it, which is what it is. A to-do folder is in neither list: it *stands in*
+  // for the rows it hides, so it is their size.
+  row.kind === 'project' ? ROW_HEIGHT[2] : rowHeight(row.depth)
 
 // Splitter between the left task table and the right timeline.
 const SPLITTER_W = 6
@@ -88,6 +95,7 @@ interface Props {
   rows: Row[]
   range: DateRange
   todo: TodoActions
+  archived: ArchiveActions
   /** Editing mode: rows can be dragged and clicks build a selection. */
   editing: boolean
   /**
@@ -110,9 +118,10 @@ interface Props {
    */
   onAddSibling: (row: RowTask) => void
   onEdit: (row: RowTask) => void
+  onArchive: (row: RowTask) => void
 }
 
-export function GanttChart({ rows, range, todo, editing, sel, onSel, onContext, onAddChild, onAddSibling, onEdit }: Props) {
+export function GanttChart({ rows, range, todo, archived, editing, sel, onSel, onContext, onAddChild, onAddSibling, onEdit, onArchive }: Props) {
   const t = useT()
   const lang = useLang()
   const viewMode = useStore((s) => s.viewMode)
@@ -270,6 +279,10 @@ export function GanttChart({ rows, range, todo, editing, sel, onSel, onContext, 
     // same rule the dialog's parent picker and the row's own "+" already follow.
     if (row.kind === 'project') return true
     if (row.kind !== 'task' || row.task.isTodo) return false
+    // A filed-away row is not a container either. Anything dropped into it would
+    // be inside a branch the tree does not walk, which is a row nothing draws —
+    // and the drop would look like it had simply been ignored.
+    if (isArchived(row.task)) return false
     return !dragState.current?.blocked.has(row.id)
   }
 
@@ -292,6 +305,9 @@ export function GanttChart({ rows, range, todo, editing, sel, onSel, onContext, 
       const r = rows[j]
       if (r.depth > depth) continue
       if (r.depth < depth) return null
+      // The archive group is the last thing in the column and holds nothing a
+      // drop can go in front of: `parentId` on it would be the id of a task,
+      // which is a place on the board, not on this line.
       if (r.kind === 'todoGroup') return r.parentId === parentId ? (r.todoIds[0] ?? null) : null
       if (r.kind !== 'task' || r.task.parentId !== parentId) return null
       return r.id
@@ -321,6 +337,11 @@ export function GanttChart({ rows, range, todo, editing, sel, onSel, onContext, 
       // rather than a heading. Projects are not reordered by dragging.
       return { ids, parentId: null, beforeId: null, projectId: row.project.id }
     }
+    // The archive group has neither of these, and it is not a place: a drop on
+    // it lands nowhere rather than on `undefined`, which is what reading the
+    // fields off it would quietly produce — and `moveTasks` would then file the
+    // rows under a parent id that is not a string.
+    if (row.kind === 'archiveGroup') return null
     const parentId = row.kind === 'task' ? row.task.parentId : row.parentId
     const projectId = row.kind === 'task' ? row.task.projectId : row.projectId
     if (at.zone === 'into') {
@@ -431,8 +452,10 @@ export function GanttChart({ rows, range, todo, editing, sel, onSel, onContext, 
   const beginDrag = (e: PointerEvent<HTMLDivElement>, row: Row) => {
     if (!editing || e.button !== 0) return
     // A folder line and a project line are places, not things — they are drop
-    // targets, and neither has a task behind it to move.
-    if (row.kind !== 'task') return
+    // targets, and neither has a task behind it to move. A filed-away row is a
+    // thing, but not one that is on the board to be moved: it comes back first,
+    // and then it can be dragged like anything else.
+    if (row.kind !== 'task' || isArchived(row.task)) return
     // A press on one of the row's buttons belongs to that button. Its `click`
     // stops propagating, but the `pointerdown` still bubbles to here, so
     // without this the delete button would arm a drag and swallow its own press
@@ -534,6 +557,41 @@ export function GanttChart({ rows, range, todo, editing, sel, onSel, onContext, 
   }
 
   /**
+   * Open or close one of the tree's disclosures, and bring what it uncovers into
+   * view when there is nowhere else for it to go.
+   *
+   * The last row of the column is the case this exists for. The archive drawer
+   * sits at the very bottom, so opening it adds its rows *below* the fold: the
+   * chevron turns, the screen does not move, and the click reads as one that did
+   * nothing. Everything else in the tree looks after itself — a row with rows
+   * after it pushes those down inside the view, so its children land in sight.
+   *
+   * Hence a scroll of exactly the height that was added, and no more. Rows that
+   * were going to be in sight anyway move nothing (`hidden` comes out zero),
+   * so opening a row in the middle of the tree still cannot lose your place —
+   * and the drawer at the bottom moves by precisely what it opened, which is
+   * the whole of what there is to see.
+   *
+   * Measured after the paint that adds the rows, and against the height from
+   * before it: the amount that has to be made room for *is* the growth, and
+   * before the paint there is none to measure.
+   */
+  const toggleRow = (id: string, defaultOpen: boolean) => {
+    const box = containerRef.current
+    const height = box?.scrollHeight ?? 0
+    const opening = (expanded[id] ?? defaultOpen) === false
+    toggleExpanded(id, defaultOpen)
+    if (!opening || !box) return
+    requestAnimationFrame(() => {
+      const node = box.querySelector<HTMLElement>(`[data-row-id="${id}"]`)
+      if (!node) return
+      const view = box.getBoundingClientRect()
+      const hidden = node.getBoundingClientRect().bottom + (box.scrollHeight - height) - view.bottom
+      if (hidden > 0) box.scrollTop += hidden
+    })
+  }
+
+  /**
    * What a click on a row means.
    *
    * Outside editing mode this is the one thing it has always been — open the
@@ -557,13 +615,19 @@ export function GanttChart({ rows, range, todo, editing, sel, onSel, onContext, 
       setSelected(row.id)
       return
     }
+    // Outside the selection: the bar above acts on what is picked, and every one
+    // of its buttons is one a filed-away row has already been told no to. The
+    // detail panel is still how you look at one — that is what its own row is
+    // for, and this mode is not.
+    if (isArchived(row.task)) return
     if (e.shiftKey && anchor.current) {
       const from = rows.findIndex((r) => r.id === anchor.current)
       const to = rows.findIndex((r) => r.id === row.id)
       if (from !== -1 && to !== -1) {
         const next = new Set<string>()
         for (let i = Math.min(from, to); i <= Math.max(from, to); i++) {
-          if (rows[i].kind === 'task') next.add(rows[i].id)
+          const r = rows[i]
+          if (r.kind === 'task' && !isArchived(r.task)) next.add(r.id)
         }
         onSel(next)
         return
@@ -618,12 +682,15 @@ export function GanttChart({ rows, range, todo, editing, sel, onSel, onContext, 
               <RowLeft
                 row={row}
                 todo={todo}
+                archived={archived}
                 editing={editing}
                 picked={picking(row.id)}
                 onRowClick={onRowClick}
                 onAddChild={onAddChild}
                 onAddSibling={onAddSibling}
                 onEdit={onEdit}
+                onArchive={onArchive}
+                onToggleRow={toggleRow}
                 onContext={onContext}
               />
             </div>
@@ -699,7 +766,13 @@ export function GanttChart({ rows, range, todo, editing, sel, onSel, onContext, 
               // timeline strip must not select a non-existent task.
               onClick={row.kind === 'task' ? (e) => onRowClick(e, row) : undefined}
             >
-              {row.kind === 'task' && <TaskBar row={row} timeline={timeline} rowH={heightOf(row)} />}
+              {/* No bar for a filed-away row, even with the group open: it is
+                  not on the schedule any more, which is the whole of what the
+                  right half of this chart says. Its dates are still in the
+                  detail panel for anyone who wants to know when it ran. */}
+              {row.kind === 'task' && !isArchived(row.task) && (
+                <TaskBar row={row} timeline={timeline} rowH={heightOf(row)} />
+              )}
             </div>
           ))}
         </div>

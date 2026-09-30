@@ -2,7 +2,8 @@ import { useMemo } from 'react'
 import { X } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { averageProgress } from '../lib/progress'
-import { effectiveStates } from '../lib/tree'
+import { effectiveStates, isArchived } from '../lib/tree'
+import { Task } from '../types'
 import { useT } from '../lib/useT'
 
 export function ProjectDetailPanel({ projectId }: { projectId: string }) {
@@ -15,13 +16,18 @@ export function ProjectDetailPanel({ projectId }: { projectId: string }) {
   const setProjectFilter = useStore((s) => s.setProjectFilter)
   const setActiveView = useStore((s) => s.setActiveView)
 
+  // The counts are what is on the board; the percentage is a rate and is taken
+  // over every leaf the project has. The two rules differ on purpose — filing a
+  // finished branch away changes what is listed, not how much work is done.
   const stats = useMemo(() => {
     const ptasks = tasks.filter((t) => t.projectId === projectId)
-    const leaves = ptasks.filter((t) => !tasks.some((x) => x.parentId === t.id))
+    const leavesOf = (list: Task[]) => list.filter((t) => !tasks.some((x) => x.parentId === t.id))
+    const leaves = leavesOf(ptasks)
+    const shown = leavesOf(ptasks.filter((t) => !isArchived(t)))
     const pct = averageProgress(leaves, logs)
     const eff = effectiveStates(ptasks, logs)
-    const done = leaves.filter((t) => eff.get(t.id)?.status === 'completed').length
-    return { total: ptasks.length, leaves: leaves.length, pct, done }
+    const done = shown.filter((t) => eff.get(t.id)?.status === 'completed').length
+    return { total: ptasks.filter((t) => !isArchived(t)).length, leaves: shown.length, pct, done }
   }, [tasks, logs, today, projectId])
 
   if (!project) return null

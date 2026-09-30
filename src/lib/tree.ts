@@ -152,9 +152,15 @@ export function placeTasks(
   // The container cannot be one of the things being put inside it.
   if (parentId && (roots.includes(parentId) || cargo.has(parentId))) return null
   // A to-do is a holding pen, not a container — the same rule the dialog's
-  // parent picker and the row's own "+" button already follow.
+  // parent picker and the row's own "+" button already follow. An archived task
+  // is not one either: it is not on the board, so a row placed inside it would
+  // be a row nothing draws, and the drop is refused rather than made and hidden.
   const parent = parentId ? tasks.find((t) => t.id === parentId) : undefined
-  if (parentId && (!parent || parent.isTodo)) return null
+  if (parentId && (!parent || parent.isTodo || isArchived(parent))) return null
+  // Landing in front of a filed-away row is the same kind of drop, said the other
+  // way round: there is no place there to land in.
+  const before = beforeId ? tasks.find((t) => t.id === beforeId) : undefined
+  if (beforeId && (!before || isArchived(before))) return null
 
   const staying = new Set(roots)
   // Every task the move relocates: the roots plus everything hanging under them.
@@ -171,7 +177,9 @@ export function placeTasks(
       ? tasks.filter((t) => t.parentId === null && t.projectId === projectId)
       : tasks.filter((t) => t.parentId === parentId)
   )
-    .filter((t) => !whole.has(t.id))
+    // Filed-away rows are not in this list, so they are not renumbered by a drop
+    // among the rows that are. Their `order` is the place they will come back to.
+    .filter((t) => !whole.has(t.id) && !isArchived(t))
     .sort(compareSiblings)
   const arrived = roots.map((id) => tasks.find((t) => t.id === id)!)
   // `beforeId` naming something that is not in this list — a row the caller read
@@ -406,6 +414,59 @@ export function todoCascadeIds(tasks: Task[], logs: TaskLog[], id: string): stri
   )
 }
 
+/** Filed away: off the board, and out of everything that lists work. */
+export const isArchived = (t: Task) => t.archivedAt != null
+
+/** The tasks still on the board. */
+export const liveTasks = (tasks: Task[]) => tasks.filter((t) => !isArchived(t))
+
+/**
+ * The archived tasks that are not inside another archived task: one per branch.
+ *
+ * A branch and not a task is the unit of everything here, because an archived
+ * parent that let a child out would leave that child unreachable — the tree
+ * hangs every row off its parent, so a live task under a filed-away one is a
+ * task no screen can draw. Both recovery surfaces therefore list these, and
+ * `unarchiveTasks` restores a whole branch.
+ *
+ * Returned in the order the tasks were handed in; the callers sort them with the
+ * same comparator the board uses, which is not the same thing in a multi-project
+ * view.
+ */
+export function archivedRoots(tasks: Task[]): Task[] {
+  const byId = new Map(tasks.map((t) => [t.id, t]))
+  return tasks.filter((t) => {
+    if (!isArchived(t)) return false
+    const parent = t.parentId == null ? undefined : byId.get(t.parentId)
+    return !parent || !isArchived(parent)
+  })
+}
+
+/**
+ * These tasks and everything under them — what an archive actually takes.
+ *
+ * The whole subtree, with no filter on what is finished, which is the one place
+ * this differs from `todoCascadeIds`. That filter would be wrong here: a
+ * completed parent can hold unfinished to-dos (a to-do is left out of the
+ * parent's roll-up, so it cannot stop the parent from reading as done), and
+ * leaving one behind would strand it. That is why the confirmation says the
+ * subtasks go along rather than counting anything: what it has to describe is
+ * this set, and this set is not "the ones that are not finished".
+ *
+ * Deduplicated, because the selection that drives it can hold a task and its
+ * own descendant at once.
+ */
+export function archiveCascade(tasks: Task[], ids: string[]): string[] {
+  const out = new Set<string>()
+  for (const id of ids) {
+    if (!tasks.some((t) => t.id === id)) continue
+    out.add(id)
+    for (const d of collectDescendants(tasks, id)) out.add(d)
+  }
+  return [...out]
+}
+
+
 /**
  * Auto-set each phase parent's dates to the span of its children.
  *
@@ -500,9 +561,42 @@ export interface RowProject {
   depth: 0
 }
 
-export type Row = RowTask | RowTodoGroup | RowProject
+/**
+ * The board's filed-away work, as one line at the bottom of the tree.
+ *
+ * One group for the whole view rather than one per project, which is why its id
+ * is a constant and not a function of anything: the group is a place the
+ * archived rows went, not a container they belong to, and a second key would
+ * only be a second thing for "collapse all" to miss. It is drawn after every
+ * project group, so it is literally the last line — the same position a
+ * "everything else" drawer has in a filing cabinet.
+ *
+ * `taskIds` holds the *branch roots* — archived tasks whose parent is not
+ * archived. Restoring is per branch, because making one child live while its
+ * parent stays filed away would produce a task the tree can never reach; see
+ * `archivedRoots`.
+ */
+export interface RowArchiveGroup {
+  kind: 'archiveGroup'
+  id: string // see `archiveGroupId` — doubles as the expand/collapse key
+  depth: 0
+  /** Branch roots, in the order they would have sat on the board. */
+  taskIds: string[]
+  /**
+   * How many tasks are filed away, which is not `taskIds.length`: a branch is
+   * one line when the group is closed and several when it is open, and the
+   * count is about the work, not about the lines. It is also all the collapsed
+   * group has to say for itself.
+   */
+  count: number
+}
+
+export type Row = RowTask | RowTodoGroup | RowProject | RowArchiveGroup
 
 export const projectRowId = (projectId: string) => `project:${projectId}`
+
+// There is one archive group, so its key is a constant rather than a function.
+export const archiveGroupId = 'archiveGroup'
 
 // The parent plus the project, because neither alone identifies a folder: two
 // projects each have their own set of root-level to-dos, and one parent can hold
@@ -542,13 +636,22 @@ export function todoGroupIds(tasks: Task[]): string[] {
 
 export function buildRows(tasks: Task[], expanded: Record<string, boolean>, projects: Project[], logs: TaskLog[]): Row[] {
   const order = new Map(projects.map((p, i) => [p.id, i]))
-  const children = buildChildrenMap(tasks)
+  // The tree is built from the live tasks only. The roll-ups are not: `eff` is
+  // derived over everything, because an archived task is finished work and
+  // finishing work cannot make its parent look less done — filing it away is
+  // meant to change what the board *shows*, never what it says. See the same
+  // split in `daySummary`.
+  const live = liveTasks(tasks)
+  const children = buildChildrenMap(live)
   const eff = effectiveStates(tasks, logs)
 
-  // WBS is computed per-project so numbering restarts cleanly in multi-project view.
+  // WBS is computed per-project so numbering restarts cleanly in multi-project
+  // view. Over the live tasks, so the numbers close up behind what is filed
+  // away, exactly as they do behind a delete — the two are the same act as far
+  // as the board's numbering is concerned.
   const wbs = new Map<string, string>()
   const byProj = new Map<string, Task[]>()
-  for (const t of tasks) {
+  for (const t of live) {
     if (!byProj.has(t.projectId)) byProj.set(t.projectId, [])
     byProj.get(t.projectId)!.push(t)
   }
@@ -692,6 +795,61 @@ export function buildRows(tasks: Task[], expanded: Record<string, boolean>, proj
   // the `?? 999` in the sort above already put them.
   for (const [pid, list] of rootsByProject) {
     if (!projects.some((p) => p.id === pid)) visitRoots(null, pid, list)
+  }
+
+  // Everything filed away, as the last line of the left column. One group, not
+  // one per project: it is a drawer, and a drawer per project would be a second
+  // tree with all the same problems. Its contents are drawn as ordinary rows
+  // when it is open — same columns, same indentation, same order — because that
+  // is what they are, and a second way of drawing a task is a second thing to
+  // keep in step.
+  const archived = archivedRoots(tasks)
+  if (archived.length > 0) {
+    // The board's own root order, so a branch sits where its project sits.
+    archived.sort(
+      (a, b) =>
+        (order.get(a.projectId) ?? 999) - (order.get(b.projectId) ?? 999) || compareSiblings(a, b),
+    )
+    rows.push({
+      kind: 'archiveGroup',
+      id: archiveGroupId,
+      depth: 0,
+      taskIds: archived.map((t) => t.id),
+      count: tasks.length - live.length,
+    })
+    // Collapsed by default, like a to-do folder and unlike a task.
+    if (expanded[archiveGroupId] === true) {
+      const inside = buildChildrenMap(tasks)
+      const visitArchived = (t: Task, depth: number) => {
+        const kids = inside.get(t.id) ?? []
+        rows.push({
+          kind: 'task',
+          id: t.id,
+          task: t,
+          depth,
+          // No number to print: an archived task has left the numbering, and
+          // inventing one here would disagree with the WBS the day the branch
+          // comes back. The cell stays empty rather than carrying a placeholder,
+          // because there is no number it is standing in for.
+          wbs: '',
+          eff: eff.get(t.id)!,
+          hasKids: kids.length > 0,
+          isLeaf: kids.length === 0,
+        })
+        // Foldable like any other row, and by the same rule — a task is
+        // expanded until told otherwise. The chevron has to do something: this
+        // is the same row component as the board's, and one that drew a triangle
+        // that folded nothing would be a worse lie inside the drawer than
+        // outside it.
+        if (expanded[t.id] === false) return
+        kids.forEach((k) => visitArchived(k, depth + 1))
+      }
+      // Depth 1, not 0: the group's own line stays on screen while it is open,
+      // so the rows inside sit under it the way a task's children sit under
+      // their parent. (A to-do folder is the other arrangement — its line goes
+      // away when it opens — which is why the rows inside it keep its depth.)
+      for (const t of archived) visitArchived(t, 1)
+    }
   }
   return rows
 }

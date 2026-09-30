@@ -1,5 +1,5 @@
 import { Project, Task, TaskLog, TaskStatus } from '../types'
-import { ancestorNames, buildChildrenMap, collectDescendants, computeWbs, deriveStatus, deriveTaskStatus } from './tree'
+import { ancestorNames, buildChildrenMap, collectDescendants, computeWbs, deriveStatus, deriveTaskStatus, isArchived, liveTasks } from './tree'
 import { isPausedOnDay, taskProgress } from './progress'
 import { addDays, toDate, toISO } from './dates'
 
@@ -233,6 +233,14 @@ export function strictLogObligations(tasks: Task[], logs: TaskLog[], day: string
   const owed: LogObligation[] = []
   for (const t of tasks) {
     if (!isStrictLeaf(t, children)) continue
+    // Filed away work owes nothing, and this is the one place the archive is
+    // kept out of a *number* rather than out of a list. It is not an exception
+    // to the rule that filing away changes what is shown and not what is
+    // counted — it is the rule applied: the count is of what the day's list
+    // owes, and the day's list no longer holds this row. Leaving it in would
+    // put a permanent amber ring over a day with nothing behind it, because the
+    // box that used to satisfy the obligation went into the archive too.
+    if (isArchived(t)) continue
     if (!hasComeDue(t, day)) continue
     // Paused work is not the day's work, so it owes no log.
     if (isPausedOnDay(t, day)) continue
@@ -332,6 +340,10 @@ export function milestonesOnDay(
   const due: Task[] = []
   for (const t of tasks) {
     if (t.isTodo) continue
+    // A milestone chip is a list of names on a day cell, so it takes the same
+    // rule the day's own list does: a filed-away task has no name to print
+    // there.
+    if (isArchived(t)) continue
     if ((children.get(t.id) ?? []).length > 0) continue
     if (t.endDate === day) due.push(t)
     else if (t.startDate === day) starts.push(t)
@@ -405,10 +417,12 @@ export function daySummary(
   const logged = loggedOnDay(logs, day)
   const order = new Map(projects.map((p, i) => [p.id, i]))
 
-  // Numbering restarts per project, matching what the Gantt shows.
+  // Numbering restarts per project, matching what the Gantt shows — and is
+  // computed over the live tasks for the same reason: a filed-away task has
+  // given its number up, exactly as a deleted one has.
   const wbs = new Map<string, string>()
   const byProj = new Map<string, Task[]>()
-  for (const t of tasks) {
+  for (const t of liveTasks(tasks)) {
     if (!byProj.has(t.projectId)) byProj.set(t.projectId, [])
     byProj.get(t.projectId)!.push(t)
   }
@@ -416,7 +430,11 @@ export function daySummary(
 
   const rows: DayRow[] = []
   for (const t of tasks) {
-    if (t.isTodo || t.startDate == null) continue
+    // Filed away work is not a day's work: same rule as the board, and for the
+    // same reason. Everything below this line — the states, the rates, the
+    // parent roll-up the rows are annotated with — still runs over every task,
+    // so archiving a finished branch moves no number on any card.
+    if (t.isTodo || isArchived(t) || t.startDate == null) continue
     const st = states.get(t.id)
     if (!st) continue
     const active = activeOnDay(t, day)

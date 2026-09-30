@@ -227,6 +227,29 @@ assert.deepEqual(
   'opening one project’s root folder leaves the other folded',
 )
 
+// --- both kinds of synthesized row on one board ----------------------------
+//
+// The archive group is the second row `buildRows` invents, and it is appended
+// after everything else — including a to-do folder, whose place is decided by
+// where its to-dos sit in the tree. The two must not be able to take each
+// other's line: this is the shape where a `rows.push` in the wrong place would
+// put the drawer in the middle of a project, and nothing else in either check
+// would notice.
+
+const { archiveGroupId } = await server.ssrLoadModule('/src/lib/tree.ts')
+const filed = task({ id: 'z', name: 'z', parentId: 'P', archivedAt: '2026-09-30T10:00:00.000Z' })
+const mixed = [parent, todo('t1'), todo('t2'), filed]
+assert.deepEqual(shape({}, mixed), [
+  ['task', 'P', 0, null],
+  ['todoGroup', open, 1, null],
+  // Last, after every project group and after every folder line inside them.
+  ['archiveGroup', archiveGroupId, 0, null],
+])
+// `todoGroupIds` still counts the archived to-dos, which is the superset the
+// comment above says is the safe direction: a key nothing reads costs nothing,
+// and computing the drawer's own key is not this function's job.
+assert.deepEqual(todoGroupIds(mixed), [open])
+
 await server.close()
 console.log('todo folder: ok')
 process.exit(0)

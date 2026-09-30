@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { MouseEvent } from 'react'
 import {
-  CheckSquare,
+  Archive,
   ChevronDown,
   ChevronRight,
   Circle,
@@ -11,10 +11,9 @@ import {
   Pencil,
   Plus,
   RotateCcw,
-  Square,
   Trash2,
 } from 'lucide-react'
-import { Row, RowProject, RowTask, RowTodoGroup } from '../../lib/tree'
+import { Row, RowArchiveGroup, RowProject, RowTask, RowTodoGroup, isArchived } from '../../lib/tree'
 import { STATUS_META, priorityWash, sig, sigAlpha, sigText } from '../../lib/ui'
 import { useStore } from '../../store/useStore'
 import { useT } from '../../lib/useT'
@@ -22,7 +21,10 @@ import { useDialogs } from '../dialogs'
 
 export const LEFT_WIDTH = 560
 
-const COLS = { chevron: 20, wbs: 44, progress: 48, status: 96, actions: 84 }
+// `actions` holds up to four icons on a row on the board (`+`, pencil, archive,
+// bin) and two on a filed-away one, and it is sized for the four: the cell does
+// not wrap, so one icon over the edge would sit on top of the status column.
+const COLS = { chevron: 20, wbs: 44, progress: 48, status: 96, actions: 108 }
 
 // Per-level indentation applied to the whole tree area (chevron + WBS + name).
 const INDENT = 16
@@ -39,18 +41,30 @@ const NAME_CLASS = [
   'text-[12px] text-fg/90',
 ]
 
-// Selection state for the to-do folder's bulk actions, owned by GanttPage.
+// The to-do folder's own two actions, owned by GanttPage. There is no selection
+// to pass: a folder is a handful of rows and both act on all of them.
 export interface TodoActions {
-  selected: Set<string>
-  toggle: (id: string) => void
-  setMany: (ids: string[], on: boolean) => void
   restore: (ids: string[]) => void
   remove: (ids: string[]) => void
+}
+
+// What a filed-away row and the group that holds them can do, owned by
+// GanttPage — the same arrangement as `TodoActions`, and separate from it
+// because the two confirm in different words and act on different sets.
+//
+// One action and not two: a to-do folder offers restore *and* a bin over the
+// whole folder, and the archive deliberately offers only the way back. A single
+// press that wipes everything ever filed away is not something to put beside the
+// chevron — that count is the only thing on the board saying the work happened.
+// Deleting one of them is still there, on the row, with the usual confirmation.
+export interface ArchiveActions {
+  restore: (ids: string[]) => void
 }
 
 interface Props {
   row: Row
   todo: TodoActions
+  archived: ArchiveActions
   /** Editing mode is on: rows can be dragged, and clicks build a selection. */
   editing?: boolean
   /** Whether this row is one of the rows about to be dragged. */
@@ -64,6 +78,14 @@ interface Props {
   onAddChild: (row: RowTask) => void
   onAddSibling: (row: RowTask) => void
   onEdit: (row: RowTask) => void
+  onArchive: (row: RowTask) => void
+  /**
+   * Open or close a row's own disclosure. Owned by the chart, not by the row:
+   * what is under a row it just opened can land below the fold — the archive
+   * drawer always does — and only the chart knows the box that scrolls. See
+   * `toggleRow`.
+   */
+  onToggleRow: (id: string, defaultOpen: boolean) => void
   onContext: (e: MouseEvent<HTMLDivElement>, row: RowTask) => void
 }
 
@@ -72,18 +94,19 @@ const stop = (fn: () => void) => (e: MouseEvent) => {
   fn()
 }
 
-export function RowLeft({ row, todo, editing, picked, onRowClick, onAddChild, onAddSibling, onEdit, onContext }: Props) {
+export function RowLeft({ row, todo, archived, editing, picked, onRowClick, onAddChild, onAddSibling, onEdit, onArchive, onToggleRow, onContext }: Props) {
   const t = useT()
   const { ask, element: dialogs } = useDialogs()
   const setSelected = useStore((s) => s.setSelected)
-  const toggleExpanded = useStore((s) => s.toggleExpanded)
   const deleteTask = useStore((s) => s.deleteTask)
   const withUndo = useStore((s) => s.withUndo)
   const projects = useStore((s) => s.projects)
   // Folders are collapsed until explicitly opened, tasks are expanded until
   // explicitly closed — so "absent from the map" means the opposite for each.
+  // The archive group is a folder in this respect and not in any other.
   const expandedEntry = useStore((s) => s.expanded[row.id])
-  const isExpanded = row.kind === 'todoGroup' ? expandedEntry === true : expandedEntry !== false
+  const folds = row.kind === 'todoGroup' || row.kind === 'archiveGroup'
+  const isExpanded = folds ? expandedEntry === true : expandedEntry !== false
   const highlighted = useStore((s) => s.selectedTaskId === row.id)
 
   if (row.kind === 'project') {
@@ -92,7 +115,7 @@ export function RowLeft({ row, todo, editing, picked, onRowClick, onAddChild, on
         row={row}
         isExpanded={expandedEntry !== false}
         editing={editing}
-        onToggleExpanded={(id) => toggleExpanded(id)}
+        onToggleExpanded={(id) => onToggleRow(id, true)}
       />
     )
   }
@@ -104,7 +127,18 @@ export function RowLeft({ row, todo, editing, picked, onRowClick, onAddChild, on
         todo={todo}
         editing={editing}
         isExpanded={isExpanded}
-        onToggleExpanded={(id) => toggleExpanded(id, false)}
+        onToggleExpanded={(id) => onToggleRow(id, false)}
+      />
+    )
+  }
+
+  if (row.kind === 'archiveGroup') {
+    return (
+      <ArchiveGroupRow
+        row={row}
+        archived={archived}
+        isExpanded={isExpanded}
+        onToggleExpanded={(id) => onToggleRow(id, false)}
       />
     )
   }
@@ -118,10 +152,12 @@ export function RowLeft({ row, todo, editing, picked, onRowClick, onAddChild, on
   const meta = STATUS_META[row.eff.status]
   // Set only on the first to-do of an open to-do folder — see `visitGroup`.
   const group = row.todoGroup
-  const checked = todo.selected.has(row.id)
   // Identity, not status: tasks from several projects share this column, and the
   // project is what the tree can't otherwise show.
   const project = projects.find((p) => p.id === row.task.projectId)
+  // Filed away: off the board and read-only. The only two things such a row
+  // keeps are the way back and the bin.
+  const filed = isArchived(row.task)
 
   const handleDelete = (e: MouseEvent) => {
     e.stopPropagation()
@@ -140,7 +176,9 @@ export function RowLeft({ row, todo, editing, picked, onRowClick, onAddChild, on
     <>
     <div
       className={`relative h-full flex items-stretch text-[12px] group ${
-        editing ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
+        // Nothing filed away is draggable: it is not on the board to be moved,
+        // and the cursor is the one thing that says so before the attempt.
+        editing && !filed ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
       } ${selected ? 'bg-accent/10' : 'hover:bg-panel2/60'}`}
       // Priority as a band off the row's own left edge — the canvas's edge,
       // before the indent, the chevron and the WBS number — so the washes line
@@ -162,7 +200,7 @@ export function RowLeft({ row, todo, editing, picked, onRowClick, onAddChild, on
         <button
           onClick={(e) => {
             e.stopPropagation()
-            toggleExpanded(group.id, false)
+            onToggleRow(group.id, false)
           }}
           title={t('common.collapse')}
           aria-label={t('common.collapse')}
@@ -177,7 +215,7 @@ export function RowLeft({ row, todo, editing, picked, onRowClick, onAddChild, on
       {/* chevron */}
       <div className="shrink-0 flex items-center justify-center" style={{ width: COLS.chevron }}>
         {row.hasKids ? (
-          <button onClick={(e) => { e.stopPropagation(); toggleExpanded(row.id) }} className="text-dim hover:text-fg">
+          <button onClick={(e) => { e.stopPropagation(); onToggleRow(row.id, true) }} className="text-dim hover:text-fg">
             {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
           </button>
         ) : null}
@@ -191,7 +229,7 @@ export function RowLeft({ row, todo, editing, picked, onRowClick, onAddChild, on
           it lines up with the text it ticks however deep the row sits — the same
           place a file manager puts its checkboxes. Absent outside editing mode,
           where there is nothing to pick rows for. */}
-      {editing && (
+      {editing && !filed && (
         <button
           onClick={(e) => { e.stopPropagation(); onRowClick(e, row) }}
           title={selected ? t('common.deselect') : t('common.select')}
@@ -230,7 +268,7 @@ export function RowLeft({ row, todo, editing, picked, onRowClick, onAddChild, on
             // Outline, not border: a border plus its padding would push the
             // to-do's text ~6px right of every other name in the column.
             isTodo ? 'rounded-[3px] outline outline-1 outline-dashed outline-offset-2' : ''
-          }`}
+          } ${filed ? 'text-dim' : ''}`}
           style={isTodo ? { outlineColor: sigAlpha('todo', 0.55), color: sig('todo') } : undefined}
         >
           {row.task.name}
@@ -245,23 +283,10 @@ export function RowLeft({ row, todo, editing, picked, onRowClick, onAddChild, on
         <span className="w-2 h-2 rounded-[2px] shrink-0" style={{ background: sig(meta.token) }} />
         <span className="text-[11px] truncate" style={{ color: sigText(meta.token) }}>{t(meta.labelKey)}</span>
       </div>
-      {/* actions — the to-do checkbox stays visible; the rest is hover-only */}
+      {/* actions — hover-only. A row on the board offers three, a filed-away one
+          offers two: the things it could be asked to do have all been said, and
+          changing one means bringing it back first. */}
       <div className="shrink-0 flex items-center justify-end pr-1 gap-0.5" style={{ width: COLS.actions }}>
-        {/* Hidden while editing: a to-do row would otherwise carry two selections
-            — this tick for its folder's bulk actions, the circle on the left for
-            the row itself — and the two tick different sets. The folder's own
-            line still holds those actions, acting on all of its to-dos. */}
-        {isTodo && !editing && (
-          <button
-            onClick={stop(() => todo.toggle(row.id))}
-            title={checked ? t('common.deselect') : t('common.select')}
-            aria-label={checked ? t('common.deselect') : t('common.select')}
-            className="p-1 shrink-0 text-dim hover:text-fg"
-            style={checked ? { color: sig('todo') } : undefined}
-          >
-            {checked ? <CheckSquare size={13} /> : <Square size={13} />}
-          </button>
-        )}
         <div className={`flex items-center gap-0.5 transition-opacity ${selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
           {/* The "+" means "another task at this place", and a to-do's place
               is beside it rather than under it: it can't be a parent, so
@@ -269,16 +294,47 @@ export function RowLeft({ row, todo, editing, picked, onRowClick, onAddChild, on
               pointing at the to-do. So the same button adds a *sibling* there,
               which is the one "+" a to-do row has — and exactly what the
               context menu does with its own pair on the same row. The new task
-              is a to-do for the same reason: a to-do's sibling is another one. */}
-          <button
-            onClick={(e) => { e.stopPropagation(); (isTodo ? onAddSibling : onAddChild)(row) }}
-            title={isTodo ? t('task.addSibling') : t('task.addSubtask')}
-            aria-label={isTodo ? t('task.addSibling') : t('task.addSubtask')}
-            className="p-1 text-dim hover:text-fg"
-          >
-            <Plus size={13} />
-          </button>
-          <button onClick={(e) => { e.stopPropagation(); onEdit(row) }} title={t('common.edit')} className="p-1 text-dim hover:text-fg"><Pencil size={13} /></button>
+              is a to-do for the same reason: a to-do's sibling is another one.
+              A filed-away row has none: a new task inside a branch that is off
+              the board would be a row nothing draws. */}
+          {!filed && (
+            <button
+              onClick={(e) => { e.stopPropagation(); (isTodo ? onAddSibling : onAddChild)(row) }}
+              title={isTodo ? t('task.addSibling') : t('task.addSubtask')}
+              aria-label={isTodo ? t('task.addSibling') : t('task.addSubtask')}
+              className="p-1 text-dim hover:text-fg"
+            >
+              <Plus size={13} />
+            </button>
+          )}
+          {!filed && (
+            <button onClick={(e) => { e.stopPropagation(); onEdit(row) }} title={t('common.edit')} className="p-1 text-dim hover:text-fg"><Pencil size={13} /></button>
+          )}
+          {/* On every row that is on the board — any status can be filed away,
+              not only finished work. The row is where the offer belongs: the
+              menu has it too, but a menu is one click further from the row it
+              acts on, and there is no longer a subset of rows to single out
+              with a mark beside the name. */}
+          {!filed && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onArchive(row) }}
+              title={t('task.archive')}
+              aria-label={t('task.archive')}
+              className="p-1 text-dim hover:text-fg"
+            >
+              <Archive size={13} />
+            </button>
+          )}
+          {filed && (
+            <button
+              onClick={(e) => { e.stopPropagation(); archived.restore([row.id]) }}
+              title={t('task.unarchive')}
+              aria-label={t('task.unarchive')}
+              className="p-1 text-dim hover:text-fg"
+            >
+              <RotateCcw size={13} />
+            </button>
+          )}
           <button onClick={handleDelete} title={t('common.delete')} className="p-1 text-dim hover:text-delayed"><Trash2 size={13} /></button>
         </div>
       </div>
@@ -308,12 +364,6 @@ function TodoGroupRow({
   const setTodoFolderName = useStore((s) => s.setTodoFolderName)
   const [editingName, setEditingName] = useState(false)
   const { todoIds } = row
-  const selected = todoIds.filter((id) => todo.selected.has(id))
-  const allSelected = todoIds.length > 0 && selected.length === todoIds.length
-  // With nothing ticked, the bulk buttons act on the whole folder — the folders
-  // are small and this saves a click each time.
-  const target = selected.length > 0 ? selected : todoIds
-  const bySelection = selected.length > 0
   // The row's own click folds it; a click in the name box is not that.
   const commit = (value: string) => {
     setTodoFolderName(row.id, value)
@@ -386,38 +436,88 @@ function TodoGroupRow({
             <Pencil size={13} />
           </button>
         )}
-        {/* The ticks it drives are hidden in editing mode, so leaving this one
-            out on its own would be a switch with nothing to switch. The two
-            buttons beside it stay, acting on the whole folder — which is what
-            they already do when nothing is ticked. */}
-        {!editing && (
-          <button
-            onClick={stop(() => todo.setMany(todoIds, !allSelected))}
-            title={allSelected ? t('common.deselectAll') : t('common.selectAll')}
-            aria-label={allSelected ? t('common.deselectAll') : t('common.selectAll')}
-            className="p-1 text-dim hover:text-fg"
-            style={allSelected ? { color: sig('todo') } : undefined}
-          >
-            {allSelected ? <CheckSquare size={13} /> : <Square size={13} />}
-          </button>
-        )}
         <button
-          onClick={stop(() => todo.restore(target))}
-          title={bySelection
-            ? t('todo.restoreSelected', { count: selected.length })
-            : t('todo.restoreAll', { count: todoIds.length })}
+          onClick={stop(() => todo.restore(todoIds))}
+          title={t('todo.restoreAll', { count: todoIds.length })}
           className="p-1 text-dim hover:text-fg"
         >
           <RotateCcw size={13} />
         </button>
         <button
-          onClick={stop(() => todo.remove(target))}
-          title={bySelection
-            ? t('todo.deleteSelected', { count: selected.length })
-            : t('todo.deleteAll', { count: todoIds.length })}
+          onClick={stop(() => todo.remove(todoIds))}
+          title={t('todo.deleteAll', { count: todoIds.length })}
           className="p-1 text-dim hover:text-delayed"
         >
           <Trash2 size={13} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The drawer at the bottom of the left column: everything filed away.
+ *
+ * Drawn as a to-do folder is — the same chevron, the same collapsed-by-default
+ * habit, the same count — because it is the same kind of thing: a synthesized
+ * line standing for rows that are not where they used to be. What it differs in
+ * is what it offers. A to-do folder restores work and deletes it; this one only
+ * gives things back, plus a bin per row. Wiping a whole archive in one press is
+ * not something to put a button next to the chevron for — the count it would
+ * take with it is the only thing on the board that says that work happened.
+ *
+ * Drawn in the accent, which is the one colour in this app that means "there is
+ * something you can do here" — and there is: this line is the way into
+ * everything filed away. Not a signal: the rows inside wear the completed ramp
+ * for what they are, and a filed-away task is not a status. Not a project colour
+ * either — those are identities.
+ *
+ * And it is drawn a size *up* from the rows it holds (a top-level height, as the
+ * header of the little tree inside it) for the same reason it is not dim: this
+ * line sits at the bottom of a column the eye has already stopped reading, and
+ * a drawer nobody notices is a drawer nothing is ever brought back out of.
+ */
+function ArchiveGroupRow({
+  row,
+  archived,
+  isExpanded,
+  onToggleExpanded,
+}: {
+  row: RowArchiveGroup
+  archived: ArchiveActions
+  isExpanded: boolean
+  onToggleExpanded: (id: string) => void
+}) {
+  const t = useT()
+  return (
+    <div
+      className="h-full flex items-stretch text-[12px] cursor-pointer bg-accent/[0.08] hover:bg-accent/[0.16]"
+      onClick={() => onToggleExpanded(row.id)}
+      title={isExpanded ? t('common.collapse') : t('common.expand')}
+    >
+      <div className="shrink-0 flex items-center justify-center" style={{ width: COLS.chevron }}>
+        <span className="text-accent">{isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</span>
+      </div>
+      {/* No dashes in the WBS slot, unlike a to-do folder: that placeholder is
+          sized to the numbers it stands in for, and a filed-away task has no
+          number at all — see `visitArchived`. */}
+      <div className="shrink-0" style={{ width: COLS.wbs }} />
+      <div className="flex-1 min-w-0 flex items-center gap-1.5">
+        <span className="shrink-0 flex items-center justify-center text-accent" style={{ width: GLYPH_W }}>
+          <Archive size={15} />
+        </span>
+        <span className="truncate text-[13px] font-semibold text-accent">{t('archive.title', { count: row.count })}</span>
+      </div>
+      <div className="shrink-0" style={{ width: COLS.progress }} />
+      <div className="shrink-0" style={{ width: COLS.status }} />
+      <div className="shrink-0 flex items-center justify-end pr-1 gap-0.5" style={{ width: COLS.actions }}>
+        <button
+          onClick={stop(() => archived.restore(row.taskIds))}
+          title={t('archive.restoreAll', { count: row.count })}
+          aria-label={t('archive.restoreAll', { count: row.count })}
+          className="p-1 text-accent hover:text-fg"
+        >
+          <RotateCcw size={14} />
         </button>
       </div>
     </div>

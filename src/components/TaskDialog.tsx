@@ -5,7 +5,7 @@ import { Modal, Field, inputCls } from './ui'
 import { LogOptOutDialog } from './LogOptOutDialog'
 import { Task, TaskPriority, TaskType } from '../types'
 import { useStore } from '../store/useStore'
-import { buildChildrenMap, collectDescendants, computeWbs } from '../lib/tree'
+import { buildChildrenMap, collectDescendants, computeWbs, isArchived } from '../lib/tree'
 import { PRIORITY_META, PRIORITY_ORDER } from '../lib/ui'
 import { todayISO } from '../lib/dates'
 import { useT, useTRich } from '../lib/useT'
@@ -80,14 +80,22 @@ export function TaskDialog({ onClose, existing, defaultParentId, defaultProjectI
     return new Set(collectDescendants(tasks, existing.id).concat(existing.id))
   }, [existing, tasks])
 
-  // A to-do is a holding pen, not a container, so it can't be a parent.
+  // A to-do is a holding pen, not a container, so it can't be a parent — and
+  // neither can a filed-away task, which is not on the board to hold anything.
+  // Offering one here is the quietest way to lose a task: the row would be saved
+  // inside a branch the tree no longer walks, and nothing would draw it.
   const parentOptions = tasks.filter(
-    (t) => t.projectId === form.projectId && !excluded.has(t.id) && !t.isTodo,
+    (t) => t.projectId === form.projectId && !excluded.has(t.id) && !t.isTodo && !isArchived(t),
   )
   // Numbered off the whole project, not off `parentOptions`: these are the
   // numbers the Gantt prints, and the two must agree or the picker is a second
-  // opinion about where a task sits in the tree.
-  const wbs = useMemo(() => computeWbs(tasks.filter((t) => t.projectId === form.projectId)), [tasks, form.projectId])
+  // opinion about where a task sits in the tree. Live tasks, because the Gantt's
+  // numbering is taken over live tasks — a filed-away one has given its number
+  // up, and printing the old one here would name a number nothing else shows.
+  const wbs = useMemo(
+    () => computeWbs(tasks.filter((t) => t.projectId === form.projectId && !isArchived(t))),
+    [tasks, form.projectId],
+  )
 
   const isTodo = form.isTodo
   // `!isTodo` and not just the field: with the type select off screen a to-do

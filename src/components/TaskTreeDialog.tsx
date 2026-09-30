@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { Modal } from './ui'
 import { Task } from '../types'
-import { buildChildrenMap } from '../lib/tree'
+import { buildChildrenMap, liveTasks } from '../lib/tree'
 import { useStore } from '../store/useStore'
 import { useT } from '../lib/useT'
 
@@ -52,7 +52,14 @@ export function TaskTreeDialog({
   onClose: () => void
 }) {
   const t = useT()
-  const tasks = useStore((s) => s.tasks)
+  // The chart is the project's structure, so it is drawn from the tasks still on
+  // the board — a filed-away branch has left it. The lookup below reads the
+  // store directly rather than this list, so the one task the caller asked about
+  // is found whether or not it is live: the panel hides the button for an
+  // archived task, but a dialog that answered "no such task" would be worse than
+  // one that draws nothing.
+  const allTasks = useStore((s) => s.tasks)
+  const tasks = useMemo(() => liveTasks(allTasks), [allTasks])
   const task = useStore((s) => s.tasks.find((x) => x.id === taskId))
   const project = useStore((s) => s.projects.find((p) => p.id === task?.projectId))
   const kids = useMemo(() => buildChildrenMap(tasks), [tasks])

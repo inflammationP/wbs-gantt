@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { MouseEvent, ReactNode } from 'react'
 import { Check, FolderTree, Plus, X } from 'lucide-react'
-import { useStore, useRows, useTimelineRange } from '../store/useStore'
+import { UndoStep, useStore, useRows, useTimelineRange } from '../store/useStore'
 import { Task, TaskLog, ViewMode } from '../types'
 import { addDays } from '../lib/dates'
 import { formatDateRange } from '../lib/i18n'
@@ -9,8 +9,8 @@ import { Dict } from '../lib/i18n'
 import { useLang, useT } from '../lib/useT'
 import { Segmented } from '../components/ui'
 import { GanttChart } from '../components/gantt/GanttChart'
-import { RowTask, todoCascadeIds } from '../lib/tree'
-import { TodoActions } from '../components/gantt/RowLeft'
+import { RowTask, archiveCascade, isArchived, todoCascadeIds } from '../lib/tree'
+import { ArchiveActions, TodoActions } from '../components/gantt/RowLeft'
 import { TaskDialog } from '../components/TaskDialog'
 import { LogDialog } from '../components/LogDialog'
 import { StartTodoDialog } from '../components/StartTodoDialog'
@@ -22,6 +22,11 @@ import { useDialogs } from '../components/dialogs'
 // (which shrinks the container by 320px) doesn't reflow the timeline and make
 // task bars jump.
 const SIDEBAR_W = 190
+
+// How long the undo offer stands. Two things read it: the timer that drops the
+// step, and the countdown on the strip — which have to be the same number, or
+// the offer would sit at zero for a second or vanish while still counting.
+const UNDO_SECONDS = 10
 
 const VIEWS: { value: ViewMode; labelKey: keyof Dict }[] = [
   { value: 'day', labelKey: 'gantt.view.day' },
@@ -67,7 +72,6 @@ export function GanttPage() {
   } | null>(null)
   const [menu, setMenu] = useState<MenuState | null>(null)
   const [logDialog, setLogDialog] = useState<{ taskId: string; existing?: TaskLog | null } | null>(null)
-  const [todoSel, setTodoSel] = useState<Set<string>>(new Set())
   const [startTodo, setStartTodo] = useState<string[] | null>(null)
   const [editing, setEditing] = useState(false)
   // What editing mode has picked out. Held here rather than in the chart because
@@ -79,6 +83,8 @@ export function GanttPage() {
   const clearUndo = useStore((s) => s.clearUndo)
   const withUndo = useStore((s) => s.withUndo)
   const setTaskTodo = useStore((s) => s.setTaskTodo)
+  const archiveTasks = useStore((s) => s.archiveTasks)
+  const unarchiveTasks = useStore((s) => s.unarchiveTasks)
   const pauseTask = useStore((s) => s.pauseTask)
   const resumeTask = useStore((s) => s.resumeTask)
   const logs = useStore((s) => s.logs)
@@ -86,19 +92,26 @@ export function GanttPage() {
   // The offer stands for as long as the step is still the thing that just
   // happened. It is one step, not a history, and it does not need to be
   // permanent to be useful: the moment it is for is the moment right after the
-  // drop or the button. See `UndoStep`.
+  // drop or the button. See `UndoStep`, and `UndoStrip` for the countdown that
+  // shows this number running out.
   useEffect(() => {
     if (!lastUndo) return
-    const timer = setTimeout(clearUndo, 10_000)
+    const timer = setTimeout(clearUndo, UNDO_SECONDS * 1000)
     return () => clearTimeout(timer)
   }, [lastUndo, clearUndo])
 
   // Leaving editing mode drops the selection: it means nothing once the rows
   // cannot be acted on, and a highlight that outlives the mode it belongs to is
-  // just a stray colour.
+  // just a stray colour. The undo offer goes with it, for the same reason: what
+  // the mode's bulk buttons just did is not a step the board outside the mode
+  // knows anything about, and a strip still saying "Marked 3 tasks as to-do"
+  // after "Done" is a step from a bar that is no longer there.
   useEffect(() => {
-    if (!editing) setSel(new Set())
-  }, [editing])
+    if (!editing) {
+      setSel(new Set())
+      clearUndo()
+    }
+  }, [editing, clearUndo])
 
   // Escape steps back one layer at a time — out of the selection first, then out
   // of editing mode — unless it is already busy closing something on top of
@@ -133,7 +146,7 @@ export function GanttPage() {
       row.hasKids
         ? t('gantt.deleteTaskWithSubtasks', { name: row.task.name })
         : t('gantt.deleteTask', { name: row.task.name }),
-      () => deleteTask(row.id),
+      () => withUndo(t('gantt.undoDelete', { what: row.task.name }), () => deleteTask(row.id)),
     )
   }
 
@@ -169,6 +182,10 @@ export function GanttPage() {
   const parkable = picked.filter((r) => !r.task.isTodo && r.task.type !== 'long-term' && r.eff.status !== 'completed')
   const toPause = parkable.filter((r) => !r.task.paused)
   const toResume = picked.filter((r) => r.task.paused)
+  // Any picked row can be filed away, whatever state it is in — so this is the
+  // whole selection and not a filtered subset of it. (Rows that are already
+  // filed away cannot be in here at all: they are drawn inside the drawer, and
+  // the drawer's rows are not selectable.)
 
   // What the undo strip calls the rows a step touched: the name when it is one,
   // the count when it is several — the same pair of phrasings the drag uses for
@@ -208,34 +225,74 @@ export function GanttPage() {
     )
   }
 
-  const dropFromSelection = (ids: string[]) =>
-    setTodoSel((s) => {
-      const n = new Set(s)
-      for (const id of ids) n.delete(id)
-      return n
-    })
+  // Whether the branch is more than the rows picked — i.e. whether anything at
+  // all is coming along with them. Asked of `archiveCascade` rather than worked
+  // out here, because the cascade is what the store will actually take, and a
+  // confirmation that described a different set from the one being filed away is
+  // the one thing it must not do.
+  const takesMore = (ids: string[]) => archiveCascade(tasks, ids).length > ids.length
 
-  // Selection for the to-do folders' bulk actions. Kept here rather than in the
-  // store: it's transient view state, and the folders themselves are synthesized
-  // per render.
+  // Every archive asks first, and the confirmation is the same three sentences at
+  // all three entry points: what goes, what goes with it, and where it can be
+  // found again. The number it gives up is the reason — filing a row away
+  // renumbers everything below it, so a press made by accident leaves a board
+  // that has to be read to be put back.
+  const handleArchive = (row: RowTask) => {
+    ask(
+      t(takesMore([row.id]) ? 'task.archiveWithSubtasks' : 'task.archiveConfirm', { name: row.task.name }),
+      () => withUndo(t('gantt.undoArchive', { what: row.task.name }), () => archiveTasks([row.id])),
+    )
+  }
+
+  // The way back needs no confirmation: it undoes the thing that was asked
+  // about, and it is offered again by the same strip if the answer was wrong.
+  const handleUnarchive = (row: RowTask) => {
+    withUndo(t('gantt.undoUnarchive', { what: row.task.name }), () => unarchiveTasks([row.id]))
+  }
+
+  const handleBulkPause = () => {
+    if (toPause.length === 0) return
+    ask(t('gantt.pauseMany', { count: toPause.length }), () =>
+      withUndo(t('gantt.undoPause', { what: whatOf(toPause) }), () => {
+        for (const r of toPause) pauseTask(r.id)
+      }),
+    )
+  }
+
+  const handleBulkResume = () => {
+    if (toResume.length === 0) return
+    ask(t('gantt.resumeMany', { count: toResume.length }), () =>
+      withUndo(t('gantt.undoResume', { what: whatOf(toResume) }), () => {
+        for (const r of toResume) resumeTask(r.id)
+      }),
+    )
+  }
+
+  const handleBulkArchive = () => {
+    const ids = picked.map((r) => r.id)
+    if (ids.length === 0) return
+    ask(
+      t(takesMore(ids) ? 'gantt.archiveManyWithSubtasks' : 'gantt.archiveMany', { count: ids.length }),
+      () => withUndo(t('gantt.undoArchive', { what: whatOf(picked) }), () => archiveTasks(ids)),
+    )
+  }
+
+  // The way back out of the archive, for the group's own button and for a row's.
+  // Kept here rather than in the store for the same reason `todo` is: the rows
+  // are synthesized per render, and bringing something back is one store write
+  // wrapped in this page's undo strip.
+  const archived: ArchiveActions = {
+    restore: (ids) => {
+      if (ids.length === 0) return
+      const what = ids.length === 1 ? (tasks.find((t) => t.id === ids[0])?.name ?? '') : t('gantt.dragMany', { count: ids.length })
+      withUndo(t('gantt.undoUnarchive', { what }), () => unarchiveTasks(ids))
+    },
+  }
+
+  // The to-do folders' two actions. Kept here rather than in the store: the
+  // folders themselves are synthesized per render, and both actions are the
+  // page's own dialogs and confirmations.
   const todo: TodoActions = {
-    selected: todoSel,
-    toggle: (id) =>
-      setTodoSel((s) => {
-        const n = new Set(s)
-        if (n.has(id)) n.delete(id)
-        else n.add(id)
-        return n
-      }),
-    setMany: (ids, on) =>
-      setTodoSel((s) => {
-        const n = new Set(s)
-        for (const id of ids) {
-          if (on) n.add(id)
-          else n.delete(id)
-        }
-        return n
-      }),
     restore: (ids) => {
       if (ids.length) setStartTodo(ids)
     },
@@ -244,10 +301,9 @@ export function GanttPage() {
       const kids = ids.some((id) => tasks.some((t) => t.parentId === id))
       ask(
         t(kids ? 'gantt.deleteTodosWithSubtasks' : 'gantt.deleteTodos', { count: ids.length }),
-        () => {
+        () => withUndo(t('gantt.undoDelete', { what: t('gantt.dragMany', { count: ids.length }) }), () => {
           for (const id of ids) deleteTask(id)
-          dropFromSelection(ids)
-        },
+        }),
       )
     },
   }
@@ -272,22 +328,9 @@ export function GanttPage() {
           <span className="text-[12px] text-fg whitespace-nowrap">{t('gantt.selected', { count: picked.length })}</span>
           <div className="w-px h-6 bg-border" />
           <BulkButton onClick={handleBulkTodo} disabled={parkable.length === 0}>{t('task.setAsTodo')}</BulkButton>
-          <BulkButton
-            onClick={() => withUndo(t('gantt.undoPause', { what: whatOf(toPause) }), () => {
-              for (const r of toPause) pauseTask(r.id)
-            })}
-            disabled={toPause.length === 0}
-          >
-            {t('task.pause')}
-          </BulkButton>
-          <BulkButton
-            onClick={() => withUndo(t('gantt.undoResume', { what: whatOf(toResume) }), () => {
-              for (const r of toResume) resumeTask(r.id)
-            })}
-            disabled={toResume.length === 0}
-          >
-            {t('task.resume')}
-          </BulkButton>
+          <BulkButton onClick={handleBulkArchive}>{t('task.archive')}</BulkButton>
+          <BulkButton onClick={handleBulkPause} disabled={toPause.length === 0}>{t('task.pause')}</BulkButton>
+          <BulkButton onClick={handleBulkResume} disabled={toResume.length === 0}>{t('task.resume')}</BulkButton>
           <div className="w-px h-6 bg-border" />
           <BulkButton onClick={handleBulkDelete} danger>{t('common.delete')}</BulkButton>
         </div>
@@ -340,6 +383,7 @@ export function GanttPage() {
         rows={rows}
         range={range}
         todo={todo}
+        archived={archived}
         editing={editing}
         sel={sel}
         onSel={setSel}
@@ -347,6 +391,7 @@ export function GanttPage() {
         onAddChild={(r) => openCreate(r.id)}
         onAddSibling={(r) => openCreate(r.task.parentId, r.task.projectId, r.task.isTodo)}
         onEdit={openEdit}
+        onArchive={handleArchive}
       />
 
       {menu && (
@@ -360,8 +405,12 @@ export function GanttPage() {
           onOutdent={(r) => setTaskParent(r.id, null)}
           onDelete={handleDelete}
           onSetTodo={handleSetTodo}
-          onPause={(r) => withUndo(t('gantt.undoPause', { what: r.task.name }), () => pauseTask(r.id))}
-          onResume={(r) => withUndo(t('gantt.undoResume', { what: r.task.name }), () => resumeTask(r.id))}
+          onPause={(r) => ask(t('task.pauseConfirm', { name: r.task.name }), () =>
+            withUndo(t('gantt.undoPause', { what: r.task.name }), () => pauseTask(r.id)))}
+          onResume={(r) => ask(t('task.resumeConfirm', { name: r.task.name }), () =>
+            withUndo(t('gantt.undoResume', { what: r.task.name }), () => resumeTask(r.id)))}
+          onArchive={handleArchive}
+          onUnarchive={handleUnarchive}
         />
       )}
 
@@ -377,16 +426,7 @@ export function GanttPage() {
 
       {logDialog && <LogDialog taskId={logDialog.taskId} existing={logDialog.existing} onClose={() => setLogDialog(null)} />}
 
-      {startTodo && (
-        <StartTodoDialog
-          taskIds={startTodo}
-          onClose={() => {
-            setStartTodo(null)
-            // Restored tasks leave their folder, so their ticks are stale.
-            dropFromSelection(startTodo)
-          }}
-        />
-      )}
+      {startTodo && <StartTodoDialog taskIds={startTodo} onClose={() => setStartTodo(null)} />}
 
       {/* The one step back, and only while the step is still the last thing that
           happened — a drop, a bulk button, a menu item, whichever it was.
@@ -400,19 +440,48 @@ export function GanttPage() {
           Set below the board rather than over it: the rows just changed are the
           thing being looked at, and a strip across the bottom of the chart
           covers them. */}
-      {lastUndo && (
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 h-9 pl-3 pr-1.5 rounded-[4px] bg-panel border border-border shadow-2xl">
-          <span className="text-[12px] text-fg whitespace-nowrap">{lastUndo.message}</span>
-          <button
-            onClick={undoLast}
-            className="h-6 px-2.5 text-[12px] font-medium text-accent hover:bg-accent/10 rounded-[3px]"
-          >
-            {t('gantt.undo')}
-          </button>
-        </div>
-      )}
+      {lastUndo && <UndoStrip undo={lastUndo} onUndo={undoLast} />}
 
       {dialogs}
+    </div>
+  )
+}
+
+/**
+ * The one step back, as a strip under the board: what just happened, the way
+ * back, and the seconds left to take it.
+ *
+ * Its own component, and the countdown is the whole reason. The number changes
+ * every second, and it has no business re-rendering the board ten times over an
+ * offer nobody has taken yet — the tree, its rows and every derived number in
+ * them. Here the tick reaches the strip and stops.
+ *
+ * The tick restarts when a new step arrives rather than on a timer of its own:
+ * `undo` is a fresh object per step (`withUndo` builds one), so the effect below
+ * re-runs on it and the seconds are read against the offer they belong to.
+ *
+ * Two digits, always — `09`, not `9`. The strip is centred on its own width, so
+ * a number that lost a character at ten would twitch the whole thing sideways
+ * once a second, and a twitch is what the eye goes to instead of the message.
+ */
+function UndoStrip({ undo, onUndo }: { undo: UndoStep; onUndo: () => void }) {
+  const t = useT()
+  const [left, setLeft] = useState(UNDO_SECONDS)
+  useEffect(() => {
+    setLeft(UNDO_SECONDS)
+    const id = setInterval(() => setLeft((s) => Math.max(0, s - 1)), 1000)
+    return () => clearInterval(id)
+  }, [undo])
+  return (
+    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 h-9 pl-3 pr-1.5 rounded-[4px] bg-panel border border-border shadow-2xl">
+      <span className="text-[12px] text-fg whitespace-nowrap">{undo.message}</span>
+      <button
+        onClick={onUndo}
+        className="h-6 px-2.5 inline-flex items-center gap-1 text-[12px] font-medium text-accent hover:bg-accent/10 rounded-[3px]"
+      >
+        {t('gantt.undo')}
+        <span className="font-mono tabular-nums">{t('gantt.undoSeconds', { seconds: String(left).padStart(2, '0') })}</span>
+      </button>
     </div>
   )
 }

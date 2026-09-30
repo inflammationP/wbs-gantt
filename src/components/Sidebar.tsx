@@ -9,6 +9,7 @@ import { exportJson, parseImport } from '../store/storage'
 import { copy } from '../lib/reminder'
 import { todayISO } from '../lib/dates'
 import { averageProgress } from '../lib/progress'
+import { liveTasks } from '../lib/tree'
 import { Dict } from '../lib/i18n'
 import { useT } from '../lib/useT'
 import { ProjectDialog } from './ProjectDialog'
@@ -81,6 +82,10 @@ export function Sidebar() {
   // the user may already be halfway through chasing.
   const settingsReason = updateUnread ? t('update.unreachable') : undefined
 
+  // Over every leaf the project has, archived ones included. A rate, not a
+  // tally: filing a finished branch away must not make a project look less
+  // done. The count under "All projects" below is the tally, and takes the
+  // other rule — it says how much is on the board.
   const projectProgress = (pid: string) => {
     const leaves = tasks.filter((t) => t.projectId === pid && !tasks.some((x) => x.parentId === t.id))
     return averageProgress(leaves, logs)
@@ -186,7 +191,7 @@ export function Sidebar() {
         >
           <span className="w-2 h-2 rounded-full border border-muted" />
           <span className="flex-1 text-left">{t('sidebar.allProjects')}</span>
-          <span className="text-[10px] text-dim">{tasks.length}</span>
+          <span className="text-[10px] text-dim">{liveTasks(tasks).length}</span>
         </button>
         {projects.map((p) => {
           const pct = projectProgress(p.id)

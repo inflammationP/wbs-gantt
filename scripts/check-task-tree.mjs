@@ -329,7 +329,7 @@ assert.equal(nextBoard.length, board().length, 'with no task gained or lost')
 // and a delete, instead of three sets of bookkeeping that could disagree. What
 // this section is really checking is that a step is the *run*: two actions
 // inside one `withUndo` are one offer, not two.
-const { withUndo, pauseTask, setTaskTodo, addLog, updateTask: editTask } = useStore.getState()
+const { withUndo, pauseTask, resumeTask, startTodoTasks, setTaskTodo, addLog, updateTask: editTask } = useStore.getState()
 useStore.setState({ projects: [{ id: 'p', name: 'P', color: '#888', description: '' }], tasks: [], logs: [] })
 clearUndo()
 const g1 = addTask({ name: 'one', projectId: 'p', startDate: '2026-09-01', endDate: '2026-09-02' })
@@ -377,6 +377,32 @@ editTask(g1, { name: 'renamed' })
 withUndo('parked one', () => setTaskTodo(g2))
 undoLast()
 assert.equal(find(g1).name, 'renamed', 'an undo puts back what the step changed, and nothing else')
+
+// Restoring a to-do is a step like its opposite: it writes the whole schedule
+// back on at once (dates, type, priority, log mode), and all of that has to
+// come off again.
+withUndo('parked two', () => setTaskTodo(g2))
+assert.equal(find(g2).startDate, null)
+withUndo('started two', () =>
+  startTodoTasks([{ id: g2, startDate: '2026-09-03', endDate: '2026-09-04', type: 'phase', priority: 'high', strictProgress: true }]),
+)
+assert.equal(find(g2).isTodo, false)
+assert.equal(find(g2).startDate, '2026-09-03')
+undoLast()
+assert.equal(find(g2).isTodo, true, 'undoing a restore files the row back as a to-do')
+assert.equal(find(g2).startDate, null, 'with the schedule it was given taken off again')
+
+// The offer belongs to the Gantt: the strip that shows it is there and nowhere
+// else, and the task panel opens over every page. A step taken anywhere else is
+// done, not offered.
+useStore.setState({ activeView: 'today' })
+withUndo('paused one', () => pauseTask(g1))
+assert.equal(find(g1).paused, true, 'the action still happens')
+assert.equal(lastUndo(), null, 'but nothing is offered for it off the Gantt')
+useStore.setState({ activeView: 'gantt' })
+withUndo('resumed one', () => resumeTask(g1))
+assert.ok(lastUndo(), 'and the same step is offered again on the board')
+undoLast()
 
 // A run that changes nothing is not a step, and does not clear the offer either.
 withUndo('nothing at all', () => {})

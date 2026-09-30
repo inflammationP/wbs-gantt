@@ -33,6 +33,13 @@ function block(src, marker) {
   for (let i = open; i < src.length; i++) {
     const c = src[i]
     if (c === "'") {
+      // An apostrophe in a comment is not a string opener, and this scanner has
+      // to know that: these dictionaries explain themselves in prose, and one
+      // "the row's number" used to make the quote-skipping run on past the
+      // closing brace and swallow the two dictionaries below — which surfaced
+      // as "1320 en vs 440 zh" rather than as anything pointing at the line.
+      const line = src.slice(src.lastIndexOf('\n', i) + 1, i)
+      if (line.includes('//')) continue
       i++
       while (i < src.length && !(src[i] === "'" && src[i - 1] !== '\\')) i++
       continue

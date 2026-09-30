@@ -123,8 +123,6 @@ const en = {
   'common.collapse': 'Collapse',
   'common.select': 'Select',
   'common.deselect': 'Deselect',
-  'common.selectAll': 'Select all',
-  'common.deselectAll': 'Deselect all',
   /** Between the names in a list read out in running text. */
   'common.listSeparator': ', ',
   /** Between a chain of ancestors and the name it qualifies — see `nameQualifiers`. */
@@ -212,6 +210,22 @@ const en = {
     one: 'Delete {count} task and its subtasks?',
     other: 'Delete {count} tasks and their subtasks?',
   },
+  'gantt.pauseMany': {
+    one: 'Pause {count} task?',
+    other: 'Pause {count} tasks?',
+  },
+  'gantt.resumeMany': {
+    one: 'Resume {count} task?',
+    other: 'Resume {count} tasks?',
+  },
+  'gantt.archiveMany': {
+    one: 'Archive {count} task?',
+    other: 'Archive {count} tasks?',
+  },
+  'gantt.archiveManyWithSubtasks': {
+    one: 'Archive {count} task? Its subtasks are filed away with it.',
+    other: 'Archive {count} tasks? Their subtasks are filed away with them.',
+  },
   'gantt.dragMany': { one: '{count} task', other: '{count} tasks' },
   // The pill that follows the pointer. `{what}` is the dragged task's own name,
   // or the `gantt.dragMany` phrase when several are on the move.
@@ -220,10 +234,16 @@ const en = {
   // phrase per action, because "Undo" alone says what will happen but not what
   // is being offered — and the offer expires in ten seconds.
   'gantt.undoTodo': 'Marked {what} as to-do',
+  'gantt.undoStart': 'Started {what}',
   'gantt.undoPause': 'Paused {what}',
   'gantt.undoResume': 'Resumed {what}',
   'gantt.undoDelete': 'Deleted {what}',
+  'gantt.undoArchive': 'Archived {what}',
+  'gantt.undoUnarchive': 'Brought back {what}',
   'gantt.undo': 'Undo',
+  // The seconds left on the offer, beside the button. Two digits always (`{seconds}`
+  // arrives padded), so the strip does not twitch as it counts down.
+  'gantt.undoSeconds': '({seconds})',
 
   // --- to-dos ---
   'todo.folderName': 'To-dos',
@@ -235,12 +255,16 @@ const en = {
   'todo.saveAll': 'Save all ({count})',
   'todo.hasSubtasks':
     '{name} has subtasks, so its dates are decided by them. Restore those first, or set a priority here and let the dates follow.',
-  'todo.restoreSelected': 'Restore {count} selected',
   'todo.renameFolder': 'Name this folder',
   'todo.folderPlaceholder': 'Folder name',
   'todo.restoreAll': 'Restore all {count}',
-  'todo.deleteSelected': 'Delete {count} selected',
   'todo.deleteAll': 'Delete all {count}',
+
+  // --- archive ---
+  'archive.title': 'Archived ({count})',
+  'archive.badge': 'Archived',
+  'archive.restoreAll': 'Unarchive all {count}',
+  'archive.empty': 'Nothing archived yet.',
 
   // --- tasks ---
   'task.addSubtask': 'Add subtask',
@@ -297,6 +321,18 @@ const en = {
   'task.resume': 'Resume',
   'task.endPostponed': 'End (postponed)',
   'task.setAsTodo': 'Set as to-do',
+  // Archiving. The confirmation says two things the press itself does not show:
+  // that the number is given up, and where the row can be found again — a
+  // reversible action with no visible way back reads as a destructive one.
+  'task.pauseConfirm': 'Pause "{name}"?',
+  'task.resumeConfirm': 'Resume "{name}"?',
+  'task.archive': 'Archive',
+  'task.unarchive': 'Unarchive',
+  'task.archiveConfirm': 'Archive "{name}"?',
+  'task.archiveWithSubtasks': {
+    one: 'Archive "{name}"? Its subtasks are filed away with it.',
+    other: 'Archive "{name}"? Its subtasks are filed away with it.',
+  },
   'task.pause': 'Pause task',
   'task.pauseHistory': 'Pause history ({count})',
   'task.pauseEntry': 'Paused {from} → resumed {to}',
@@ -715,8 +751,6 @@ const zh: Dict = {
   'common.collapse': '折叠',
   'common.select': '选择',
   'common.deselect': '取消选择',
-  'common.selectAll': '全选',
-  'common.deselectAll': '取消全选',
   'common.listSeparator': '、',
   'common.pathSeparator': ' › ',
   'common.unknownTask': '未知任务',
@@ -793,13 +827,33 @@ const zh: Dict = {
     one: '确定删除这 {count} 个任务及其子任务？',
     other: '确定删除这 {count} 个任务及其子任务？',
   },
+  'gantt.pauseMany': {
+    one: '确定暂停 {count} 项任务？',
+    other: '确定暂停 {count} 项任务？',
+  },
+  'gantt.resumeMany': {
+    one: '确定恢复 {count} 项任务？',
+    other: '确定恢复 {count} 项任务？',
+  },
+  'gantt.archiveMany': {
+    one: '确定归档 {count} 项任务？',
+    other: '确定归档 {count} 项任务？',
+  },
+  'gantt.archiveManyWithSubtasks': {
+    one: '确定归档 {count} 项任务？属于它们的子任务也会连带归档。',
+    other: '确定归档 {count} 项任务？属于它们的子任务也会连带归档。',
+  },
   'gantt.dragMany': { one: '{count} 个任务', other: '{count} 个任务' },
   'gantt.moved': '已移动 {what}',
   'gantt.undoTodo': '已将 {what}设为待办',
+  'gantt.undoStart': '已开始 {what}',
   'gantt.undoPause': '已暂停 {what}',
   'gantt.undoResume': '已恢复 {what}',
   'gantt.undoDelete': '已删除 {what}',
+  'gantt.undoArchive': '已归档 {what}',
+  'gantt.undoUnarchive': '已取消归档 {what}',
   'gantt.undo': '撤销',
+  'gantt.undoSeconds': '（{seconds}）',
 
   'todo.folderName': '待办',
   'todo.folder': '待办（{count}）',
@@ -809,12 +863,16 @@ const zh: Dict = {
   'todo.restoreMany': { one: '恢复 {count} 项待办', other: '恢复 {count} 项待办' },
   'todo.saveAll': '全部保存（{count}）',
   'todo.hasSubtasks': '{name} 有子任务，它的日期由子任务决定。请先恢复那些子任务；也可以只在此设定优先级，让日期随后自动跟进。',
-  'todo.restoreSelected': '恢复已选的 {count} 项',
   'todo.renameFolder': '给文件夹起名',
   'todo.folderPlaceholder': '文件夹名',
   'todo.restoreAll': '恢复全部 {count} 项',
-  'todo.deleteSelected': '删除已选的 {count} 项',
   'todo.deleteAll': '删除全部 {count} 项',
+
+  // --- archive ---
+  'archive.title': '已归档（{count}）',
+  'archive.badge': '已归档',
+  'archive.restoreAll': '全部取消归档（{count} 项）',
+  'archive.empty': '还没有归档的任务',
 
   'task.addSubtask': '添加子任务',
   'task.addSibling': '添加同级任务',
@@ -860,6 +918,15 @@ const zh: Dict = {
   'task.resume': '恢复',
   'task.endPostponed': '结束（已顺延）',
   'task.setAsTodo': '设为待办',
+  'task.pauseConfirm': '确定暂停“{name}”？',
+  'task.resumeConfirm': '确定恢复“{name}”？',
+  'task.archive': '归档',
+  'task.unarchive': '取消归档',
+  'task.archiveConfirm': '确定归档“{name}”？',
+  'task.archiveWithSubtasks': {
+    one: '确定归档“{name}”？属于它的子任务也会连带归档。',
+    other: '确定归档“{name}”？属于它的子任务也会连带归档。',
+  },
   'task.pause': '暂停任务',
   'task.pauseHistory': '暂停记录（{count}）',
   'task.pauseEntry': '暂停于 {from} → 恢复于 {to}',
@@ -1217,8 +1284,6 @@ const fr: Dict = {
   'common.collapse': 'Replier',
   'common.select': 'Sélectionner',
   'common.deselect': 'Désélectionner',
-  'common.selectAll': 'Tout sélectionner',
-  'common.deselectAll': 'Tout désélectionner',
   'common.listSeparator': ', ',
   'common.pathSeparator': ' › ',
   'common.unknownTask': 'Tâche inconnue',
@@ -1302,13 +1367,33 @@ const fr: Dict = {
     one: 'Supprimer {count} tâche et ses sous-tâches ?',
     other: 'Supprimer {count} tâches et leurs sous-tâches ?',
   },
+  'gantt.pauseMany': {
+    one: 'Mettre {count} tâche en pause ?',
+    other: 'Mettre {count} tâches en pause ?',
+  },
+  'gantt.resumeMany': {
+    one: 'Reprendre {count} tâche ?',
+    other: 'Reprendre {count} tâches ?',
+  },
+  'gantt.archiveMany': {
+    one: 'Archiver {count} tâche ?',
+    other: 'Archiver {count} tâches ?',
+  },
+  'gantt.archiveManyWithSubtasks': {
+    one: 'Archiver {count} tâche ? Ses sous-tâches seront archivées avec elle.',
+    other: 'Archiver {count} tâches ? Leurs sous-tâches seront archivées avec elles.',
+  },
   'gantt.dragMany': { one: '{count} tâche', other: '{count} tâches' },
   'gantt.moved': '{what} déplacé',
   'gantt.undoTodo': '« {what} » marqué comme à faire',
+  'gantt.undoStart': '« {what} » démarré',
   'gantt.undoPause': '« {what} » mis en pause',
   'gantt.undoResume': '« {what} » repris',
   'gantt.undoDelete': '« {what} » supprimé',
+  'gantt.undoArchive': '« {what} » archivé',
+  'gantt.undoUnarchive': '« {what} » désarchivé',
   'gantt.undo': 'Annuler',
+  'gantt.undoSeconds': '({seconds})',
 
   'todo.folderName': 'À faire',
   'todo.folder': 'À faire ({count})',
@@ -1322,12 +1407,16 @@ const fr: Dict = {
   'todo.saveAll': 'Tout enregistrer ({count})',
   'todo.hasSubtasks':
     '{name} a des sous-tâches, ce sont donc elles qui décident de ses dates. Restaurez-les d’abord, ou fixez seulement une priorité ici et laissez les dates suivre.',
-  'todo.restoreSelected': 'Restaurer les {count} sélectionnées',
   'todo.renameFolder': 'Nommer ce dossier',
   'todo.folderPlaceholder': 'Nom du dossier',
   'todo.restoreAll': 'Restaurer tout ({count})',
-  'todo.deleteSelected': 'Supprimer les {count} sélectionnées',
   'todo.deleteAll': 'Supprimer tout ({count})',
+
+  // --- archive ---
+  'archive.title': 'Archivées ({count})',
+  'archive.badge': 'Archivée',
+  'archive.restoreAll': 'Tout désarchiver ({count})',
+  'archive.empty': 'Rien d’archivé pour l’instant.',
 
   'task.addSubtask': 'Ajouter une sous-tâche',
   'task.addSibling': 'Ajouter une tâche au même niveau',
@@ -1376,6 +1465,15 @@ const fr: Dict = {
   'task.resume': 'Reprendre',
   'task.endPostponed': 'Fin (reportée)',
   'task.setAsTodo': 'Marquer comme à faire',
+  'task.pauseConfirm': 'Mettre « {name} » en pause ?',
+  'task.resumeConfirm': 'Reprendre « {name} » ?',
+  'task.archive': 'Archiver',
+  'task.unarchive': 'Désarchiver',
+  'task.archiveConfirm': 'Archiver « {name} » ?',
+  'task.archiveWithSubtasks': {
+    one: 'Archiver « {name} » ? Ses sous-tâches seront archivées avec elle.',
+    other: 'Archiver « {name} » ? Ses sous-tâches seront archivées avec elle.',
+  },
   'task.pause': 'Mettre en pause',
   'task.pauseHistory': 'Historique des pauses ({count})',
   'task.pauseEntry': 'En pause le {from} → reprise le {to}',

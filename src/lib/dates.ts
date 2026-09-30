@@ -126,6 +126,3 @@ export function addUnit(d: Date, unit: Unit, n: number): Date {
   }
 }
 
-export function addUnitISO(iso: string, unit: Unit, n: number): string {
-  return toISO(addUnit(toDate(iso), unit, n))
-}

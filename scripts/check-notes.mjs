@@ -220,6 +220,62 @@ assert.deepEqual(restamp(entry, was, '抢修', '16:20'), [{ at: '09:30' }])
 // was nothing there to edit.
 assert.deepEqual(restamp('', [], '新的', '16:20'), [{ at: '16:20' }])
 
+// --- the readings on their way in from the file ----------------------------
+//
+// Read through `parseImport`, which is the whole load path: the shapes below
+// arrived from boards written by the builds before the reading was a field, and
+// a body read wrong here is a body drawn wrong — the clock twice, above text it
+// does not belong to.
+
+const { stampsOf, parseImport } = await server.ssrLoadModule('/src/store/storage.ts')
+const board = (logs, notes) => JSON.parse(JSON.stringify({ projects: [], tasks: [], logs, notes }))
+
+// The reading typed into the text, from every build before the field existed.
+// The line has to leave the body and not merely gain a twin in `stamps` — both
+// of them are drawn.
+const legacy = stampsOf({ content: '— 09:30 —\n抢修\n— 14:05 —\n回归' })
+assert.equal(legacy.content, '抢修\n\n回归', 'the divider lines come out of the body')
+assert.deepEqual(legacy.stamps, [{ at: '09:30' }, { at: '14:05' }])
+
+// The same body once a build that *had* the field read it: the readings were
+// lifted and the lines stayed in the text, and that board has been saved as it
+// stood ever since. This is the pair that draws two clocks, and the reason the
+// lift cannot be left to the shape with no field.
+const doublyStamped = stampsOf({ content: '— 09:30 —\n抢修\n— 14:05 —\n回归', stamps: [{ at: '09:30' }, { at: '14:05' }] })
+assert.equal(doublyStamped.content, '抢修\n\n回归')
+assert.deepEqual(doublyStamped.stamps, [{ at: '09:30' }, { at: '14:05' }])
+
+// A body already through all of this is left exactly as it is, which is what
+// makes the lift safe to run on every load.
+const clean = stampsOf({ content: '抢修\n\n回归', stamps: [{ at: '09:30' }, { at: '14:05' }] })
+assert.equal(clean.content, '抢修\n\n回归')
+assert.deepEqual(clean.stamps, [{ at: '09:30' }, { at: '14:05' }])
+
+// …and a reading read as anything but a reading is dropped rather than drawn:
+// `at` goes straight into a rendered line.
+assert.deepEqual(stampsOf({ content: '一', stamps: [{ at: 42 }, null, '09:30'] }).stamps, [{ at: '' }])
+
+const oneLog = parseImport(JSON.stringify(board([{ id: 'l1', taskId: 't1', date: D1, content: '— 09:30 —\n抢修' }], [])))
+assert.equal(oneLog.logs[0].content, '抢修', 'the same body, all the way in from the file')
+assert.deepEqual(oneLog.logs[0].stamps, [{ at: '09:30' }])
+
+// The notebook's readings survive the same trip. `collapseNotes` rebuilds every
+// note it reads, so a field it does not copy is not unread — the next save
+// writes the rebuilt entry back, and it is gone from the file too. The readings
+// are the one part of an entry nobody can type again.
+const oneNote = parseImport(JSON.stringify(board([], [{ date: D1, body: '一\n\n二', stamps: [{ at: '09:30' }, { at: '14:05' }] }])))
+assert.deepEqual(oneNote.notes[0].stamps, [{ at: '09:30' }, { at: '14:05' }], 'a note keeps its readings')
+
+// Two entries for one day are one note — joined, not dropped — and the second
+// half's readings come along with its text rather than being left behind.
+const merged = parseImport(JSON.stringify(board([], [
+  { date: D1, body: '一', stamps: [{ at: '09:30' }] },
+  { date: D1, body: '二', stamps: [{ at: '14:05' }] },
+])))
+assert.equal(merged.notes.length, 1)
+assert.equal(merged.notes[0].body, '一\n\n二')
+assert.deepEqual(merged.notes[0].stamps, [{ at: '09:30' }, { at: '14:05' }])
+
 await server.close()
 console.log('notes: ok')
 process.exit(0)

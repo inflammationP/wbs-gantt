@@ -45,6 +45,9 @@ const { buildSeed } = await server.ssrLoadModule('/seed-v0.5.0.ts')
 const { parseImport } = await server.ssrLoadModule('/src/store/storage.ts')
 const { habitsOn, runsOn } = await server.ssrLoadModule('/src/lib/habits.ts')
 const { toDate, weekdayIndex } = await server.ssrLoadModule('/src/lib/dates.ts')
+const { archiveCascade, buildRows, effectiveStates, isArchived, liveTasks } = await server.ssrLoadModule('/src/lib/tree.ts')
+const { paragraphs } = await server.ssrLoadModule('/src/lib/logs.ts')
+const { timelineRange } = await server.ssrLoadModule('/src/lib/timeline.ts')
 
 /** yyyy-MM-dd, `offset` days from today — the same arithmetic the archive uses. */
 function isoOffset(offset) {
@@ -205,6 +208,58 @@ assert.ok(ticked.length < shown.length, 'everything is ticked today, so no row s
 assert.ok(!shown.some((h) => h.id === 'hb-sprint'), 'the finished habit is back')
 assert.ok(!shown.some((h) => h.id === 'hb-stretch'), 'the suspended habit is back')
 
+// --- what the dataset is for -----------------------------------------------
+//
+// The board carries the two cases the archive needs to be visible at all, and
+// this is where they are held to it. A fixture that stopped being archivable —
+// because a status rule moved, or a date offset drifted out of range — would
+// still import perfectly, and would demonstrate nothing.
+
+const byId = new Map(loaded.tasks.map((t) => [t.id, t]))
+
+// Already filed away: the whole branch, though only its root says so in the file.
+// The children are archived on the way in, by the same repair that rescues a
+// hand-edited file, so this assertion is about `normalize` as much as about the
+// dataset.
+for (const id of ['co-found', 'co-found-git', 'co-todo-notes']) {
+  assert.ok(isArchived(byId.get(id)), `${id} should be filed away after import`)
+}
+// ...and the drawer therefore has something in it on an empty board.
+const rows = buildRows(loaded.tasks, {}, loaded.projects, loaded.logs)
+const drawer = rows.find((r) => r.kind === 'archiveGroup')
+assert.ok(drawer, 'nothing is filed away, so the demo board shows no archive at all')
+assert.equal(drawer.count, 3, 'the drawer counts the branch, not the lines it draws')
+assert.deepEqual(drawer.taskIds, ['co-found'], 'one branch → one row, and only the root has the way back')
+
+// Ready to be filed away: complete, still on the board, and carrying one
+// unfinished to-do — which is what the confirmation has to own up to.
+const eff = effectiveStates(loaded.tasks, loaded.logs)
+assert.equal(eff.get('team-proto').status, 'completed', 'the press-archive case is not complete')
+assert.deepEqual(archiveCascade(loaded.tasks, ['team-proto']).sort(), ['team-proto', 'team-proto-frame', 'team-todo-bom'].sort())
+
+// A finished child of a live parent, for the rule that a file-away moves no
+// number: this one is the demo's "archive me and watch the parent" case.
+assert.equal(eff.get('stm-motor-sch').status, 'completed')
+assert.equal(eff.get('stm-motor').status !== 'completed', true, 'its parent has to still be running')
+
+// The timeline is measured over the live tasks, so the branch filed away at -60
+// — further back than the axis reaches — must not stretch it. Import this board
+// and the axis still starts where it always did.
+const axis = (list) => timelineRange('day', list, isoOffset(0), 900)
+assert.deepEqual(axis(liveTasks(loaded.tasks)), axis(loaded.tasks), 'an archived task moved the timeline')
+
+// Both shapes a log's reading comes in, one entry each. The old one has the
+// clock in its body and no field: on the way in the line leaves the text and
+// becomes the reading, and the paragraph it opened survives. Get that wrong and
+// the entry draws the same clock twice.
+const oldShape = loaded.logs.find((l) => l.id === 'log-fr-u4-29')
+assert.ok(!oldShape.content.includes('—'), 'the reading is still sitting in the body')
+assert.equal(oldShape.content.split('\n')[0], '- Leçon 1: passé composé', 'the line it opened is gone with it')
+assert.deepEqual(oldShape.stamps.map((s) => s.at), ['08:40'])
+const newShape = loaded.logs.find((l) => l.id === 'log-stm-can-0')
+assert.deepEqual(newShape.stamps.map((s) => s.at), ['11:20'])
+assert.equal(paragraphs(newShape.content).length, newShape.stamps.length, 'and one reading per paragraph')
+
 const out = resolve('demo-board.local.json')
 writeFileSync(out, json, 'utf8')
 
@@ -213,5 +268,6 @@ console.log(`wrote ${out}`)
 console.log(
   `${loaded.projects.length} projects · ${loaded.tasks.length} tasks · ${loaded.logs.length} logs · ${loaded.chores.length} chores · ${loaded.habits.length} habits`,
 )
+console.log(`${drawer.count} of those tasks are filed away (drawer: ${drawer.taskIds.join(', ')})`)
 console.log('import it from the sidebar, on an empty board')
 process.exit(0)

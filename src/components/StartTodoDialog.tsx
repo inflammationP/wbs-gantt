@@ -33,6 +33,7 @@ export function StartTodoDialog({ taskIds, onClose }: Props) {
   const tr = useTRich()
   const tasks = useStore((s) => s.tasks)
   const startTodoTasks = useStore((s) => s.startTodoTasks)
+  const withUndo = useStore((s) => s.withUndo)
 
   const targets = useMemo(
     () => taskIds.map((id) => tasks.find((t) => t.id === id)).filter((t): t is Task => !!t && t.isTodo),
@@ -79,7 +80,8 @@ export function StartTodoDialog({ taskIds, onClose }: Props) {
   }
 
   const submit = () => {
-    startTodoTasks(
+    const what = targets.length === 1 ? targets[0].name : t('gantt.dragMany', { count: targets.length })
+    withUndo(t('gantt.undoStart', { what }), () => startTodoTasks(
       targets.map((t) => {
         const f = forms[t.id]
         // A parent's dates are derived from its children, so there is nothing
@@ -89,7 +91,7 @@ export function StartTodoDialog({ taskIds, onClose }: Props) {
         }
         return { id: t.id, ...f }
       }),
-    )
+    ))
     onClose()
   }
 

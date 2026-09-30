@@ -2,12 +2,17 @@ import { useMemo } from 'react'
 import { create } from 'zustand'
 import { AppView, Chore, Habit, Note, Project, Task, TaskLog, TaskPriority, TaskType, ViewMode } from '../types'
 import { ALL_DAYS, runsOn } from '../lib/habits'
-import { todayISO, addUnitISO, Unit, addDays, diffDays, pad, toDate, toISO } from '../lib/dates'
+import { todayISO, addDays, diffDays, pad, toDate, toISO } from '../lib/dates'
 import { timelineRange, DateRange } from '../lib/timeline'
 import {
+  archiveCascade,
+  archiveGroupId,
+  archivedRoots,
   buildRows,
   collectDescendants,
   hasChildren,
+  isArchived,
+  liveTasks,
   placeTasks,
   syncParentDates,
   todoCascadeIds,
@@ -258,8 +263,6 @@ interface State {
   undoLast: () => void
   /** Dismiss the offer without using it — the strip's own timeout, or leaving. */
   clearUndo: () => void
-  moveTask: (id: string, deltaUnits: number, unit: Unit) => void
-  resizeTask: (id: string, startISO: string, endISO: string) => void
 
   addLog: (input: { taskId: string; date: string; content: string; targetProgress?: number | null }) => string
   updateLog: (id: string, patch: { date?: string; content?: string; targetProgress?: number | null }) => void
@@ -271,6 +274,18 @@ interface State {
   setTaskTodo: (id: string) => void
   startTodoTasks: (entries: StartTodoInput[]) => void
   toggleTaskDay: (id: string, day: string) => void
+
+  /**
+   * File these branches away, and bring them back.
+   *
+   * Both take the **whole branch** — see `archiveCascade`. The cascade lives
+   * here rather than in the four callers (the row's button, the menu, the
+   * selection bar, Manage) because four places expanding a set the same way is
+   * four places to forget, and the failure of forgetting is silent: a live child
+   * under a filed-away parent is a task no screen draws.
+   */
+  archiveTasks: (ids: string[]) => void
+  unarchiveTasks: (ids: string[]) => void
 
   addChore: (title: string, date: string) => void
   updateChore: (id: string, patch: Partial<Chore>) => void
@@ -554,6 +569,11 @@ export const useStore = create<State>()((set, get) => ({
     set((s) => {
       const expanded: Record<string, boolean> = {}
       for (const gid of todoGroupIds(s.tasks)) expanded[gid] = true
+      // The archive group is a synthesized row like the folders, and is not
+      // discoverable by walking tasks — its key is a constant. Spelled through
+      // the imported name rather than written out here, for the reason
+      // `todoGroupId` gives: two spellings of one key is how they come apart.
+      if (archivedRoots(s.tasks).length > 0) expanded[archiveGroupId] = true
       return { expanded }
     }),
   collapseAll: () =>
@@ -561,6 +581,7 @@ export const useStore = create<State>()((set, get) => ({
       const expanded: Record<string, boolean> = {}
       for (const t of s.tasks) if (hasChildren(s.tasks, t.id)) expanded[t.id] = false
       for (const gid of todoGroupIds(s.tasks)) expanded[gid] = false
+      expanded[archiveGroupId] = false
       // Project lines fold too, which is what makes this button mean "show me
       // the projects" rather than "show me the projects, still open". Named
       // explicitly like the folders above, because they are expanded by default
@@ -593,14 +614,19 @@ export const useStore = create<State>()((set, get) => ({
     const id = uid()
     const now = new Date().toISOString()
     set((s) => {
-      const projectId = input.parentId
-        ? s.tasks.find((t) => t.id === input.parentId)?.projectId ?? input.projectId
-        : input.projectId
+      // The requested parent, unless it is filed away — an archived task is not
+      // on the board, so a task placed inside it would be one nothing draws. The
+      // dialog's parent picker does not offer one either; this is the belt to
+      // that pair of braces, and the reason it is here rather than only there is
+      // that a `parentId` can also arrive from a row's own "+".
+      const asked = input.parentId ? s.tasks.find((t) => t.id === input.parentId) : undefined
+      const parent = asked && !isArchived(asked) ? asked : undefined
+      const projectId = parent?.projectId ?? input.projectId
       // A to-do has no schedule, so every scheduling field is dropped rather
       // than taken from the input.
       const isTodo = input.isTodo === true
       const isLT = !isTodo && input.type === 'long-term'
-      const parentId = input.parentId ?? null
+      const parentId = parent?.id ?? null
       // The sibling group this lands in, and where in it. A group the user has
       // arranged keeps its arrangement: appending is what "the new task is at
       // the bottom of this branch" means once they have said where things go.
@@ -734,8 +760,17 @@ export const useStore = create<State>()((set, get) => ({
    * Rows that are gone rather than changed are the delete case, and they are
    * kept whole — a row that has left the board has no field left to patch, and
    * the log entries that went with it are not on the board either.
+   *
+   * Only while the Gantt is the view on screen: the strip that offers the step
+   * back lives there and nowhere else. The task panel opens over every page, so
+   * without this a pause taken on the Today page would leave an offer waiting in
+   * the Gantt.
    */
   withUndo: (message, run) => {
+    if (get().activeView !== 'gantt') {
+      run()
+      return
+    }
     const before = get()
     const tasks = before.tasks
     const logs = before.logs
@@ -784,49 +819,6 @@ export const useStore = create<State>()((set, get) => ({
       }
     }),
   clearUndo: () => set((s) => (s.lastUndo ? { lastUndo: null } : {})),
-  moveTask: (id, deltaUnits, unit) =>
-    set((s) => {
-      const task = s.tasks.find((t) => t.id === id)
-      if (!task || deltaUnits === 0) return {}
-      const ids = new Set(hasChildren(s.tasks, id) ? collectDescendants(s.tasks, id).concat(id) : [id])
-      return {
-        tasks: s.tasks.map((t) => {
-          if (!ids.has(t.id)) return t
-          const updatedAt = new Date().toISOString()
-          if (t.type === 'long-term') {
-            // Long-term goals shift their start only; the end stays unresolved.
-            return t.startDate != null ? { ...t, startDate: addUnitISO(t.startDate, unit, deltaUnits), updatedAt } : t
-          }
-          if (t.startDate != null && t.endDate != null) {
-            return {
-              ...t,
-              startDate: addUnitISO(t.startDate, unit, deltaUnits),
-              endDate: addUnitISO(t.endDate, unit, deltaUnits),
-              updatedAt,
-            }
-          }
-          return t
-        }),
-      }
-    }),
-  resizeTask: (id, startISO, endISO) =>
-    set((s) => {
-      const task = s.tasks.find((t) => t.id === id)
-      if (!task || task.type === 'long-term' || task.isTodo) return {}
-      let sDate = startISO
-      let eDate = endISO
-      if (sDate > eDate) {
-        const tmp = sDate
-        sDate = eDate
-        eDate = tmp
-      }
-      return {
-        tasks: s.tasks.map((t) =>
-          t.id === id ? { ...t, startDate: sDate, endDate: eDate, updatedAt: new Date().toISOString() } : t,
-        ),
-      }
-    }),
-
   /**
    * Write a log — or add to the one this task already has for that day.
    *
@@ -984,7 +976,10 @@ export const useStore = create<State>()((set, get) => ({
       return {
         tasks: s.tasks.map((t) => {
           const e = byId.get(t.id)
-          if (!e || !t.isTodo) return t
+          // The archived check is not redundant with the buttons being hidden:
+          // starting a to-do that sits inside a filed-away branch would put a
+          // scheduled task under a parent the board no longer draws.
+          if (!e || !t.isTodo || isArchived(t)) return t
           let start = e.startDate
           let end = e.endDate
           if (start > end) {
@@ -1027,7 +1022,10 @@ export const useStore = create<State>()((set, get) => ({
   toggleTaskDay: (id, day) =>
     set((s) => ({
       tasks: s.tasks.map((t) => {
-        if (t.id !== id) return t
+        // Filing a task away stops the ticking with the rest of it: the day
+        // panel no longer lists the row, so the state it would change is not
+        // something the user can see the result of.
+        if (t.id !== id || isArchived(t)) return t
         const days = t.confirmedDays ?? []
         return {
           ...t,
@@ -1036,6 +1034,51 @@ export const useStore = create<State>()((set, get) => ({
         }
       }),
     })),
+
+  // File a branch away, or bring it back. One `archivedAt` for the whole
+  // branch, taken once so that "everything archived together says so", and one
+  // `set` so App's `syncParentDates` pass sees the change once.
+  //
+  // Nothing here checks that the tasks are finished: the callers do that, and
+  // this action is also what the invariant repair in `normalize` leans on. What
+  // it does own is the cascade, and that is deliberate — see the interface.
+  archiveTasks: (ids) =>
+    set((s) => {
+      const take = new Set(archiveCascade(s.tasks, ids))
+      if (take.size === 0) return {}
+      const now = new Date().toISOString()
+      return {
+        tasks: s.tasks.map((t) => (take.has(t.id) && !isArchived(t) ? { ...t, archivedAt: now, updatedAt: now } : t)),
+      }
+    }),
+
+  unarchiveTasks: (ids) =>
+    set((s) => {
+      const byId = new Map(s.tasks.map((t) => [t.id, t]))
+      const give = new Set<string>()
+      for (const id of ids) {
+        const self = byId.get(id)
+        if (!self) continue
+        for (const tid of archiveCascade(s.tasks, [id])) give.add(tid)
+        // The chain above comes back too, which is the half that keeps this
+        // usable from any row: a live task under an archived parent is a task no
+        // screen can draw, so bringing one row out of a filed-away branch has to
+        // bring what it hangs from. `seen` is not decoration — a hand-edited
+        // file can hold a cycle, and this walk would not return.
+        const seen = new Set<string>([id])
+        let parentId = self.parentId
+        while (parentId != null && !seen.has(parentId)) {
+          seen.add(parentId)
+          give.add(parentId)
+          parentId = byId.get(parentId)?.parentId ?? null
+        }
+      }
+      if (give.size === 0) return {}
+      const now = new Date().toISOString()
+      return {
+        tasks: s.tasks.map((t) => (give.has(t.id) && isArchived(t) ? { ...t, archivedAt: undefined, updatedAt: now } : t)),
+      }
+    }),
 
   // Blank clears the entry rather than storing one: `normalize` drops empty
   // names on the way in for the same reason, and a folder with no name has to
@@ -1450,8 +1493,11 @@ function scheduleReminderSync(delay = REMINDER_SETTLE_MS): void {
   reminderTimer = setTimeout(() => {
     reminderTimer = null
     const s = useStore.getState()
+    // Filed-away work is not pushed: the digest is a list of what is coming, and
+    // an archived task is finished work that has been put down. The one place
+    // the live-only rule is applied at the source rather than at a screen.
     void syncReminderFile(
-      { tasks: s.tasks, logs: s.logs, chores: s.chores, habits: s.habits },
+      { tasks: liveTasks(s.tasks), logs: s.logs, chores: s.chores, habits: s.habits },
       s.lang,
       {
         wechat: s.reminderWechat,
@@ -1555,7 +1601,12 @@ export function useTimelineRange(mode: ViewMode, canvasWidth: number): DateRange
   const today = useStore((s) => s.today)
   const projectFilter = useStore((s) => s.projectFilter)
   return useMemo(() => {
-    const visible = projectFilter === 'all' ? tasks : tasks.filter((t) => t.projectId === projectFilter)
-    return timelineRange(mode, visible, today, canvasWidth)
+    // Live only, unlike `useRows` above: the axis is measured to fit the bars
+    // that are drawn, and an archived task's bar is not one of them. Keeping a
+    // branch filed away two years ago in the sum would stretch the axis over two
+    // years of nothing. It is the one place the archive is filtered rather than
+    // drawn somewhere, and it is a layout question, not a number on the board.
+    const live = liveTasks(projectFilter === 'all' ? tasks : tasks.filter((t) => t.projectId === projectFilter))
+    return timelineRange(mode, live, today, canvasWidth)
   }, [mode, tasks, today, projectFilter, canvasWidth])
 }
