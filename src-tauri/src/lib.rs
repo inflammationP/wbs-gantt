@@ -417,8 +417,16 @@ fn set_tray_labels(app: tauri::AppHandle, open: String, quit: String) -> Result<
 /// asking for the window again", so they both need the unminimize.
 fn reveal_main_window(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
+        // `unminimize` is `ShowWindow(SW_RESTORE)` underneath, and that call
+        // un-maximizes a maximized window on its way back — so the state is read
+        // first and put back after the window is on screen. Without it, hiding to
+        // the tray while maximized and coming back from it shrinks the window.
+        let maximized = w.is_maximized().unwrap_or(false);
         let _ = w.unminimize();
         let _ = w.show();
+        if maximized {
+            let _ = w.maximize();
+        }
         let _ = w.set_focus();
     }
 }
