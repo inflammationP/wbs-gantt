@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react'
 import { useStore } from '../store/useStore'
 import { addDays, toDate, toISO } from '../lib/dates'
 import { plannedFor, todaysChores } from '../lib/chores'
-import { habitsOn } from '../lib/habits'
 import { useT } from '../lib/useT'
 import { DayBoard } from '../components/DayBoard'
 
@@ -90,10 +89,10 @@ function Column({
     [chores, today, date],
   )
 
-  // `habitsOn` for both columns, with no day test of its own: which days a habit
-  // runs on is the habit's business, and tomorrow's question is the same one
-  // today's asks. Only the callbacks differ — see the page above.
-  const dayHabits = useMemo(() => habitsOn(habits, date), [habits, date])
+  // The whole list, not the day's slice of it: which routines a day shows is
+  // `routineRows`'s answer now — a routine that is a heading appears when its
+  // children do, so a filter here would cut the tree's own rows. Both columns
+  // ask the same question of them; only the callbacks differ.
 
   return (
     // `onMouseDown` rather than `onClick`: a click on a control in the *other*
@@ -112,7 +111,7 @@ function Column({
       <DayBoard
         day={date}
         dayChores={dayChores}
-        habits={dayHabits}
+        habits={habits}
         layout="side"
         onAddChore={(title) => addChore(title, date)}
         habitsEditable={editable}

@@ -551,17 +551,17 @@ function ProjectRow({
   const { project } = row
   return (
     <div
-      className={`relative h-full flex items-stretch text-[12px] cursor-pointer group/project ${
-        editing ? 'cursor-grab active:cursor-grabbing' : ''
-      }`}
+      className={`relative h-full flex items-stretch text-[12px] group/project ${
+        row.hasKids ? 'cursor-pointer' : ''
+      } ${editing ? 'cursor-grab active:cursor-grabbing' : ''}`}
       // A wash of the project's colour over the row's own background, plus a
       // hairline through it: the band is meant to read as a rule between groups,
       // not as another task that happens to be wider. The wash is deliberately
       // light — it is a background under a whole row of text — but it has to be
       // strong enough to read as a band and not as a hovered row.
       style={{ background: `color-mix(in srgb, ${project.color} 18%, transparent)` }}
-      onClick={() => onToggleExpanded(row.id)}
-      title={isExpanded ? t('common.collapse') : t('common.expand')}
+      onClick={row.hasKids ? () => onToggleExpanded(row.id) : undefined}
+      title={row.hasKids ? (isExpanded ? t('common.collapse') : t('common.expand')) : undefined}
     >
       <div className="shrink-0" style={{ width: COLS.chevron }} />
       <div className="shrink-0" style={{ width: COLS.wbs }} />
@@ -574,8 +574,11 @@ function ProjectRow({
           column. That is the last resort, and by then the rule has given way to
           its `min-w-2` stub — the name is what must stay readable. */}
       <div className="flex-initial min-w-0 flex items-center gap-1.5 pr-2">
+        {/* The column is held whether or not there is a chevron in it, so a
+            project's name starts at the same place as every other project's —
+            an empty project's line is the same row with less in it. */}
         <span className="shrink-0 flex items-center justify-center text-dim" style={{ width: GLYPH_W }}>
-          {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+          {row.hasKids ? isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} /> : null}
         </span>
         <span className="min-w-0 truncate text-[12px] font-semibold" style={{ color: project.color }}>
           {project.name}

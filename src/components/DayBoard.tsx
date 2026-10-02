@@ -6,8 +6,8 @@ import { Chore, Habit, TaskLog } from '../types'
 import { DayRow, daySummary } from '../lib/dayTasks'
 import { nameQualifiers } from '../lib/tree'
 import { carriedSince } from '../lib/chores'
-import { tickedOn } from '../lib/habits'
-import { STATUS_META, sig, sigAlpha } from '../lib/ui'
+import { RoutineRow, routineRows } from '../lib/habits'
+import { STATUS_META, sig, sigAlpha, toggleIn } from '../lib/ui'
 import { addDays, toDate, toISO } from '../lib/dates'
 import { formatLongDate, formatRelativeDay } from '../lib/i18n'
 import { useLang, useT } from '../lib/useT'
@@ -40,14 +40,18 @@ interface Props {
    */
   dayChores: Chore[]
   /**
-   * The habits to show, chosen by the caller for the same reason `dayChores` is.
+   * Every routine on the board, not the day's slice of them.
    *
-   * Unlike chores there is only one question to ask of them — `habitsOn`, which
-   * is "which of these existed by then" — so both callers pass that. What
-   * differs is the two props below, and it is the caller holding the composer
-   * that decides whether the section appears at all: the Tomorrow column has no
-   * habits to show and no way to tick one, and a column of boxes that cannot be
-   * touched reads as a list of things not done yet.
+   * The day's own rules are applied here, by `routineRows`, rather than by the
+   * caller as they are for chores — because which routines a day shows is no
+   * longer a filter over one list. A routine that is a heading appears when its
+   * children do, so a caller handing over the day's `runsOn` filter would have
+   * dropped exactly the rows the tree is made of.
+   *
+   * What differs between the callers is the two props below, and it is the
+   * caller holding the composer that decides whether the section appears at
+   * all: the Tomorrow column has no way to tick anything, and a column of boxes
+   * that cannot be touched reads as a list of things not done yet.
    */
   habits: Habit[]
   /**
@@ -93,12 +97,19 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, habitsEdi
   const deleteLog = useStore((s) => s.deleteLog)
 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  // Folded routines, rather than unfolded ones: a branch somebody has not
+  // touched is open. The tasks above fold the other way round — a row there
+  // carries a progress bar nobody asked for until they open it, while a routine
+  // under a heading is work to be ticked, and hiding it by default would hide
+  // the day's list behind a triangle.
+  const [foldedHabits, setFoldedHabits] = useState<Set<string>>(() => new Set())
   const [open, setOpen] = useState({ tasks: true, habits: true, chores: true })
   const [logFor, setLogFor] = useState<string | null>(null)
   const [editLog, setEditLog] = useState<TaskLog | null>(null)
   const [logsOpen, setLogsOpen] = useState(false)
 
   const summary = useMemo(() => daySummary(tasks, logs, projects, day, today), [tasks, logs, projects, day, today])
+  const routines = useMemo(() => routineRows(habits, day, foldedHabits), [habits, day, foldedHabits])
   const dayLogs = useMemo(() => logs.filter((l) => l.date === day), [logs, day])
   // Measured over the whole day rather than over `visibleRows`, on purpose: the
   // qualifier must not appear and disappear as branches are folded. See
@@ -171,32 +182,37 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, habitsEdi
     </Section>
   )
 
-  const habitsDone = habits.filter((h) => tickedOn(h, day)).length
+  // A heading is not something anybody ticks, so it is not in the fraction
+  // either: `2/3` over a list that also draws the group they are in would count
+  // the same work twice, once as the children and once as their sum.
+  const routineLeaves = routines.filter((r) => !r.hasKids)
+  const habitsDone = routineLeaves.filter((r) => r.done).length
   // Above the chores, and that is the reading order the list is meant to have:
   // the habits are the same list tomorrow and are ticked off first thing, while
   // the chores are the day's own errands and appear only as they come up. Shown
   // when the caller offers a composer — which is the Today column, and it must
   // show even at zero, or there is nowhere to add the first one — or when there
   // is a habit to record.
-  const habitSection = (habitsEditable || habits.length > 0) && (
+  const habitSection = (habitsEditable || routines.length > 0) && (
     <Section
       title={t('habit.section')}
       // The fraction rather than the total: what the other sections count is how
       // much is on the label, and here that is how much is done.
-      count={`${habitsDone}/${habits.length}`}
+      count={`${habitsDone}/${routineLeaves.length}`}
       open={open.habits}
       onToggle={() => setOpen((o) => ({ ...o, habits: !o.habits }))}
     >
       {habitsEditable && <HabitComposer />}
-      {habits.length === 0 ? (
+      {routines.length === 0 ? (
         <Empty>{t('habit.none')}</Empty>
       ) : (
-        habits.map((h) => (
+        routines.map((row) => (
           <HabitLine
-            key={h.id}
-            habit={h}
-            ticked={tickedOn(h, day)}
-            onToggle={onToggleHabit && (() => onToggleHabit(h.id))}
+            key={row.habit.id}
+            row={row}
+            editable={!!habitsEditable}
+            onToggle={onToggleHabit && !row.hasKids ? () => onToggleHabit(row.habit.id) : undefined}
+            onToggleFold={() => setFoldedHabits((f) => toggleIn(f, row.habit.id))}
           />
         ))
       )}
@@ -408,7 +424,7 @@ function Section({
           {count != null && <span className="font-mono normal-case tracking-normal">{count}</span>}
         </button>
         {action && (
-          <div className="shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+          <div className="shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 has-[:focus-visible]:opacity-100">
             {action}
           </div>
         )}
@@ -532,7 +548,7 @@ function DayRowView({
             }}
             title={t('gantt.writeLogForDay')}
             aria-label={t('gantt.writeLogForDay')}
-            className="ml-2 shrink-0 p-1 rounded-[3px] text-dim hover:text-accent opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+            className="ml-2 shrink-0 p-1 rounded-[3px] text-dim hover:text-accent opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
           >
             <NotebookText size={12} />
           </button>
@@ -707,7 +723,7 @@ function ChoreRow({ chore, today }: { chore: Chore; today: string }) {
         onClick={() => setEditing(true)}
         title={t('chore.edit')}
         aria-label={t('chore.edit')}
-        className="shrink-0 mt-[1px] p-0.5 rounded-[3px] text-dim hover:text-fg opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+        className="shrink-0 mt-[1px] p-0.5 rounded-[3px] text-dim hover:text-fg opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
       >
         <Pencil size={12} />
       </button>
@@ -826,14 +842,21 @@ function ChoreDialog({ chore, onClose }: { chore: Chore; onClose: () => void }) 
 }
 
 /**
- * A habit, as either a control or a record.
+ * A routine, as either a control or a record — and, when it has children, as the
+ * heading over them.
  *
- * One component for both, unlike the chore pair, because here the only
+ * One component for all three, unlike the chore pair, because the only
  * difference is whether the box and the pencil are live. `onToggle` absent means
  * the day panel is looking back at a day: the box is drawn rather than being a
  * disabled `<input>`, which would still read as something to click and then
  * refuse — the same choice `ChoreLine` makes. Deleting and renaming go with the
  * pencil, so they are absent on the same days.
+ *
+ * A heading gets the same read-only box for a different reason: its tick is its
+ * children's, so there is nothing for a click to write. It is the one row here
+ * that is both live (the pencil, the triangle) and untickable, and drawing the
+ * box rather than omitting it is what makes "all of this is done" visible
+ * without a second count on the row.
  *
  * Keeping the tick and the strike in one place is the point of not splitting it.
  * They are what the section's `3/5` counts, and a second copy for the read-only
@@ -845,39 +868,61 @@ function ChoreDialog({ chore, onClose }: { chore: Chore; onClose: () => void }) 
  * has to outlive the dialog it was asked from.
  */
 function HabitLine({
-  habit,
-  ticked,
+  row,
+  editable,
   onToggle,
+  onToggleFold,
 }: {
-  habit: Habit
-  /** Whether `day` — the day the board is showing — was one of its ticked days. */
-  ticked: boolean
+  row: RoutineRow
+  /**
+   * Whether the pencil is offered.
+   *
+   * A flag of its own rather than "is `onToggle` set", which it used to be: a
+   * heading has no tick to write and so no `onToggle`, and reading the pencil's
+   * presence off that would have made every heading uneditable on the board
+   * where editing is the whole point.
+   */
+  editable: boolean
   onToggle?: () => void
+  onToggleFold: () => void
 }) {
   const t = useT()
   const deleteHabit = useStore((s) => s.deleteHabit)
   const [editing, setEditing] = useState(false)
   const { ask, element: dialogs } = useDialogs()
-  const done = sig('completed')
+  const { habit, depth, hasKids, done: ticked, open } = row
+  const green = sig('completed')
 
   const boxCls =
     'mt-[2px] shrink-0 w-[14px] h-[14px] rounded-[2px] border border-border grid place-items-center transition-colors'
-  const boxStyle = ticked ? { background: done, borderColor: done } : undefined
+  const boxStyle = ticked ? { background: green, borderColor: green } : undefined
   const mark = ticked ? <Check size={10} strokeWidth={3} className="text-on-accent" /> : null
 
   return (
     <div
-      className={`group relative flex items-start gap-2 px-2 py-1.5 rounded-[3px] ${onToggle ? 'hover:bg-panel2' : ''}`}
+      className={`group relative flex items-start gap-2 pr-2 py-1.5 rounded-[3px] ${onToggle || hasKids ? 'hover:bg-panel2' : ''}`}
+      // The step is the tree, and it is the whole of it: nothing here draws a
+      // rail, because a routine's children are all in one pane a few hundred
+      // pixels wide and a fold triangle already says a branch is there.
+      style={{ paddingLeft: 8 + depth * 14 }}
     >
-      {onToggle ? (
+      {/* Holds the triangle's column on every row that has none, so a heading's
+          box and a plain routine's box stand at the same x. */}
+      {hasKids ? (
         <button
-          onClick={onToggle}
-          role="checkbox"
-          aria-checked={ticked}
-          aria-label={habit.title}
-          className={boxCls}
-          style={boxStyle}
+          onClick={onToggleFold}
+          aria-expanded={open}
+          aria-label={open ? t('common.collapse') : t('common.expand')}
+          className="shrink-0 mt-[1px] text-dim hover:text-fg"
         >
+          {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        </button>
+      ) : (
+        <span className="shrink-0 w-3" />
+      )}
+
+      {onToggle ? (
+        <button onClick={onToggle} role="checkbox" aria-checked={ticked} aria-label={habit.title} className={boxCls} style={boxStyle}>
           {mark}
         </button>
       ) : (
@@ -896,32 +941,31 @@ function HabitLine({
         {habit.note && <div className="text-[11px] text-dim break-words mt-0.5">{habit.note}</div>}
       </div>
 
-      {onToggle && (
-        <>
-          <button
-            onClick={() => setEditing(true)}
-            title={t('habit.edit')}
-            aria-label={t('habit.edit')}
-            className="shrink-0 mt-[1px] p-0.5 rounded-[3px] text-dim hover:text-fg opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
-          >
-            <Pencil size={12} />
-          </button>
+      {editable && (
+        <button
+          onClick={() => setEditing(true)}
+          title={t('habit.edit')}
+          aria-label={t('habit.edit')}
+          className="shrink-0 mt-[1px] p-0.5 rounded-[3px] text-dim hover:text-fg opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+        >
+          <Pencil size={12} />
+        </button>
+      )}
 
-          {editing && (
-            <HabitDialog
-              habit={habit}
-              onClose={() => setEditing(false)}
-              // The dialog closes before the question appears, so the two are
-              // never stacked. A habit is the one thing here whose deletion costs
-              // something: a chore takes at most one square off the heatmap with
-              // it, while a habit takes every day it was ever ticked.
-              onDelete={() => {
-                setEditing(false)
-                ask(t('habit.deleteAsk', { name: habit.title }), () => deleteHabit(habit.id))
-              }}
-            />
-          )}
-        </>
+      {editing && (
+        <HabitDialog
+          habit={habit}
+          onClose={() => setEditing(false)}
+          // The dialog closes before the question appears, so the two are never
+          // stacked. A routine is the one thing here whose deletion costs
+          // something: a chore takes at most one square off the heatmap with it,
+          // while a routine takes every day it was ever ticked — and now the
+          // days its children were, too.
+          onDelete={() => {
+            setEditing(false)
+            ask(t('habit.deleteAsk', { name: habit.title }), () => deleteHabit(habit.id))
+          }}
+        />
       )}
 
       {dialogs}

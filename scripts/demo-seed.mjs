@@ -168,6 +168,8 @@ const json = JSON.stringify(
     logs: seed.logs,
     chores: seed.chores,
     habits,
+    notes: seed.notes,
+    todoFolders: seed.todoFolders,
   },
   null,
   2,
@@ -182,6 +184,12 @@ assert.equal(loaded.projects.length, seed.projects.length)
 assert.equal(loaded.tasks.length, seed.tasks.length)
 assert.equal(loaded.logs.length, seed.logs.length)
 assert.equal(loaded.chores.length, seed.chores.length)
+assert.equal(loaded.notes.length, seed.notes.length, 'the notebook travels too')
+assert.deepEqual(loaded.todoFolders, seed.todoFolders, 'and the names given to to-do folders')
+// The paragraph readings are the one thing a note carries that a re-import could
+// quietly lose: `liftTimes` moves stamps out of the body on the way in, and
+// `normalize` rebuilds every note it reads.
+assert.deepEqual(loaded.notes.map((n) => n.stamps), seed.notes.map((n) => n.stamps), 'and its paragraph readings with it')
 assert.deepEqual(
   loaded.habits.map((h) => [h.id, h.startDate, h.doneDays.length]),
   habits.map((h) => [h.id, h.startDate, h.doneDays.length]),
@@ -266,7 +274,7 @@ writeFileSync(out, json, 'utf8')
 await server.close()
 console.log(`wrote ${out}`)
 console.log(
-  `${loaded.projects.length} projects · ${loaded.tasks.length} tasks · ${loaded.logs.length} logs · ${loaded.chores.length} chores · ${loaded.habits.length} habits`,
+  `${loaded.projects.length} projects · ${loaded.tasks.length} tasks · ${loaded.logs.length} logs · ${loaded.chores.length} chores · ${loaded.habits.length} habits · ${loaded.notes.length} notes`,
 )
 console.log(`${drawer.count} of those tasks are filed away (drawer: ${drawer.taskIds.join(', ')})`)
 console.log('import it from the sidebar, on an empty board')

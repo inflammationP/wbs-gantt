@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useStore } from '../store/useStore'
 import { Habit } from '../types'
-import { ALL_DAYS, pausePatch } from '../lib/habits'
+import { ALL_DAYS, habitBranch, pausePatch, routineRows } from '../lib/habits'
 import { weekdayLabels } from '../lib/i18n'
 import { useLang, useT } from '../lib/useT'
 import { todayISO } from '../lib/dates'
@@ -36,17 +36,38 @@ export function HabitDialog({
 }) {
   const t = useT()
   const lang = useLang()
+  const habits = useStore((s) => s.habits)
   const addHabit = useStore((s) => s.addHabit)
   const updateHabit = useStore((s) => s.updateHabit)
 
   const [title, setTitle] = useState(habit?.title ?? '')
   const [note, setNote] = useState(habit?.note ?? '')
+  const [parentId, setParentId] = useState(habit?.parentId ?? null)
   const [weekdays, setWeekdays] = useState<number[]>(habit?.weekdays ?? [...ALL_DAYS])
   // `''` rather than `null` throughout, because that is what an empty
   // `<input type="date">` reads and writes. It is turned back into `null` on the
   // way out, which is the shape the data actually wants.
   const [endDate, setEndDate] = useState(habit?.endDate ?? '')
   const [paused, setPaused] = useState(habit?.paused ?? false)
+
+  // A routine that holds others is a heading: whether it appears is whether its
+  // children do, and the same for its tick. Its days are their days, so the
+  // weekday control shows what was derived and takes no clicks; its own end date
+  // and suspension are read by nothing at all, so those two are not offered —
+  // the same reason `TaskForm` leaves a parent's window and progress inert.
+  const hasKids = habit ? habits.some((h) => h.parentId === habit.id) : false
+  const derivedDays = useMemo(
+    () => (hasKids ? (routineRows(habits, null).find((r) => r.habit.id === habit!.id)?.weekdays ?? []) : []),
+    [hasKids, habits, habit],
+  )
+  // What the control is showing: this routine's own days, or its children's.
+  const shownDays = hasKids ? derivedDays : weekdays
+
+  // Itself and everything under it are off the list: a routine cannot be filed
+  // inside something it holds, and the loop that would make is not a shape the
+  // tree walk has any way to draw.
+  const barred = habit ? habitBranch(habits, habit.id) : new Set<string>()
+  const parentOptions = routineRows(habits, null).filter((r) => !barred.has(r.habit.id))
 
   const labels = weekdayLabels(lang)
 
@@ -60,11 +81,19 @@ export function HabitDialog({
 
   const save = () => {
     if (!valid) return
-    const values = { title: title.trim(), note, weekdays, endDate: endDate || null }
+    const values = { title: title.trim(), note, parentId, weekdays, endDate: endDate || null }
     if (habit) {
-      // The pause switch rides along as a patch rather than acting when it is
-      // flipped, so that Cancel really does cancel — see `pausePatch`.
-      updateHabit(habit.id, { ...values, ...pausePatch(habit, paused, todayISO()) })
+      // A heading is patched with the three fields it owns and no more: its days
+      // come from its children, and writing the form's copy back would quietly
+      // store a schedule nothing reads and nothing keeps in step.
+      updateHabit(
+        habit.id,
+        hasKids
+          ? { title: title.trim(), note, parentId }
+          : // The pause switch rides along as a patch rather than acting when it
+            // is flipped, so that Cancel really does cancel — see `pausePatch`.
+            { ...values, ...pausePatch(habit, paused, todayISO()) },
+      )
     } else {
       addHabit(values.title, values)
     }
@@ -95,26 +124,51 @@ export function HabitDialog({
           />
         </Field>
 
+        {/* A `<select>` rather than the task form's foldable tree. There the
+            list can run to forty rows across three levels of a project; here it
+            is the routines, a handful of them, and indenting the names already
+            says which is inside which. Native, so it is the platform's own
+            picker on every platform. */}
+        <Field label={t('habit.parent')}>
+          <select
+            className={inputCls}
+            value={parentId ?? ''}
+            onChange={(e) => setParentId(e.target.value || null)}
+          >
+            <option value="">{t('habit.topLevel')}</option>
+            {parentOptions.map((r) => (
+              <option key={r.habit.id} value={r.habit.id}>
+                {'  '.repeat(r.depth)}
+                {r.habit.title}
+              </option>
+            ))}
+          </select>
+        </Field>
+
         {/* Seven buttons rather than a component. The app has no multi-select
             anywhere — tags are a comma-separated string and dependencies have no
             UI at all — so this is the first, and seven of them is less code than
             a component built for one caller. Styled after `Segmented`, which is
-            the app's only existing "pick one of a few" control. */}
+            the app's only existing "pick one of a few" control.
+
+            On a heading they are inert and lit from `shownDays` rather than from
+            the form's own state: the days belong to its children, and a control
+            that took a click only to be overwritten by the next edit of a child
+            would be a lie about who decides. */}
         <Field label={t('habit.weekdays')}>
           <div className="flex items-center gap-1">
             {labels.map((label, i) => {
-              const on = weekdays.includes(i)
+              const on = shownDays.includes(i)
               return (
                 <button
                   key={label}
                   type="button"
+                  disabled={hasKids}
                   onClick={() => toggleDay(i)}
                   aria-pressed={on}
                   className={`flex-1 h-7 text-[11px] font-medium rounded-[3px] border transition-colors ${
-                    on
-                      ? 'bg-accent/15 text-accent border-accent/40'
-                      : 'bg-panel2 text-muted border-border hover:text-fg'
-                  }`}
+                    on ? 'bg-accent/15 text-accent border-accent/40' : 'bg-panel2 text-muted border-border'
+                  } ${hasKids ? 'opacity-70' : 'hover:text-fg'}`}
                 >
                   {label}
                 </button>
@@ -122,34 +176,39 @@ export function HabitDialog({
             })}
           </div>
           <div className="text-[11px] text-dim mt-1">
-            {weekdays.length === ALL_DAYS.length ? t('habit.everyDay') : ''}
+            {shownDays.length === ALL_DAYS.length ? t('habit.everyDay') : ''}
           </div>
         </Field>
 
-        <Field label={t('habit.endDate')}>
-          <input
-            type="date"
-            className={inputCls}
-            value={endDate}
-            min={habit?.startDate ?? todayISO()}
-            onChange={(e) => setEndDate(e.target.value)}
-          />
-          <div className="text-[11px] text-dim mt-1">{t('habit.noEndDate')}</div>
-        </Field>
+        {/* The two fields a heading does not have — see `hasKids` above. */}
+        {!hasKids && (
+          <>
+            <Field label={t('habit.endDate')}>
+              <input
+                type="date"
+                className={inputCls}
+                value={endDate}
+                min={habit?.startDate ?? todayISO()}
+                onChange={(e) => setEndDate(e.target.value)}
+              />
+              <div className="text-[11px] text-dim mt-1">{t('habit.noEndDate')}</div>
+            </Field>
 
-        {/* Only on an existing habit: there is nothing to suspend about one that
-            has not been created, and offering the switch would imply the thing
-            to be made is itself already off. */}
-        {habit && (
-          <label className="flex items-center gap-2 text-[12px] text-fg/90 cursor-pointer">
-            <input
-              type="checkbox"
-              className="accent-accent"
-              checked={paused}
-              onChange={(e) => setPaused(e.target.checked)}
-            />
-            {t('habit.paused')}
-          </label>
+            {/* Only on an existing routine: there is nothing to suspend about one
+                that has not been created, and offering the switch would imply the
+                thing to be made is itself already off. */}
+            {habit && (
+              <label className="flex items-center gap-2 text-[12px] text-fg/90 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="accent-accent"
+                  checked={paused}
+                  onChange={(e) => setPaused(e.target.checked)}
+                />
+                {t('habit.paused')}
+              </label>
+            )}
+          </>
         )}
 
         <div className="flex items-center gap-2 pt-1">

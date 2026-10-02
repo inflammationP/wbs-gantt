@@ -1,4 +1,4 @@
-import { Chore, Project, Task, TaskLog, TaskPriority, TaskType } from '../types'
+import { Chore, Note, Project, Task, TaskLog, TaskPriority, TaskType } from '../types'
 import { addDays, toISO } from './dates'
 
 // The demo dataset, kept for putting a filled board in front of yourself.
@@ -52,6 +52,26 @@ interface Spec {
   // Closed pause/resume cycles, as [pauseOffset, resumeOffset] pairs.
   pauses?: [number, number][]
   priority?: TaskPriority
+  /**
+   * Task ids this one waits on, rendered in the detail panel.
+   *
+   * The only way to see a dependency at all: the model has the field, the panel
+   * draws it, and **nothing in the UI writes it** — the form has no picker, so a
+   * dependency can arrive from an import and nowhere else. That is worth knowing
+   * before reading this line as "the demo shows the feature"; what it shows is a
+   * feature that is half-built, and the half that is missing is the one a user
+   * would reach for.
+   */
+  dependencies?: string[]
+  /**
+   * Where this row sits among its siblings, once somebody has said so by
+   * dragging it.
+   *
+   * Set on a whole sibling group or on none of it — the app renumbers a list on
+   * every drop, so a group is either wholly arranged or not arranged at all, and
+   * a mixed one is a state only a hand-edited file can be in.
+   */
+  order?: number
   desc?: string
   tags?: string[]
   // Day offset it was filed away on. Set on the **root** of an archived branch
@@ -68,6 +88,12 @@ const PROJECTS: Project[] = [
   { id: 'team', name: 'Competition Team', color: '#fb923c', description: 'RoboMaster competition team' },
   { id: 'stm32', name: 'STM32', color: '#60a5fa', description: 'Embedded / motor control project' },
   { id: 'personal', name: 'Personal', color: '#2dd4bf', description: 'Personal goals' },
+  // A project with nothing in it, on purpose. It draws its own line on the
+  // board — a project nobody can see is a project nobody can put a task in — and
+  // it is greyed out in the hierarchy manager, where a project with no rows is
+  // not a unit: merging it would only make it disappear, with nothing on screen
+  // to show for it.
+  { id: 'reading', name: 'Reading', color: '#fbbf24', description: 'Nothing filed here yet — the empty-project case.' },
 ]
 
 // Two entries below exist for the archive, and they are the two halves of it:
@@ -87,19 +113,20 @@ const SPECS: Spec[] = [
   { id: 'pe-goal-robot', name: 'Build a personal robot', parent: 'pe-goal', project: 'personal', start: 30, end: 90 },
 
   // STM32
-  { id: 'stm-chassis', name: 'Chassis & Drive', project: 'stm32', start: -14, end: 35, desc: 'Parent whose end date is synced from its children.' },
+  { id: 'stm-chassis', name: 'Chassis & Drive', project: 'stm32', start: -14, end: 35, order: 1, desc: 'Parent whose end date is synced from its children.' },
   { id: 'stm-motor', name: 'Motor driver board', parent: 'stm-chassis', project: 'stm32', start: -14, end: 9 },
   { id: 'stm-motor-sch', name: 'Schematic design', parent: 'stm-motor', project: 'stm32', start: -14, end: -8, confirmed: [-14, -13, -12, -11, -10, -9, -8], desc: 'Every tickable day ticked and the window closed → 100%, completed. Archive this one to see the rule that matters: it is a finished child of a parent that is still running, and the parent’s number must not move when it is filed away.' },
   { id: 'stm-motor-pcb', name: 'PCB layout', parent: 'stm-motor', project: 'stm32', start: -8, end: 0, confirmed: [-8, -7, -6, -5, -4, -3, -2, -1, 0], desc: 'Closes today with every day ticked, so it reads 100% while still on today’s list — shows as struck through.' },
-  { id: 'stm-motor-test', name: 'Bring-up & test', parent: 'stm-motor', project: 'stm32', start: 0, end: 9, strict: true, priority: 'high', desc: 'Strict task with a log written today.' },
+  { id: 'stm-motor-test', name: 'Bring-up & test', parent: 'stm-motor', project: 'stm32', start: 0, end: 9, strict: true, priority: 'high', dependencies: ['stm-motor-pcb'], desc: 'Strict task with a log written today, and it waits on the board layout — open it and the detail panel names what it depends on.' },
   { id: 'stm-mach', name: 'Chassis machining', parent: 'stm-chassis', project: 'stm32', start: 14, end: 34 },
-  { id: 'stm-fw', name: 'Control firmware', project: 'stm32', start: -2, end: 70 },
+  { id: 'stm-fw', name: 'Control firmware', project: 'stm32', start: -2, end: 70, order: 0, desc: 'The three roots of this project are the one arranged group on the board: nothing was dragged, the order was simply set, and it puts firmware above the chassis although the chassis starts twelve days earlier. Every other sibling list is unarranged and still sorts by date.' },
   { id: 'stm-can', name: 'CAN bus driver', parent: 'stm-fw', project: 'stm32', start: -2, end: 13, strict: true, desc: 'Strict task with a log written today.' },
   { id: 'stm-pid', name: 'PID tuning', parent: 'stm-fw', project: 'stm32', start: -2, end: 6, strict: true, priority: 'high', desc: 'Strict, but today’s log is missing — logged yesterday only, so it wears the No log badge and counts against the ring.' },
-  { id: 'stm-aim', name: 'Auto-aim algorithm', parent: 'stm-fw', project: 'stm32', start: 28, end: 72, priority: 'urgent' },
-  { id: 'stm-test', name: 'Integration testing', project: 'stm32', start: 56, end: 76 },
+  { id: 'stm-aim', name: 'Auto-aim algorithm', parent: 'stm-fw', project: 'stm32', start: 28, end: 72, priority: 'top', dependencies: ['team-vision'], desc: 'Top priority, and depends on a task in **another** project — a dependency is an id, so nothing stops it crossing projects, and the panel resolves it wherever it lives.' },
+  { id: 'stm-test', name: 'Integration testing', project: 'stm32', start: 56, end: 76, order: 2 },
   { id: 'stm-field', name: 'Field test', parent: 'stm-test', project: 'stm32', start: 56, end: 76 },
   { id: 'stm-todo-mosfet', name: 'Pick a MOSFET', parent: 'stm-chassis', project: 'stm32', isTodo: true, desc: 'Unscheduled to-do parked under a scheduled parent.' },
+  { id: 'stm-todo-encoder', name: 'Pick an encoder', parent: 'stm-chassis', project: 'stm32', isTodo: true, desc: 'The second one under the same parent — which is what makes the two of them a folder rather than two loose rows. It is named below, in `TODO_FOLDERS`.' },
 
   // Competition Team
   { id: 'team-design', name: 'Conceptual design', project: 'team', start: -30, end: -16, confirmed: [-30, -29, -28, -27, -26, -25, -24, -23, -22, -21, -20, -19, -18, -17, -16], priority: 'high', desc: 'Reaches the left end of the axis — the range starts 30 days back — and is ticked the whole way, so it closed at 100%.' },
@@ -354,7 +381,62 @@ function makeChores(d: (offset: number) => string): Chore[] {
   }))
 }
 
-export function buildSeed(): { projects: Project[]; tasks: Task[]; logs: TaskLog[]; chores: Chore[] } {
+// The notebook, one entry per day.
+//
+// **The one collection this dataset had nothing of at all**, and the only way to
+// see it: a `Note` is read by the Logs page, the day panel and the Today page and
+// by nothing else — not the tree, not the roll-ups, not the timeline, not the
+// heatmap. A board without one looks exactly like a board whose notes are
+// broken.
+//
+// `stamps` is the paragraph's provenance, and it is written here rather than
+// left to `liftTimes` so this entry shows both halves of the shape: a paragraph
+// written once, and one that came back and was changed. The corner prints the
+// last reading, which for the second paragraph is the later of the two.
+const NOTE_SPECS: { day: number; body: string; edited?: string }[] = [
+  {
+    day: -1,
+    // A real paragraph break, not an escape: the notebook's paragraphs are
+    // separated by a blank line, and a template literal is the one place in this
+    // file where that can be written as what it is.
+    body: `Sketched the gear ratio on paper — 3.2:1 looks right for the hill test.
+
+The chassis can take another 40 g, so the mount can be printed rather than milled.`,
+  },
+  {
+    day: 0,
+    body: `Ordered the transceivers.
+
+The CAN termination question from stand-up: 120 Ω at both ends, and the second one is on the far board rather than here.`,
+    edited: '14:05',
+  },
+]
+
+/**
+ * The names given to to-do folders, by `todoGroupId`.
+ *
+ * The key is the parent and the project together, because two projects each have
+ * their own root-level to-dos and one parent can hold a different set in each —
+ * a key of the parent alone would name somebody else's folder in the other
+ * project.
+ *
+ * A folder is drawn only where two or more to-dos sit next to each other in one
+ * sibling list, which is why `stm-todo-encoder` above exists: with a single
+ * to-do there is nothing to fold, so nothing to name, and this line would do
+ * nothing at all.
+ */
+const TODO_FOLDERS: Record<string, string> = {
+  'todogroup:stm-chassis:stm32': 'Parts to order',
+}
+
+export function buildSeed(): {
+  projects: Project[]
+  tasks: Task[]
+  logs: TaskLog[]
+  chores: Chore[]
+  notes: Note[]
+  todoFolders: Record<string, string>
+} {
   const now = new Date().toISOString()
   const d = (offset: number) => toISO(addDays(new Date(), offset))
 
@@ -378,7 +460,8 @@ export function buildSeed(): { projects: Project[]; tasks: Task[]; logs: TaskLog
       pauses: isTodo ? [] : (s.pauses ?? []).map(([p, r]) => ({ pauseDate: d(p), resumeDate: d(r) })),
       priority: isTodo ? null : (s.priority ?? 'medium'),
       tags: s.tags ?? [],
-      dependencies: [],
+      dependencies: s.dependencies ?? [],
+      order: s.order,
       createdAt: now,
       updatedAt: now,
       // Evening, so it is plainly the moment it was filed away rather than the
@@ -394,5 +477,18 @@ export function buildSeed(): { projects: Project[]; tasks: Task[]; logs: TaskLog
     tasks,
     logs: makeLogs(d),
     chores: makeChores(d),
+    todoFolders: { ...TODO_FOLDERS },
+    notes: NOTE_SPECS.map((n) => ({
+      date: d(n.day),
+      body: n.body,
+      updatedAt: new Date(`${d(n.day)}T22:00:00`).toISOString(),
+      // One stamp per paragraph, in order. The first was written and left alone;
+      // the second came back and was changed, which is what the extra reading in
+      // `edited` records.
+      stamps: [
+        { at: '09:30' },
+        { at: '09:30', edited: [n.edited ?? '20:15'] },
+      ],
+    })),
   }
 }

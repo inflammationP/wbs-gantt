@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
-import { Modal } from './ui'
+import { Modal, TreeRails } from './ui'
+import { toggleIn } from '../lib/ui'
 import { Task } from '../types'
 import { buildChildrenMap, liveTasks } from '../lib/tree'
 import { useStore } from '../store/useStore'
@@ -156,13 +157,7 @@ export function TaskTreeDialog({
 
   if (!task || !project) return null
 
-  const toggle = (id: string) =>
-    setFolded((f) => {
-      const n = new Set(f)
-      if (n.has(id)) n.delete(id)
-      else n.add(id)
-      return n
-    })
+  const toggle = (id: string) => setFolded((f) => toggleIn(f, id))
 
   return (
     <Modal title={t('task.tree')} onClose={onClose} width={620}>
@@ -178,32 +173,9 @@ export function TaskTreeDialog({
       <div>
         {rows.map((r) => (
           <div key={r.id} ref={r.self ? selfRef : undefined} className="flex items-center h-6 pl-2">
-            {/* The drawing. One 12px cell per level, and the last one is the
-                join into this row: an elbow, plus the line up to the sibling
-                above and the line down to the one below — either, both or
-                neither, which is what makes `├`, `└` and a lone `─` come out of
-                one piece of markup. Hairlines, so it is the same line as every
-                other rule in the app. */}
-            {Array.from({ length: r.depth }, (_, i) => {
-              const join = i === r.depth - 1
-              const below = r.rails[i]
-              return (
-                <span key={i} className="relative w-3 shrink-0 self-stretch">
-                  {join ? (
-                    <>
-                      <span className="absolute left-1/2 top-1/2 w-1.5 border-t border-dim" />
-                      <span
-                        className={`absolute left-1/2 border-l border-dim ${r.first ? 'top-1/2' : 'top-0'} ${
-                          below ? 'bottom-0' : 'bottom-1/2'
-                        }`}
-                      />
-                    </>
-                  ) : (
-                    below && <span className="absolute inset-y-0 left-1/2 border-l border-dim" />
-                  )}
-                </span>
-              )
-            })}
+            {/* The drawing, which lives in `ui.tsx` now that the merge dialog's
+                preview draws the same thing. */}
+            <TreeRails depth={r.depth} rails={r.rails} first={r.first} />
             {/* The caret holds its column whether or not there is one, so the
                 names down a level line up. */}
             {r.kids ? (

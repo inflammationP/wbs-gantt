@@ -121,9 +121,14 @@ function VersionSection() {
   const desktop = isTauri()
   const phase = useStore((s) => s.updatePhase)
   const installing = useStore((s) => s.updateInstalling)
+  const ready = useStore((s) => s.updateReady)
+  const applyUpdate = useStore((s) => s.applyUpdate)
   const runUpdateCheck = useStore((s) => s.runUpdateCheck)
 
-  const busy = phase === 'checking' || installing
+  // `ready` counts as busy for the *check* button and only for it: checking
+  // again would replace the handle, and the handle is where the downloaded
+  // installer lives. The way on is the button beside it.
+  const busy = phase === 'checking' || installing || ready
   // Reported for the launch check and the manual one alike: the run that just
   // happened is the run being described, and which one it was is not the
   // reader's business. A failure is carried by the banner below instead, so
@@ -151,6 +156,17 @@ function VersionSection() {
             disabled={busy}
           >
             {installing ? t('update.installing') : phase === 'checking' ? t('update.checking') : t('update.check')}
+          </button>
+        )}
+        {/* The way back to a download the reader put aside. Without it, "later"
+            would mean "never" — the dialog is gone and this is the only place
+            that knows anything was fetched. */}
+        {desktop && ready && (
+          <button
+            className="h-8 px-3 text-[12px] font-medium bg-accent text-on-accent rounded-[3px]"
+            onClick={() => void applyUpdate()}
+          >
+            {t('update.now')}
           </button>
         )}
         {result && <span className="ml-auto text-[12px] text-muted">{result}</span>}

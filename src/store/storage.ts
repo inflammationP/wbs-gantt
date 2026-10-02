@@ -465,6 +465,11 @@ function normalize(data: PersistedData): LoadedData {
       ...h,
       title: h.title ?? '',
       note: h.note ?? '',
+      // Every routine written before there were routine trees stands at the
+      // top, which is what null says. A non-string is not filtered out here:
+      // `routineRows` cannot hang a child under a parent it cannot find, so a
+      // bad value leaves the routine on the list rather than off it.
+      parentId: typeof h.parentId === 'string' ? h.parentId : null,
       startDate: h.startDate ?? '',
       endDate: h.endDate ?? null,
       // Every habit written before this field existed ran every day, which is

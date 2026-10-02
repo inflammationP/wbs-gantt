@@ -24,6 +24,20 @@ export type SignalToken =
   | 'paused'
   | 'delayed'
 
+/**
+ * `set` with `id` flipped — added when it is missing, removed when it is there.
+ *
+ * Fold state is the one thing in the app kept as a set of ids rather than a
+ * record, and four trees now flip one the same way: the Gantt's task tree, the
+ * task parent picker, and the routine tree and its editor.
+ */
+export function toggleIn(set: Set<string>, id: string): Set<string> {
+  const next = new Set(set)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  return next
+}
+
 /** A signal at full strength: dots, bar borders and fills. */
 export function sig(token: SignalToken): string {
   return `rgb(var(--c-${token}))`

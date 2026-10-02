@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { create } from 'zustand'
 import { AppView, Chore, Habit, Note, Project, Task, TaskLog, TaskPriority, TaskType, ViewMode } from '../types'
-import { ALL_DAYS, runsOn } from '../lib/habits'
+import { ALL_DAYS, habitBranch, runsOn } from '../lib/habits'
 import { todayISO, addDays, diffDays, pad, toDate, toISO } from '../lib/dates'
 import { timelineRange, DateRange } from '../lib/timeline'
 import {
@@ -18,9 +18,26 @@ import {
   todoCascadeIds,
   todoGroupIds,
   projectRowId,
+  projectsInView,
+  moveInto,
+  promoteTask,
   Row,
 } from '../lib/tree'
+import {
+  Board,
+  EMPTY_HISTORY,
+  History,
+  HistoryDelta,
+  HistoryStep,
+  StepKind,
+  applyDelta,
+  deltaCount,
+  diffBoard,
+  mergeDelta,
+  pathBetween,
+} from '../lib/history'
 import { loadData, saveData, loadPrefs, savePrefs, PersistedData, Prefs } from './storage'
+import { PROJECT_COLORS } from '../lib/ui'
 import { logStamp, restamp } from '../lib/logs'
 import { applyLang, Lang, translate } from '../lib/i18n'
 import { applyTheme, ThemeId } from '../lib/theme'
@@ -96,11 +113,8 @@ export interface UndoStep {
    * something already read.
    */
   message: string
-  /** The fields each touched task had before the step, merged back over it. */
-  patches: { id: string; patch: Partial<Task> }[]
-  /** Rows the step removed outright, with everything hanging under them. */
-  removedTasks: Task[]
-  removedLogs: TaskLog[]
+  /** The node the strip's button asks for — one step back from the cursor. */
+  parent: string | null
 }
 
 // The schedule a to-do is given when it is started (or restored in bulk).
@@ -197,6 +211,14 @@ interface State {
    */
   updateHistory: ReleaseNotes[]
   updateInstalling: boolean
+  /**
+   * The installer is on disk and waiting for the word.
+   *
+   * Its own flag rather than a phase of the check, because it is not a step of
+   * the check: the check is over, the answer was "yes", and this is the pause
+   * between fetching the thing and replacing the process with it.
+   */
+  updateReady: boolean
   /** Why the install failed, if it did. */
   updateError: string | null
   nagOpen: boolean
@@ -234,9 +256,40 @@ interface State {
   expandAll: () => void
   collapseAll: () => void
 
-  addProject: (name: string, color: string) => string
+  addProject: (name: string, color: string, description?: string) => string
   updateProject: (id: string, patch: Partial<Project>) => void
   deleteProject: (id: string) => void
+  /**
+   * Fold these projects into that one — the project-level move.
+   *
+   * A project is a root directory, so this is what a file manager does when one
+   * root is dragged inside another: the rows come along, the source stops being
+   * a root, and the only question is whether it arrives as a folder of its own
+   * (`asFolder`, named after the project) or poured flat into the target's top
+   * level. The rearrangement is `moveInto` in `lib/tree.ts`, which is pure and
+   * which the dialog's preview also calls — so the picture shown before the
+   * button is pressed is produced by the function the button runs.
+   *
+   * Deliberately not undoable, and not wrapped in `withUndo`: the same call
+   * `deleteProject` makes, and for a stronger reason — the step *creates* a
+   * folder, and an undo step only knows how to put back fields on rows that were
+   * already there. Undoing one would leave the new folder standing over an empty
+   * project. The dialog is the confirmation, and the preview is what makes it
+   * one you can read.
+   */
+  mergeProjects: (sourceIds: string[], targetId: string, asFolder: boolean) => void
+  /**
+   * Put a mixed set of projects and tasks in one place — see the implementation.
+   *
+   * `target` is a kind rather than a resolved place because one kind is a place
+   * that does not exist yet: `newProject` makes one inside the same gesture, so
+   * the whole thing stays one step of the history.
+   */
+  moveUnits: (
+    units: { projects: string[]; tasks: string[] },
+    target: { kind: 'project'; id: string } | { kind: 'task'; id: string } | { kind: 'newProject' },
+    asFolder: boolean,
+  ) => void
 
   addTask: (input: NewTaskInput) => string
   updateTask: (id: string, patch: Partial<Task>) => void
@@ -261,9 +314,26 @@ interface State {
    * describe itself is what lets one step cover a move, a pause, a park and a
    * delete without four sets of bookkeeping drifting apart.
    */
-  withUndo: (message: string, run: () => void) => void
+  withUndo: (message: string, run: () => void, kind?: StepKind) => void
   /** The last step, or null. Read by the Gantt's "did X · undo" strip. */
   lastUndo: UndoStep | null
+  /**
+   * Every structural change since the app opened, as a tree.
+   *
+   * Session-only, and deliberately outside `PersistedData` — see the note on
+   * `HistoryStep`. Nothing about it goes to disk, so none of the "six places" a
+   * new collection has to be named apply here.
+   */
+  history: History
+  /**
+   * Move the board to any node of the history tree, however far.
+   *
+   * Applied by walking the path from where the board is to the node it is going
+   * to and folding each step's delta in turn — one step at a time is the same
+   * operation, one step shorter. See `lib/history.ts` for why walking is what
+   * makes a fifty-step jump safe.
+   */
+  historyGoTo: (nodeId: string | null) => void
   undoLast: () => void
   /** Dismiss the offer without using it — the strip's own timeout, or leaving. */
   clearUndo: () => void
@@ -331,7 +401,10 @@ interface State {
    * cannot be born paused or pre-ticked by a caller that happened to have a
    * whole `Habit` lying around.
    */
-  addHabit: (title: string, init?: { note?: string; weekdays?: number[]; endDate?: string | null }) => void
+  addHabit: (
+    title: string,
+    init?: { note?: string; weekdays?: number[]; endDate?: string | null; parentId?: string | null },
+  ) => void
   updateHabit: (id: string, patch: Partial<Habit>) => void
   /** No day argument on purpose — see the implementation. */
   toggleHabit: (id: string) => void
@@ -344,7 +417,12 @@ interface State {
   dismissTodoNote: () => void
 
   runUpdateCheck: () => Promise<void>
+  /** Fetch it, in the background. */
   installUpdate: () => Promise<void>
+  /** Replace the process with it, once the reader has said when. */
+  applyUpdate: () => Promise<void>
+  /** "Later" — put it aside, keeping what was downloaded. */
+  dismissReady: () => void
   closeUpdateDialog: () => void
   snoozeUpdate: () => void
   closeNag: () => void
@@ -486,6 +564,112 @@ function maybeNag(): void {
   persistPrefs()
 }
 
+/**
+ * Capturing the history.
+ *
+ * **The store watches itself.** Every structural change goes through `set`, so
+ * comparing one state with the next catches all of them — and, crucially, catches
+ * the ones nobody remembered to announce. The previous design asked twenty UI
+ * call sites to wrap their work in `withUndo`, which is exactly why "move to top
+ * level" and "rename a to-do folder" never made it into the undo at all: a call
+ * site that forgot produced no error, just an operation that could not be taken
+ * back.
+ *
+ * The failure mode is inverted here. A gesture that opens with `withUndo` gets
+ * its label; one that does not still gets recorded, under a label assembled from
+ * the delta itself ("added 2"). Something missed shows up as a badly named step
+ * rather than as a silent hole in the history — and a hole is the one thing the
+ * whole design cannot survive, because a jump across it would land on a board
+ * that never existed.
+ *
+ * Two things are held back from the record:
+ *
+ *   - **Derived writes.** `syncParentDates` rewrites a parent's window from its
+ *     children, on every tasks change. Recorded, every single step would drag a
+ *     noise entry behind it.
+ *   - **The history's own writes**, and anything else that only sets state this
+ *     module owns — a step must never be recorded about recording a step.
+ *
+ * `suspended` covers both, and is a counter rather than a flag so that a
+ * suspended write inside a suspended one cannot re-arm the record on its way out.
+ */
+let suspended = 0
+let inGesture = false
+let gestureLabel: string | null = null
+let gestureKind: StepKind | undefined
+let accumulating: HistoryDelta | null = null
+
+/** `HH:MM`, local. The tree is read at a glance; a date would be noise. */
+function clockNow(): string {
+  const d = new Date()
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/**
+ * What to call a step nobody named.
+ *
+ * Assembled from the delta so it always says something true, and ordered by what
+ * a reader would want to be told first: a step that removed rows is the one worth
+ * looking at, then one that added, then the rest.
+ */
+function autoLabel(lang: Lang, delta: HistoryDelta): string {
+  const n = deltaCount(delta)
+  if (delta.removed.length > 0 || delta.projects.removed.length > 0) {
+    return translate(lang, 'history.autoRemove', { count: n })
+  }
+  if (delta.added.length > 0 || delta.projects.added.length > 0) {
+    return translate(lang, 'history.autoAdd', { count: n })
+  }
+  return translate(lang, 'history.autoChange', { count: n })
+}
+
+/**
+ * Close the current gesture and put it on the tree.
+ *
+ * Called both by `withUndo` on its way out and by the subscriber when a change
+ * arrives with no gesture open — which is what makes an unannounced change a
+ * step rather than a gap.
+ */
+function flushHistory() {
+  const delta = accumulating
+  accumulating = null
+  const named = gestureLabel
+  const kind = gestureKind
+  gestureLabel = null
+  gestureKind = undefined
+  if (!delta) return
+
+  const state = useStore.getState()
+  const label = named ?? autoLabel(state.lang, delta)
+  const step: HistoryStep = {
+    id: uid(),
+    parent: state.history.cursor,
+    label,
+    at: clockNow(),
+    kind,
+    delta,
+  }
+  suspended++
+  useStore.setState({
+    history: { steps: [...state.history.steps, step], cursor: step.id },
+    lastUndo: { message: label, parent: step.parent },
+  })
+  suspended--
+}
+
+/** The collections the history is about. Chores, habits and notes are not. */
+const boardOf = (s: {
+  tasks: Task[]
+  projects: Project[]
+  logs: TaskLog[]
+  todoFolders: Record<string, string>
+}): Board => ({
+  tasks: s.tasks,
+  projects: s.projects,
+  logs: s.logs,
+  todoFolders: s.todoFolders,
+})
+
 export const useStore = create<State>()((set, get) => ({
   projects: initial.projects,
   tasks: initial.tasks,
@@ -495,6 +679,7 @@ export const useStore = create<State>()((set, get) => ({
   notes: initial.notes,
   todoFolders: initial.todoFolders,
   lastUndo: null,
+  history: EMPTY_HISTORY,
   activeView: 'gantt',
   ganttKey: 0,
   selectedTaskId: null,
@@ -513,6 +698,7 @@ export const useStore = create<State>()((set, get) => ({
   updateInfo: null,
   updateHistory: [],
   updateInstalling: false,
+  updateReady: false,
   updateError: null,
   nagOpen: false,
   updateAnchorAt: prefs.updateAnchorAt,
@@ -590,30 +776,162 @@ export const useStore = create<State>()((set, get) => ({
       return { expanded }
     }),
 
-  addProject: (name, color) => {
-    const project: Project = { id: uid(), name, color, description: '' }
-    set((s) => ({ projects: [...s.projects, project] }))
+  addProject: (name, color, description = '') => {
+    // The description is a parameter rather than a second `updateProject` call
+    // after the fact: two calls are two steps of the history, and making a
+    // project would read as "added 工作" followed by "edited 工作".
+    const project: Project = { id: uid(), name, color, description }
+    get().withUndo(translate(get().lang, 'history.newProject', { what: name }), () =>
+      set((s) => ({ projects: [...s.projects, project] })),
+    )
     return project.id
   },
-  updateProject: (id, patch) =>
-    set((s) => ({ projects: s.projects.map((p) => (p.id === id ? { ...p, ...patch } : p)) })),
-  deleteProject: (id) =>
-    set((s) => {
-      const taskIds = new Set(s.tasks.filter((t) => t.projectId === id).map((t) => t.id))
-      return {
-        projects: s.projects.filter((p) => p.id !== id),
-        tasks: s.tasks.filter((t) => t.projectId !== id),
-        logs: s.logs.filter((l) => !taskIds.has(l.taskId)),
-        projectFilter: s.projectFilter === id ? 'all' : s.projectFilter,
-        selectedTaskId: null,
-        selectedProjectId: null,
+  updateProject: (id, patch) => {
+    const name = get().projects.find((p) => p.id === id)?.name ?? ''
+    get().withUndo(translate(get().lang, 'history.editProject', { what: name }), () =>
+      set((s) => ({ projects: s.projects.map((p) => (p.id === id ? { ...p, ...patch } : p)) })),
+    )
+  },
+  deleteProject: (id) => {
+    const name = get().projects.find((p) => p.id === id)?.name ?? ''
+    get().withUndo(translate(get().lang, 'history.deleteProject', { what: name }), () =>
+      set((s) => {
+        const taskIds = new Set(s.tasks.filter((t) => t.projectId === id).map((t) => t.id))
+        return {
+          projects: s.projects.filter((p) => p.id !== id),
+          tasks: s.tasks.filter((t) => t.projectId !== id),
+          logs: s.logs.filter((l) => !taskIds.has(l.taskId)),
+          projectFilter: s.projectFilter === id ? 'all' : s.projectFilter,
+          selectedTaskId: null,
+          selectedProjectId: null,
+        }
+      }),
+    )
+  },
+
+  mergeProjects: (sourceIds, targetId, asFolder) =>
+    get().moveUnits({ projects: sourceIds, tasks: [] }, { kind: 'project', id: targetId }, asFolder),
+
+  /**
+   * Put a mixed set of projects and tasks in one place.
+   *
+   * The general form of what used to be `mergeProjects`, and that action is now
+   * nothing but a call into this with the task half empty. The reason the two are
+   * one action is the reason the dialog is one dialog: "move this whole project
+   * into that one" and "move these six tasks under that task" are the same
+   * question asked with different things ticked, and the destination picker is
+   * the same picker either way.
+   *
+   * The target is a *kind* rather than a place, because one of the three kinds is
+   * a place that does not exist yet: `newProject` makes one inside the same
+   * gesture, which is what keeps it to a single step of the history — `withUndo`
+   * folds every `set` in its run into one.
+   */
+  moveUnits: (units, target, asFolder) => {
+    const s = get()
+    // One lookup over both kinds, because the label does not care which a unit
+    // was — it prints whatever was ticked.
+    const names = new Map<string, string>([
+      ...s.projects.map((p) => [p.id, p.name] as const),
+      ...s.tasks.map((t) => [t.id, t.name] as const),
+    ])
+    const movingIds = [...units.projects, ...units.tasks]
+    const what = movingIds.map((id) => names.get(id) ?? '').join(translate(s.lang, 'common.listSeparator'))
+
+    /**
+     * One task and nothing else, sent to a new project: it *becomes* the project
+     * rather than being moved into one.
+     *
+     * Anything else would put a task of the same name inside a project of the
+     * same name and spend a level saying nothing — and the name is exactly what
+     * the person meant to keep. It is the mirror of moving a project into another
+     * project, where the project stops being a root and becomes a task; here the
+     * task stops being a task and becomes a root.
+     *
+     * More than one unit, or a project among them, is the other operation: a new
+     * project is made and they go *into* it.
+     */
+    const promoting = target.kind === 'newProject' && units.projects.length === 0 && units.tasks.length === 1
+    const labelKey = promoting
+      ? 'history.promoteTask'
+      : target.kind === 'newProject'
+        ? 'history.moveNewProject'
+        : 'history.move'
+
+    get().withUndo(translate(s.lang, labelKey, { what }), () => {
+      const nextColor = () => {
+        const projects = get().projects
+        return PROJECT_COLORS[projects.length % PROJECT_COLORS.length]
       }
-    }),
+
+      if (promoting) {
+        const before = get()
+        const promoted = promoteTask(before.tasks, before.projects, units.tasks[0], {
+          id: uid(),
+          color: nextColor(),
+        })
+        if (!promoted) return
+        set({
+          tasks: promoted.tasks,
+          projects: promoted.projects,
+          // The row that was selected is no longer a task; the panel showing it
+          // is showing something that is not there.
+          selectedTaskId: before.selectedTaskId === units.tasks[0] ? null : before.selectedTaskId,
+        })
+        return
+      }
+
+      {
+        let projectId: string
+        if (target.kind === 'newProject') {
+          // Named after the one thing being moved when there is exactly one, so
+          // the common case — pull a branch out into a project of its own — lands
+          // with a name that means something. Renaming it is a pencil away.
+          const name =
+            movingIds.length === 1
+              ? (names.get(movingIds[0]) ?? translate(s.lang, 'move.newProjectName'))
+              : translate(s.lang, 'move.newProjectName')
+          projectId = get().addProject(name, nextColor(), '')
+        } else if (target.kind === 'project') {
+          projectId = target.id
+        } else {
+          projectId = get().tasks.find((t) => t.id === target.id)?.projectId ?? ''
+        }
+
+        const before = get()
+        const place =
+          target.kind === 'task'
+            ? { parentId: target.id, projectId }
+            : { parentId: null, projectId }
+        const next = moveInto(before.tasks, before.projects, units, place, asFolder, () => uid())
+        if (!next) return
+
+        const stillThere = (id: string | null) => next.projects.some((p) => p.id === id)
+        // The tasks are all still here — only their project changed — so the logs
+        // stay exactly as they are. `deleteProject` filters them out for the
+        // opposite reason: there, the rows they belong to are gone.
+        set({
+          tasks: next.tasks,
+          projects: next.projects,
+          // A filter left pointing at a project that has just been moved away
+          // would show an empty board. Following it to where the work went is
+          // the useful answer; anything else — `all`, or a project that
+          // survived — is left alone.
+          projectFilter:
+            before.projectFilter === 'all' || stillThere(before.projectFilter)
+              ? before.projectFilter
+              : projectId,
+          selectedProjectId: stillThere(before.selectedProjectId) ? before.selectedProjectId : null,
+        })
+      }
+    }, 'move')
+  },
 
   addTask: (input) => {
     const id = uid()
     const now = new Date().toISOString()
-    set((s) => {
+    get().withUndo(translate(get().lang, 'history.newTask', { what: input.name }), () =>
+      set((s) => {
       // The requested parent, unless it is filed away — an archived task is not
       // on the board, so a task placed inside it would be one nothing draws. The
       // dialog's parent picker does not offer one either; this is the belt to
@@ -666,34 +984,53 @@ export const useStore = create<State>()((set, get) => ({
         updatedAt: now,
       }
       return { tasks: [...s.tasks, task], selectedTaskId: id }
-    })
+      }),
+    )
     return id
   },
-  updateTask: (id, patch) =>
-    set((s) => ({
-      tasks: s.tasks.map((t) =>
-        t.id === id ? { ...t, ...patch, updatedAt: new Date().toISOString() } : t,
-      ),
-    })),
+  updateTask: (id, patch) => {
+    const name = get().tasks.find((t) => t.id === id)?.name ?? ''
+    get().withUndo(translate(get().lang, 'history.editTask', { what: name }), () =>
+      set((s) => ({
+        tasks: s.tasks.map((t) =>
+          t.id === id ? { ...t, ...patch, updatedAt: new Date().toISOString() } : t,
+        ),
+      })),
+    )
+  },
   deleteTask: (id) =>
     set((s) => {
       const ids = new Set(collectDescendants(s.tasks, id).concat(id))
       const tasks = s.tasks
         .filter((t) => !ids.has(t.id))
-        .map((t) => ({ ...t, dependencies: t.dependencies.filter((d) => !ids.has(d)) }))
+        .map((t) => {
+          const deps = t.dependencies.filter((d) => !ids.has(d))
+          // The same row back when nothing in it changed. Every action here hands
+          // back the object it was given for the rows it did not touch, and the
+          // undo history reads the board by exactly that identity — rebuild them
+          // all and deleting one task becomes a step that "changed" every other
+          // one, with a delta to match.
+          return deps.length === t.dependencies.length ? t : { ...t, dependencies: deps }
+        })
       const selectedTaskId = s.selectedTaskId && ids.has(s.selectedTaskId) ? null : s.selectedTaskId
       const logs = s.logs.filter((l) => !ids.has(l.taskId))
       return { tasks, logs, selectedTaskId }
     }),
-  setTaskParent: (id, parentId) =>
-    set((s) => {
-      if (parentId && (parentId === id || collectDescendants(s.tasks, id).includes(parentId))) return {}
-      return {
-        tasks: s.tasks.map((t) =>
-          t.id === id ? { ...t, parentId, updatedAt: new Date().toISOString() } : t,
-        ),
-      }
-    }),
+  setTaskParent: (id, parentId) => {
+    const name = get().tasks.find((t) => t.id === id)?.name ?? ''
+    get().withUndo(
+      translate(get().lang, parentId === null ? 'history.outdent' : 'history.editTask', { what: name }),
+      () =>
+        set((s) => {
+          if (parentId && (parentId === id || collectDescendants(s.tasks, id).includes(parentId))) return {}
+          return {
+            tasks: s.tasks.map((t) =>
+              t.id === id ? { ...t, parentId, updatedAt: new Date().toISOString() } : t,
+            ),
+          }
+        }),
+    )
+  },
   /**
    * Put a set of tasks at one place in the tree — the drop, once it has
    * happened.
@@ -710,114 +1047,109 @@ export const useStore = create<State>()((set, get) => ({
    * identity change: a half-applied move would be read once, and the derived
    * dates of two branches would be computed from a tree that never existed.
    */
-  moveTasks: (ids, parentId, beforeId, projectId) =>
-    set((s) => {
-      const next = placeTasks(s.tasks, ids, parentId, beforeId, projectId)
-      if (!next) return {}
-
-      // Read off the two arrays rather than off the internals of `placeTasks`:
-      // the rows are one-to-one and in order, so anything that differs is
-      // something the move wrote, and that is exactly the set to record.
-      const patches: UndoStep['patches'] = []
-      for (let i = 0; i < next.length; i++) {
-        const was = s.tasks[i]
-        const now = next[i]
-        if (was.parentId !== now.parentId || was.projectId !== now.projectId || was.order !== now.order) {
-          // `order: undefined` is how a task that had never been dragged gets
-          // its "no opinion" back; `Number.isFinite` reads it as absent, and
-          // `JSON.stringify` drops the key entirely.
-          patches.push({ id: was.id, patch: { parentId: was.parentId, projectId: was.projectId, order: was.order } })
-        }
-      }
-      // `ids` are the roots — the caller removes anything another moving task is
-      // already carrying — so its length is the count the strip should say.
-      //
-      // Spelled out here rather than in the component, so the strip and the
-      // label that followed the pointer during the drag read the same. Written
-      // in the language on screen at the time and left that way, like a log's
-      // auto-written text.
-      const what =
-        ids.length > 1
-          ? translate(s.lang, 'gantt.dragMany', { count: ids.length })
-          : (s.tasks.find((t) => t.id === ids[0])?.name ?? '')
-
-      const now = new Date().toISOString()
-      return {
-        tasks: next.map((t) => ({ ...t, updatedAt: now })),
-        lastUndo: { message: translate(s.lang, 'gantt.moved', { what }), patches, removedTasks: [], removedLogs: [] },
-      }
-    }),
-
   /**
-   * Everything else that can be taken back, recorded by watching the board.
-   *
-   * The tasks array is compared by identity first and by value only for the rows
-   * that changed: every action here maps over the array and hands back the same
-   * object for the rows it did not touch, so a `!==` is enough to skip the ones
-   * that are not this step's business. What survives that filter is written down
-   * as the values those fields had *before*, which is all an undo needs.
-   *
-   * Rows that are gone rather than changed are the delete case, and they are
-   * kept whole — a row that has left the board has no field left to patch, and
-   * the log entries that went with it are not on the board either.
-   *
-   * Only while the Gantt is the view on screen: the strip that offers the step
-   * back lives there and nowhere else. The task panel opens over every page, so
-   * without this a pause taken on the Today page would leave an offer waiting in
-   * the Gantt.
+   * Where a drag lands — and it names its own step rather than being wrapped by
+   * the caller, because the Gantt's drop calls it directly and a label belongs
+   * next to the thing that knows what moved.
    */
-  withUndo: (message, run) => {
-    if (get().activeView !== 'gantt') {
-      run()
-      return
-    }
-    const before = get()
-    const tasks = before.tasks
-    const logs = before.logs
-    run()
-    const after = get()
-    if (after.tasks === tasks && after.logs === logs) return
-
-    const stillThere = new Map(after.tasks.map((t) => [t.id, t]))
-    const patches: UndoStep['patches'] = []
-    const removedTasks: Task[] = []
-    for (const was of tasks) {
-      const now = stillThere.get(was.id)
-      if (!now) {
-        removedTasks.push(was)
-        continue
-      }
-      if (now === was) continue
-      const patch: Record<string, unknown> = {}
-      for (const k of Object.keys(was) as (keyof Task)[]) if (was[k] !== now[k]) patch[k] = was[k]
-      if (Object.keys(patch).length > 0) patches.push({ id: was.id, patch: patch as Partial<Task> })
-    }
-    const logIds = new Set(after.logs.map((l) => l.id))
-    const removedLogs = removedTasks.length > 0 ? logs.filter((l) => !logIds.has(l.id)) : []
-
-    set({ lastUndo: { message, patches, removedTasks, removedLogs } })
+  moveTasks: (ids, parentId, beforeId, projectId) => {
+    const s = get()
+    // `ids` are the roots — the caller removes anything another moving task is
+    // already carrying — so its length is the count the strip should say.
+    //
+    // Spelled out here rather than in the component, so the strip and the label
+    // that followed the pointer during the drag read the same. Written in the
+    // language on screen at the time and left that way, like a log's
+    // auto-written text.
+    const what =
+      ids.length > 1
+        ? translate(s.lang, 'gantt.dragMany', { count: ids.length })
+        : (s.tasks.find((t) => t.id === ids[0])?.name ?? '')
+    get().withUndo(translate(s.lang, 'gantt.moved', { what }), () =>
+      set((state) => {
+        const next = placeTasks(state.tasks, ids, parentId, beforeId, projectId)
+        if (!next) return {}
+        // Only the rows the move actually wrote are stamped. `placeTasks` hands
+        // back the *same object* for a row it did not touch, and that identity is
+        // the whole difference between a step that moved four rows and one that
+        // "changed" every task on the board by giving them all a new timestamp.
+        const now = new Date().toISOString()
+        return { tasks: next.map((t, i) => (t === state.tasks[i] ? t : { ...t, updatedAt: now })) }
+      }),
+      'move',
+    )
   },
 
-  undoLast: () =>
-    set((s) => {
-      const u = s.lastUndo
-      if (!u) return {}
-      const byId = new Map(u.patches.map((p) => [p.id, p.patch]))
-      const now = new Date().toISOString()
-      const tasks = s.tasks.map((t) => {
-        const p = byId.get(t.id)
-        return p ? { ...t, ...p, updatedAt: now } : t
-      })
-      return {
-        // A removed row comes back as it was, timestamp and all — it is the same
-        // record, and nothing about it changed while it was off the board. Its
-        // place in the array is wherever the end is: the array's order is the
-        // order things were created and nothing reads it as an arrangement.
-        tasks: u.removedTasks.length > 0 ? [...tasks, ...u.removedTasks] : tasks,
-        logs: u.removedLogs.length > 0 ? [...s.logs, ...u.removedLogs] : s.logs,
-        lastUndo: null,
+  /**
+   * Name the step that is about to happen.
+   *
+   * The capturing itself is done by the subscriber — this only says what to call
+   * the result. It used to do the diffing too, which is why an operation nobody
+   * wrapped could not be taken back at all; now an unwrapped one is still
+   * recorded, just under a label assembled from its delta.
+   *
+   * Re-entrant: a gesture that runs inside another keeps the outer name and does
+   * not close the step, so a bulk action built out of single-row actions is one
+   * step rather than twenty.
+   */
+  withUndo: (message, run, kind) => {
+    const outer = inGesture
+    const outerLabel = gestureLabel
+    const outerKind = gestureKind
+    if (!outer) {
+      inGesture = true
+      gestureLabel = message
+      gestureKind = kind
+    }
+    let threw: unknown
+    try {
+      run()
+    } catch (e) {
+      threw = e
+    } finally {
+      if (outer) {
+        gestureLabel = outerLabel
+        gestureKind = outerKind
+      } else {
+        inGesture = false
+        flushHistory()
       }
-    }),
+    }
+    if (threw) throw threw
+  },
+
+  historyGoTo: (nodeId) => {
+    const s = get()
+    const path = pathBetween(s.history.steps, s.history.cursor, nodeId)
+    if (!path || path.length === 0) return
+
+    let board = boardOf(s)
+    for (const { step, dir } of path) board = applyDelta(board, step.delta, dir)
+
+    // The rows a jump can take away are the same rows a delete can, so the
+    // pointing-at-a-dead-row cleanup is the same one `deleteTask` does.
+    const taskIds = new Set(board.tasks.map((t) => t.id))
+    const projectIds = new Set(board.projects.map((p) => p.id))
+
+    suspended++
+    set({
+      ...board,
+      history: { ...s.history, cursor: nodeId },
+      lastUndo: null,
+      selectedTaskId: s.selectedTaskId && taskIds.has(s.selectedTaskId) ? s.selectedTaskId : null,
+      selectedProjectId: s.selectedProjectId && projectIds.has(s.selectedProjectId) ? s.selectedProjectId : null,
+      projectFilter:
+        s.projectFilter === 'all' || projectIds.has(s.projectFilter) ? s.projectFilter : 'all',
+    })
+    suspended--
+  },
+
+  undoLast: () => {
+    const s = get()
+    if (s.history.cursor === null) return
+    const step = s.history.steps.find((x) => x.id === s.history.cursor)
+    get().historyGoTo(step ? step.parent : null)
+  },
   clearUndo: () => set((s) => (s.lastUndo ? { lastUndo: null } : {})),
   /**
    * Write a log — or add to the one this task already has for that day.
@@ -1085,13 +1417,15 @@ export const useStore = create<State>()((set, get) => ({
   // read as unnamed on both paths or a cleared name would come back after a
   // reload.
   setTodoFolderName: (groupId, name) =>
-    set((s) => {
-      const trimmed = name.trim()
-      const next = { ...s.todoFolders }
-      if (trimmed) next[groupId] = trimmed
-      else delete next[groupId]
-      return { todoFolders: next }
-    }),
+    get().withUndo(translate(get().lang, 'history.folderRename'), () =>
+      set((s) => {
+        const trimmed = name.trim()
+        const next = { ...s.todoFolders }
+        if (trimmed) next[groupId] = trimmed
+        else delete next[groupId]
+        return { todoFolders: next }
+      }),
+    ),
 
   toggleChore: (id) =>
     set((s) => ({
@@ -1157,6 +1491,7 @@ export const useStore = create<State>()((set, get) => ({
           id: uid(),
           title,
           note: init?.note ?? '',
+          parentId: init?.parentId ?? null,
           startDate: todayISO(),
           endDate: init?.endDate ?? null,
           // A habit is born running every day, and the editor is what narrows
@@ -1202,34 +1537,67 @@ export const useStore = create<State>()((set, get) => ({
       habits: s.habits.map((h) => {
         if (h.id !== id) return h
         const day = todayISO()
-        // A tick on a day the habit does not run is a fact the data should never
-        // learn — an ended habit, a Tuesday of a Mon/Wed/Fri one, a suspended
-        // one. `habitsOn` already keeps those off the list, so nothing in the UI
-        // can reach this branch; the guard is what keeps that from being the
-        // only thing standing between the two, and it asks the same function
-        // that decides what to show.
+        // A tick on a day the routine does not run is a fact the data should
+        // never learn — one that has ended, a Tuesday of a Mon/Wed/Fri one, a
+        // suspended one. `routineRows` already keeps those off every list, so
+        // nothing in the UI can reach this branch; the guard is what keeps that
+        // from being the only thing standing between the two, and it asks the
+        // same function that decides what to show.
         if (!runsOn(h, day)) return h
+        // ...and neither is a tick on a heading, which has no box to click and
+        // whose `done` is its children's. Its `doneDays` staying empty is what
+        // makes the roll-up the only answer to "is this done today"; a tick
+        // written here would be read by nothing, and would sit in the file
+        // looking like a fact. `routineRows` treats one that got in anyway the
+        // same way — it does not read it.
+        if (s.habits.some((k) => k.parentId === h.id)) return h
         return {
           ...h,
           // Ticked days are kept in the order they were ticked. Nothing reads
-          // that order — the heatmap tests membership and `tickedOn` does too —
-          // so there is no reason to sort a list that only ever grows at the end.
+          // that order — the heatmap tests membership and every day's list does
+          // too — so there is no reason to sort a list that only ever grows at
+          // the end.
           doneDays: h.doneDays.includes(day) ? h.doneDays.filter((d) => d !== day) : [...h.doneDays, day],
           updatedAt: new Date().toISOString(),
         }
       }),
     })),
-  deleteHabit: (id) => set((s) => ({ habits: s.habits.filter((h) => h.id !== id) })),
+  // The whole branch goes, as `deleteTask` takes a task's subtree: a routine is
+  // a container once it has children, and leaving them behind would file them
+  // under a parent that is gone — which `routineRows` draws at the top, so the
+  // delete would look like it had half happened.
+  deleteHabit: (id) =>
+    set((s) => {
+      const ids = habitBranch(s.habits, id)
+      return { habits: s.habits.filter((h) => !ids.has(h.id)) }
+    }),
 
-  syncParentDates: () =>
+  /**
+   * Recompute each phase parent's window from its children.
+   *
+   * Suspended from the history: this runs on every tasks change, and it writes
+   * `tasks` every time it finds anything to move. Recorded, every structural step
+   * would be followed by a second, meaningless one saying "changed 3" — the same
+   * numbers the first step already implies, recomputed. It is also a *derived*
+   * write: whatever it puts on a parent comes straight back off its children, so
+   * a jump that skipped it would land on the right board anyway.
+   */
+  syncParentDates: () => {
+    suspended++
     set((s) => {
       const next = syncParentDates(s.tasks, s.logs)
       // The same array back means nothing moved, and returning `{}` is what
       // keeps this from re-triggering the effect that called it.
       return next === s.tasks ? {} : { tasks: next }
-    }),
+    })
+    suspended--
+  },
 
-  importData: (data) =>
+  importData: (data) => {
+    // Suspended, or the subscriber would record the import itself as a step —
+    // one enormous "changed 500" — in the same breath as clearing the tree that
+    // step would go on.
+    suspended++
     set({
       projects: data.projects,
       tasks: data.tasks,
@@ -1242,11 +1610,15 @@ export const useStore = create<State>()((set, get) => ({
       selectedProjectId: null,
       projectFilter: 'all',
       // A drag from the board that was just replaced is not a step back from
-      // this one. The ids are almost certain not to match, so the offer would
-      // mostly do nothing — but "mostly" is not a thing to leave to chance when
-      // the failure is a silent edit to an unrelated task.
+      // this one, and neither is anything else in the history: every step names
+      // task ids, and this board's ids have nothing to do with the old one's.
+      // Keeping the tree would leave a jump that lands on a board made of half
+      // of each.
       lastUndo: null,
-    }),
+      history: EMPTY_HISTORY,
+    })
+    suspended--
+  },
 
   // One way: the note is an explanation, and a way to ask for it back would be a
   // setting nobody would ever find.
@@ -1319,13 +1691,36 @@ export const useStore = create<State>()((set, get) => ({
     }
   },
 
+  /**
+   * Fetch the installer, in the background.
+   *
+   * The dialog disappears the moment this is called and the app carries on: a
+   * download is a download, and it does not need the user watching it. What
+   * comes back is `updateReady`, which raises the question the download cannot
+   * answer — whether to restart now.
+   */
   installUpdate: async () => {
     const info = useStore.getState().updateInfo
     if (!info) return
-    // Stamp the anchor before installing: on Windows the installer exits the
-    // process, so anything written after this point may never land.
+    // Stamp the anchor before anything is written downstream: on Windows the
+    // installer exits the process, so anything written after that may never land.
     set({ updateInstalling: true, updateError: null, updateAnchorAt: new Date().toISOString() })
     persistPrefs()
+    try {
+      await info.download()
+      set({ updateInstalling: false, updateReady: true })
+    } catch (err) {
+      set({
+        updateInstalling: false,
+        updateError: err instanceof Error ? err.message : String(err),
+      })
+    }
+  },
+
+  applyUpdate: async () => {
+    const info = useStore.getState().updateInfo
+    if (!info) return
+    set({ updateInstalling: true, updateReady: false, updateError: null })
     try {
       await info.install()
     } catch (err) {
@@ -1336,9 +1731,15 @@ export const useStore = create<State>()((set, get) => ({
     }
   },
 
+  // The handle stays: what was downloaded is still downloaded, and the way back
+  // to it is the version section, which shows the same offer. Dropping the
+  // handle here would make "later" mean "never", and the whole download would
+  // happen again on the next launch.
+  dismissReady: () => set({ updateReady: false }),
+
   closeUpdateDialog: () => {
     const info = useStore.getState().updateInfo
-    set({ updateInfo: null, updateInstalling: false, updateError: null })
+    set({ updateInfo: null, updateInstalling: false, updateReady: false, updateError: null })
     // Release the Tauri resource. Nothing is lost: checking again re-fetches it.
     void info?.dismiss()
   },
@@ -1465,6 +1866,25 @@ useStore.subscribe((state, prev) => {
       todoFolders: state.todoFolders,
     })
   }
+
+  // ...and the other half of the same pass: this is where the undo history is
+  // captured. Same comparison, one more use for it — the alternative was asking
+  // every action to remember, which is how two of them came to be missing.
+  if (suspended > 0) return
+  if (
+    state.tasks === prev.tasks &&
+    state.projects === prev.projects &&
+    state.logs === prev.logs &&
+    state.todoFolders === prev.todoFolders
+  ) {
+    return
+  }
+  const delta = diffBoard(prev, state)
+  if (!delta) return
+  accumulating = mergeDelta(accumulating, delta)
+  // No gesture open means nobody announced this one. It is still a step — the
+  // whole point — and it gets a name assembled from what it did.
+  if (!inGesture) flushHistory()
 })
 
 // Keep `today` fresh across midnights so derived progress/status re-render.
@@ -1590,7 +2010,7 @@ export function useRows(): Row[] {
   const projects = useStore((s) => s.projects)
   return useMemo(() => {
     const visible = projectFilter === 'all' ? tasks : tasks.filter((t) => t.projectId === projectFilter)
-    return buildRows(visible, expanded, projects, logs)
+    return buildRows(visible, expanded, projectsInView(projects, projectFilter), logs)
   }, [tasks, logs, today, expanded, projectFilter, projects])
 }
 

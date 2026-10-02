@@ -6,7 +6,7 @@ import { LogOptOutDialog } from './LogOptOutDialog'
 import { Task, TaskPriority, TaskType } from '../types'
 import { useStore } from '../store/useStore'
 import { buildChildrenMap, collectDescendants, computeWbs, isArchived } from '../lib/tree'
-import { PRIORITY_META, PRIORITY_ORDER } from '../lib/ui'
+import { PRIORITY_META, PRIORITY_ORDER, toggleIn } from '../lib/ui'
 import { todayISO } from '../lib/dates'
 import { useT, useTRich } from '../lib/useT'
 
@@ -26,7 +26,30 @@ interface Props {
   defaultIsTodo?: boolean
 }
 
+/**
+ * The task dialog proper: the frame, and nothing about what goes in it.
+ *
+ * Split from `TaskForm` so that the one place a task and a project are both on
+ * offer — the toolbar's new button, see `NewDialog` — can put them behind one
+ * dialog with one title and one set of tabs, instead of two dialogs that each
+ * draw their own frame and would each have to grow a copy of the tabs.
+ */
 export function TaskDialog({ onClose, existing, defaultParentId, defaultProjectId, defaultIsTodo }: Props) {
+  const t = useT()
+  return (
+    <Modal title={existing ? t('task.edit') : t('task.new')} onClose={onClose} width={560}>
+      <TaskForm
+        onClose={onClose}
+        existing={existing}
+        defaultParentId={defaultParentId}
+        defaultProjectId={defaultProjectId}
+        defaultIsTodo={defaultIsTodo}
+      />
+    </Modal>
+  )
+}
+
+export function TaskForm({ onClose, existing, defaultParentId, defaultProjectId, defaultIsTodo }: Props) {
   const t = useT()
   const tr = useTRich()
   const tasks = useStore((s) => s.tasks)
@@ -201,7 +224,7 @@ export function TaskDialog({ onClose, existing, defaultParentId, defaultProjectI
   }
 
   return (
-    <Modal title={existing ? t('task.edit') : t('task.new')} onClose={onClose} width={560}>
+    <>
       <div className="space-y-3">
         <Field label={t('common.name')}>
           <input className={inputCls} autoFocus value={form.name} onChange={(e) => set('name', e.target.value)} placeholder={t('task.namePlaceholder')} />
@@ -370,7 +393,7 @@ export function TaskDialog({ onClose, existing, defaultParentId, defaultProjectI
           }}
         />
       )}
-    </Modal>
+    </>
   )
 }
 
@@ -432,13 +455,7 @@ function ParentPicker({
     return out
   }, [children, options, folded])
 
-  const toggleFold = (id: string) =>
-    setFolded((f) => {
-      const n = new Set(f)
-      if (n.has(id)) n.delete(id)
-      else n.add(id)
-      return n
-    })
+  const toggleFold = (id: string) => setFolded((f) => toggleIn(f, id))
 
   const pick = (id: string | null) => {
     onChange(id)

@@ -85,6 +85,8 @@ const en = {
   'common.tbd': 'TBD',
   'common.cancel': 'Cancel',
   'common.save': 'Save',
+
+  'common.create': 'Create',
   'common.delete': 'Delete',
   'common.edit': 'Edit',
   'common.view': 'View',
@@ -166,6 +168,16 @@ const en = {
   'gantt.view.year': 'Year',
   'gantt.backToToday': 'Back to Today',
   'gantt.newTask': 'New task',
+
+  // --- the new-thing dialog ---
+  // One entry point for the two things a board is made of. The toolbar's button
+  // opens it on the task — which is what that button has always meant — with the
+  // other one a tab away, so a board with no projects can be given one from the
+  // place the work is, instead of being sent to another page to do it.
+  'new.title': 'New',
+  'new.task': 'Task',
+  'new.project': 'Project',
+  'gantt.newTaskOrProject': 'New task / project',
   // Shown in place of the task dialog when the board has no project yet. A task
   // has to live in one, so the dialog's project picker would have nothing to
   // offer and a saved task would be a row nothing can place.
@@ -190,11 +202,13 @@ const en = {
   'gantt.pickDate': 'Click any date to open its day detail',
   'gantt.writeLogForDay': 'Write a log for this day',
   'gantt.moveToTopLevel': 'Move to top level',
-  // "Organize" rather than "Manage tasks": `nav.manage` is already "Manage", and
-  // two entries a word apart in the same language would read as the same place.
-  'gantt.manageTasks': 'Organize',
+  // The idle label of the mode toggle. It used to say "Organize", and it was
+  // changed because the mode now holds the project-level move as well — a button
+  // naming one of the two jobs in it would be a button that lies about the
+  // other. The little "Editing" badge that stood beside it is gone with the old
+  // label: the button itself now says the mode, and says it twice when pressed.
   'gantt.editDone': 'Done',
-  'gantt.editMode': 'Editing',
+  'gantt.editMode': 'Edit mode',
   'gantt.selected': { one: '{count} selected', other: '{count} selected' },
   'gantt.clearSelection': 'Clear selection',
   'gantt.setTodoMany': {
@@ -251,6 +265,41 @@ const en = {
   // The seconds left on the offer, beside the button. Two digits always (`{seconds}`
   // arrives padded), so the strip does not twitch as it counts down.
   'gantt.undoSeconds': '({seconds})',
+
+  // --- history ---
+  // The undo tree. Its labels are whole sentences in the same shape as the
+  // `gantt.undo*` ones above, because they are the same sentences: a step
+  // records the line the 10-second strip would have shown, and the tree simply
+  // keeps it.
+  'history.title': 'History',
+  'history.now': 'Opened the app',
+  'history.empty': 'Nothing has changed the board yet.',
+  'history.count': { one: '{count} item', other: '{count} items' },
+  // Assembled from the delta for a step nobody announced. It cannot be missing —
+  // the record is taken from the board itself — so this is what a forgotten
+  // label looks like: true, and plain.
+  'history.autoAdd': 'Added {count}',
+  'history.autoRemove': 'Removed {count}',
+  'history.autoChange': 'Changed {count}',
+  // The three lines a folded node opens into, plus the one that says the list
+  // was cut short.
+  'history.added': 'Added',
+  'history.removed': 'Removed',
+  'history.changed': 'Changed',
+  'history.projectAdded': 'Projects added',
+  'history.projectRemoved': 'Projects removed',
+  'history.projectChanged': 'Projects changed',
+  'history.more': '… and {count} more',
+  'history.newTask': 'Added {what}',
+  'history.editTask': 'Edited {what}',
+  'history.newProject': 'Added project {what}',
+  'history.editProject': 'Edited project {what}',
+  'history.deleteProject': 'Deleted project {what}',
+  'history.move': 'Moved {what}',
+  'history.moveNewProject': 'Moved {what} into a new project',
+  'history.promoteTask': 'Made {what} a project',
+  'history.outdent': 'Moved {what} to top level',
+  'history.folderRename': 'Renamed a to-do folder',
 
   // --- to-dos ---
   'todo.folderName': 'To-dos',
@@ -475,6 +524,8 @@ const en = {
   'habit.endDate': 'Ends',
   'habit.noEndDate': 'Leave empty to keep going.',
   'habit.paused': 'Suspended',
+  'habit.parent': 'Parent',
+  'habit.topLevel': '— Top level —',
 
   // --- manage ---
   'manage.overall': 'Overall',
@@ -483,8 +534,6 @@ const en = {
   'manage.parentTasks': { one: '{count} parent task', other: '{count} parent tasks' },
   'manage.upcoming': 'Upcoming (7 days)',
   'manage.overdue': 'Overdue',
-  'manage.newProject': 'New project',
-  'manage.projectNamePrompt': 'Project name',
   'manage.deleteProject': 'Delete project "{name}" and all its tasks?',
   'manage.openInGantt': 'Open in Gantt →',
   'manage.comingSoon': 'Coming soon',
@@ -513,6 +562,34 @@ const en = {
   'project.color': 'Color',
   'project.done': 'Done',
   'project.open': 'Open',
+
+  // --- merging projects ---
+  // The dialog the edit mode opens, and the move it performs. The two ends of
+  // that move are named for what the reader is doing to them rather than for
+  // their role in the code: what is on screen is a list of projects to merge
+  // away, and one to merge them into.
+  //
+  // There is deliberately no sentence here assembling a description of the
+  // merge, and no line stating its consequences. The dialog shows the result
+  // instead — the target's own tree as it will be, drawn from the same function
+  // the button calls — and a picture of the outcome says both things at once
+  // without a word of either.
+  'project.manage': 'Hierarchy',
+  'project.moveMode': 'Project move mode (if any)',
+  'project.moveModeFolder': 'A parent task',
+  'project.moveModeFlat': 'At the top level',
+
+  // --- the move dialog ---
+  // `move.sources` and `move.target` label the two trees, and they are the two
+  // halves of one sentence: "move this into that". Written as the words the
+  // sentence needs rather than as "sources"/"targets", because the sentence is
+  // what the dialog is.
+  'move.sources': 'Move',
+  'move.target': 'Into',
+  'move.newProject': 'New project',
+  'move.newProjectOr': 'or',
+  'move.newProjectName': 'New project',
+  'move.confirm': 'Move',
 
   // --- settings ---
   'settings.language': 'Language',
@@ -602,7 +679,10 @@ const en = {
   'update.notes': 'Release notes',
   'update.history': 'Older releases this update brings along ({count})',
   'update.noNotes': 'This release came with no release notes.',
-  'update.downloadAndInstall': 'Download and install',
+  'update.downloadAndInstall': 'Update in background',
+  'update.readyTitle': 'Update downloaded',
+  'update.readyBody': 'Version {version} has been downloaded. Restart now?',
+  'update.now': 'Restart now',
   'update.installing': 'Downloading…',
   'update.installFailed': 'The update could not be installed: {message}',
   'update.later': 'Later',
@@ -666,6 +746,8 @@ const zh: Dict = {
   'common.tbd': '待定',
   'common.cancel': '取消',
   'common.save': '保存',
+
+  'common.create': '新建',
   'common.delete': '删除',
   'common.edit': '编辑',
   'common.view': '查看',
@@ -740,6 +822,11 @@ const zh: Dict = {
   'gantt.view.year': '年',
   'gantt.backToToday': '回到今天',
   'gantt.newTask': '新建任务',
+
+  'new.title': '新建',
+  'new.task': '任务',
+  'new.project': '项目',
+  'gantt.newTaskOrProject': '新建任务/项目',
   'gantt.noProject': '任务要放在项目里 —— 请先在左侧导航栏「{manage}」中新建一个项目。',
   'gantt.noProject.p1':
     'WBS-gantt 管理项目和任务的方式与电脑操作系统管理文件的方式（目录树）很像。在这里，项目（project）是最顶层的根目录，而每个项目下属的所有任务都可以视作一个文件 / 文件夹。显然文件得存放在根目录下，所以在新建任务前，需要为其指定一个项目。我十分推荐你这样理解你未来即将构建的任务网络，因为……软件就是这么设计的。',
@@ -759,7 +846,6 @@ const zh: Dict = {
   'gantt.pickDate': '点击任意日期查看当天详情',
   'gantt.writeLogForDay': '为这一天写日志',
   'gantt.moveToTopLevel': '移到顶层',
-  'gantt.manageTasks': '管理任务',
   'gantt.editDone': '完成',
   'gantt.editMode': '编辑模式',
   'gantt.selected': { one: '已选 {count} 项', other: '已选 {count} 项' },
@@ -807,6 +893,31 @@ const zh: Dict = {
   'gantt.undoUnarchive': '已取消归档 {what}',
   'gantt.undo': '撤销',
   'gantt.undoSeconds': '（{seconds}）',
+
+  'history.title': '操作历史',
+  'history.now': '本次打开',
+  'history.empty': '还没有改动过看板。',
+  'history.count': { one: '{count} 项', other: '{count} 项' },
+  'history.autoAdd': '新增 {count} 项',
+  'history.autoRemove': '删除 {count} 项',
+  'history.autoChange': '改动 {count} 项',
+  'history.added': '新增',
+  'history.removed': '删除',
+  'history.changed': '改动',
+  'history.projectAdded': '新增项目',
+  'history.projectRemoved': '删除项目',
+  'history.projectChanged': '项目改动',
+  'history.more': '…… 还有 {count} 项',
+  'history.newTask': '新建 {what}',
+  'history.editTask': '编辑 {what}',
+  'history.newProject': '新建项目 {what}',
+  'history.editProject': '编辑项目 {what}',
+  'history.deleteProject': '删除项目 {what}',
+  'history.move': '移动 {what}',
+  'history.moveNewProject': '把 {what} 放进新建的项目',
+  'history.promoteTask': '把 {what} 升为项目',
+  'history.outdent': '把 {what} 移到顶层',
+  'history.folderRename': '待办文件夹改名',
 
   'todo.folderName': '待办',
   'todo.folder': '待办（{count}）',
@@ -985,6 +1096,8 @@ const zh: Dict = {
   'habit.endDate': '结束日期',
   'habit.noEndDate': '选填。',
   'habit.paused': '停用',
+  'habit.parent': '上级日常安排',
+  'habit.topLevel': '最顶层日常安排',
 
   'manage.overall': '总览',
   'manage.heat': '完成热力图',
@@ -992,8 +1105,6 @@ const zh: Dict = {
   'manage.parentTasks': { one: '{count} 项父任务', other: '{count} 项父任务' },
   'manage.upcoming': '未来 7 天',
   'manage.overdue': '已逾期',
-  'manage.newProject': '新建项目',
-  'manage.projectNamePrompt': '项目名称',
   'manage.deleteProject': '确定删除项目“{name}”及其全部任务？',
   'manage.openInGantt': '在甘特图中打开 →',
   'manage.comingSoon': '即将开始',
@@ -1018,6 +1129,18 @@ const zh: Dict = {
   'project.color': '颜色',
   'project.done': '已完成',
   'project.open': '未完成',
+
+  'project.manage': '层级管理器',
+  'project.moveMode': '项目移动方式（如涉及）',
+  'project.moveModeFolder': '变成父任务',
+  'project.moveModeFlat': '直接铺平',
+
+  'move.sources': '将',
+  'move.target': '放到',
+  'move.newProject': '创建为新项目',
+  'move.newProjectOr': '或',
+  'move.newProjectName': '新项目',
+  'move.confirm': '移动',
 
   'settings.language': '语言',
   'settings.languageHint': '界面显示所用的语言。',
@@ -1103,7 +1226,10 @@ const zh: Dict = {
   'update.notes': '更新说明',
   'update.history': '本次将连带更新的历史版本内容（{count} 个版本）',
   'update.noNotes': '本次发布未填写更新说明。',
-  'update.downloadAndInstall': '下载并安装',
+  'update.downloadAndInstall': '后台更新',
+  'update.readyTitle': '更新已下载',
+  'update.readyBody': '新版本 {version} 已下载完成。立刻重启？',
+  'update.now': '立刻重启',
   'update.installing': '正在下载…',
   'update.installFailed': '更新安装失败：{message}',
   'update.later': '以后再说',
@@ -1163,6 +1289,8 @@ const fr: Dict = {
   'common.tbd': 'À définir',
   'common.cancel': 'Annuler',
   'common.save': 'Enregistrer',
+
+  'common.create': 'Créer',
   'common.delete': 'Supprimer',
   'common.edit': 'Modifier',
   'common.view': 'Voir',
@@ -1240,6 +1368,11 @@ const fr: Dict = {
   'gantt.view.year': 'Année',
   'gantt.backToToday': 'Revenir à aujourd’hui',
   'gantt.newTask': 'Nouvelle tâche',
+
+  'new.title': 'Nouveau',
+  'new.task': 'Tâche',
+  'new.project': 'Projet',
+  'gantt.newTaskOrProject': 'Nouvelle tâche / projet',
   'gantt.noProject': 'Une tâche doit vivre dans un projet — créez-en un d’abord, dans {manage}, sur la barre latérale de gauche.',
   'gantt.noProject.p1':
     'WBS-gantt gère les projets et les tâches à peu près comme un système d’exploitation gère ses fichiers : une arborescence. Un projet est le dossier racine, tout en haut, et chaque tâche qu’il contient est un fichier ou un dossier. Un fichier se range bien sous une racine : une tâche a donc besoin d’un projet avant de pouvoir être créée. Je vous conseille vraiment de lire ainsi le réseau de tâches que vous allez bâtir, parce que… c’est comme ça que le logiciel est conçu.',
@@ -1259,9 +1392,8 @@ const fr: Dict = {
   'gantt.pickDate': 'Cliquez sur une date pour ouvrir le détail du jour',
   'gantt.writeLogForDay': 'Écrire un journal pour ce jour',
   'gantt.moveToTopLevel': 'Déplacer au niveau supérieur',
-  'gantt.manageTasks': 'Organiser',
   'gantt.editDone': 'Terminé',
-  'gantt.editMode': 'Édition',
+  'gantt.editMode': 'Mode édition',
   'gantt.selected': { one: '{count} sélectionnée', other: '{count} sélectionnées' },
   'gantt.clearSelection': 'Tout désélectionner',
   'gantt.setTodoMany': {
@@ -1311,6 +1443,31 @@ const fr: Dict = {
   'gantt.undoUnarchive': '« {what} » désarchivé',
   'gantt.undo': 'Annuler',
   'gantt.undoSeconds': '({seconds})',
+
+  'history.title': 'Historique',
+  'history.now': 'Ouverture',
+  'history.empty': 'Rien n’a encore modifié le tableau.',
+  'history.count': { one: '{count} élément', other: '{count} éléments' },
+  'history.autoAdd': '{count} ajoutés',
+  'history.autoRemove': '{count} supprimés',
+  'history.autoChange': '{count} modifiés',
+  'history.added': 'Ajoutés',
+  'history.removed': 'Supprimés',
+  'history.changed': 'Modifiés',
+  'history.projectAdded': 'Projets ajoutés',
+  'history.projectRemoved': 'Projets supprimés',
+  'history.projectChanged': 'Projets modifiés',
+  'history.more': '… et {count} de plus',
+  'history.newTask': '{what} ajoutée',
+  'history.editTask': '{what} modifiée',
+  'history.newProject': 'Projet {what} ajouté',
+  'history.editProject': 'Projet {what} modifié',
+  'history.deleteProject': 'Projet {what} supprimé',
+  'history.move': '{what} déplacé',
+  'history.moveNewProject': '{what} déplacé dans un nouveau projet',
+  'history.promoteTask': '{what} promu en projet',
+  'history.outdent': '{what} déplacée au niveau supérieur',
+  'history.folderRename': 'Dossier de tâches à faire renommé',
 
   'todo.folderName': 'À faire',
   'todo.folder': 'À faire ({count})',
@@ -1497,6 +1654,8 @@ const fr: Dict = {
   'habit.endDate': 'Fin',
   'habit.noEndDate': 'Vide pour continuer sans fin.',
   'habit.paused': 'Suspendu',
+  'habit.parent': 'Parent',
+  'habit.topLevel': '— Niveau supérieur —',
 
   'manage.overall': 'Vue d’ensemble',
   'manage.heat': 'Carte de complétion',
@@ -1504,8 +1663,6 @@ const fr: Dict = {
   'manage.parentTasks': { one: '{count} tâche parente', other: '{count} tâches parentes' },
   'manage.upcoming': 'À venir (7 jours)',
   'manage.overdue': 'En retard',
-  'manage.newProject': 'Nouveau projet',
-  'manage.projectNamePrompt': 'Nom du projet',
   'manage.deleteProject': 'Supprimer le projet « {name} » et toutes ses tâches ?',
   'manage.openInGantt': 'Ouvrir dans le Gantt →',
   'manage.comingSoon': 'Bientôt',
@@ -1530,6 +1687,18 @@ const fr: Dict = {
   'project.color': 'Couleur',
   'project.done': 'Terminées',
   'project.open': 'Non terminées',
+
+  'project.manage': 'Hiérarchie',
+  'project.moveMode': 'Mode de déplacement (le cas échéant)',
+  'project.moveModeFolder': 'Un dossier',
+  'project.moveModeFlat': 'À la racine',
+
+  'move.sources': 'Déplacer',
+  'move.target': 'Vers',
+  'move.newProject': 'Nouveau projet',
+  'move.newProjectOr': 'ou',
+  'move.newProjectName': 'Nouveau projet',
+  'move.confirm': 'Déplacer',
 
   'settings.language': 'Langue',
   'settings.languageHint': 'La langue de l’interface.',
@@ -1620,7 +1789,10 @@ const fr: Dict = {
   'update.notes': 'Nouveautés',
   'update.history': 'Versions plus anciennes incluses ({count})',
   'update.noNotes': 'Cette version n’est accompagnée d’aucune note.',
-  'update.downloadAndInstall': 'Télécharger et installer',
+  'update.downloadAndInstall': 'Mettre à jour en arrière-plan',
+  'update.readyTitle': 'Mise à jour téléchargée',
+  'update.readyBody': 'La version {version} a été téléchargée. Redémarrer maintenant ?',
+  'update.now': 'Redémarrer',
   'update.installing': 'Téléchargement…',
   'update.installFailed': 'L’installation a échoué : {message}',
   'update.later': 'Plus tard',

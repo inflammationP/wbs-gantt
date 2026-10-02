@@ -28,7 +28,7 @@ const server = await createServer({
   // buries the one line this prints.
   optimizeDeps: { entries: [] },
 })
-const { buildRows, todoGroupId, todoGroupIds } = await server.ssrLoadModule('/src/lib/tree.ts')
+const { buildRows, projectsInView, todoGroupId, todoGroupIds } = await server.ssrLoadModule('/src/lib/tree.ts')
 
 const task = (over) => ({
   id: 'a', name: 'a', description: '', parentId: null, projectId: 'p',
@@ -197,9 +197,26 @@ assert.deepEqual(shape({ 'project:p': false }, twoProjects, [P, p2]), [
   ['task', 'n', 0, null],
 ])
 
-// A project with nothing visible gets no line at all: a header over no rows is a
-// row spent saying "empty".
+// A project with nothing under it still gets its line — and `buildRows` draws
+// one per project it is *handed*, so this asserts both halves of that: what it
+// does with an empty project, and that narrowing is the caller's job.
+//
+// It used to be skipped, on the grounds that a header over no rows is a row
+// spent saying "empty". What that missed is that the line is not only a header:
+// it is where a task is dropped into the project, and the only row that says the
+// project exists at all.
 assert.deepEqual(shape({}, [T('a', 'p')], [P, p2]), [
+  ['project', 'project:p', 0, null],
+  ['task', 'a', 0, null],
+  ['project', 'project:q', 0, null],
+])
+
+// Which is why the narrow has to cover the projects too, not just the tasks.
+// Handing every project through under a filter draws a line for every project on
+// the board, which is a filter that does not filter.
+assert.deepEqual(projectsInView([P, p2], 'all').map((x) => x.id), ['p', 'q'])
+assert.deepEqual(projectsInView([P, p2], 'q').map((x) => x.id), ['q'])
+assert.deepEqual(shape({}, [T('a', 'p')], projectsInView([P, p2], 'p')), [
   ['project', 'project:p', 0, null],
   ['task', 'a', 0, null],
 ])

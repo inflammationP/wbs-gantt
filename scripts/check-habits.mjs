@@ -56,7 +56,8 @@ const server = await createServer({
   logLevel: 'error',
   optimizeDeps: { entries: [] },
 })
-const { habitsOn, runsOn, tickedOn, pausePatch, ALL_DAYS } = await server.ssrLoadModule('/src/lib/habits.ts')
+const { habitsOn, habitBranch, routineRows, runsOn, tickedOn, pausePatch, ALL_DAYS } =
+  await server.ssrLoadModule('/src/lib/habits.ts')
 const { weekdayIndex } = await server.ssrLoadModule('/src/lib/dates.ts')
 const { useStore } = await server.ssrLoadModule('/src/store/useStore.ts')
 
@@ -234,6 +235,186 @@ for (const id of ['mwf', 'ends', 'off', 'later']) {
 // again, so it ticks like any other.
 useStore.getState().toggleHabit('away')
 assert.deepEqual(doneDaysOf('away'), [TODAY])
+
+// --- the routine tree ---------------------------------------------------------
+//
+// `routineRows` is what every list of routines is drawn from now — the two Today
+// columns, the day panel, the Manage page's roster and the reminder digest — and
+// three of its rules fail silently. A heading counted as a leaf puts a group and
+// its children into the same fraction; a heading left lit over unticked children
+// is the one contradiction the roll-up exists to prevent; and a routine that
+// cannot hang anywhere would just be absent from the board, which is the only
+// failure here that loses something rather than misdrawing it.
+
+const rowOf = (habits, id, folded = new Set()) =>
+  routineRows(habits, TODAY, folded).find((r) => r.habit.id === id)
+/** Each row as [id, depth, is-a-heading, done, open] — the days are checked apart. */
+const shape = (habits, day = TODAY, folded = new Set()) =>
+  routineRows(habits, day, folded).map((r) => [r.habit.id, r.depth, r.hasKids, r.done, r.open])
+/** Each row as [id, its days of the week]. */
+const days = (habits, day = null) => routineRows(habits, day).map((r) => [r.habit.id, r.weekdays])
+
+const tickedFixture = (h) => ({ ...h, doneDays: [TODAY] })
+
+// A flat board is what there was before trees, and it has to still be exactly
+// that: same rows, same order, nothing nested, nothing a heading.
+assert.deepEqual(
+  shape(ALL),
+  habitsOn(ALL, TODAY).map((h) => [h.id, 0, false, false, true]),
+  'a board with no parent links must read exactly as it did before there were any',
+)
+
+// A Sunday of a Monday-only routine: `mwf` is off, and nothing else moves.
+assert.deepEqual(routineRows(ALL, TODAY).map((r) => r.habit.id), ids(TODAY))
+
+// `group` runs on Mondays and its children every day. On a Tuesday it is still
+// drawn, because its children are — a heading's own days are not read, and a
+// heading with nothing under it that day is not a row at all.
+const GROUP = [
+  habit('group', { weekdays: [0] }),
+  habit('run', { parentId: 'group' }),
+  habit('stretch', { parentId: 'group' }),
+]
+assert.deepEqual(shape(GROUP), [
+  ['group', 0, true, false, true],
+  ['run', 1, false, false, true],
+  ['stretch', 1, false, false, true],
+])
+
+// Done when all of them are, and only then — the whole point of the roll-up.
+assert.equal(rowOf([GROUP[0], tickedFixture(GROUP[1]), GROUP[2]], 'group').done, false)
+assert.equal(rowOf(GROUP.map((h) => (h.id === 'group' ? h : tickedFixture(h))), 'group').done, true)
+
+// The heading's own tick is not read in either direction: one dated from before
+// it had children must not light it up, and `toggleHabit` cannot write one now.
+assert.equal(rowOf([tickedFixture(GROUP[0]), GROUP[1], GROUP[2]], 'group').done, false)
+
+// Folding takes the rows away, not the answer: the count on a folded heading is
+// every child it has, which is what keeps `2/3` from changing as it is opened.
+const allTick = GROUP.map((h) => (h.id === 'group' ? h : tickedFixture(h)))
+assert.deepEqual(shape(allTick, TODAY, new Set(['group'])), [['group', 0, true, true, false]])
+assert.equal(rowOf(GROUP, 'group', new Set(['group'])).open, false)
+
+// --- the days a heading is on -------------------------------------------------
+//
+// A heading holds no days of its own, so the field reports the union of what is
+// under it — the same bargain as its tick, and the only thing that keeps a
+// heading's schedule from being a value nothing reads. The leaf rows below it
+// report their own, unchanged, so the two forms of the field have to come out of
+// the same walk without one overwriting the other.
+
+const MWF = [0, 2, 4]
+const spread = [
+  habit('group', { weekdays: [5, 6] }), // its own days are the one thing not read
+  habit('mon', { parentId: 'group', weekdays: [0] }),
+  habit('wed', { parentId: 'group', weekdays: [2, 4] }),
+]
+assert.deepEqual(days(spread), [
+  ['group', MWF],
+  ['mon', [0]],
+  ['wed', [2, 4]],
+])
+// Three levels: the union is over the leaves, not over whatever each level
+// happens to have been given.
+const nested = [
+  habit('top', { weekdays: [3] }),
+  habit('mid', { parentId: 'top', weekdays: [1] }),
+  habit('leaf', { parentId: 'mid', weekdays: [6] }),
+]
+assert.deepEqual(days(nested), [
+  ['top', [6]],
+  ['mid', [6]],
+  ['leaf', [6]],
+])
+// All seven under a heading reads as "every day", which is what the roster and
+// the editor both print it as.
+assert.deepEqual(rowOf(GROUP, 'group').weekdays, ALL_DAYS)
+// The union is a fresh array: a caller that sorted one in place would otherwise
+// be rearranging the board's own list.
+const own = routineRows(spread, null).find((r) => r.habit.id === 'wed').weekdays
+own.reverse()
+assert.deepEqual(spread[2].weekdays, [2, 4])
+
+// A heading whose only child is off today has nothing to head, so it is not a
+// row — otherwise the day would carry a line with no box and no children.
+assert.deepEqual(shape([GROUP[0], habit('mondays', { parentId: 'group', weekdays: [0] })]), [])
+
+// Grandchildren, and a sibling that arrives after its parent: the tree is drawn
+// in `byStart` order within each level, whichever order the collection is in.
+const DEEP = [habit('top'), habit('mid', { parentId: 'top' }), habit('deep', { parentId: 'mid' }), habit('other')]
+assert.deepEqual(shape(DEEP), [
+  ['top', 0, true, false, true],
+  ['mid', 1, true, false, true],
+  ['deep', 2, false, false, true],
+  ['other', 0, false, false, true],
+])
+assert.deepEqual(routineRows(DEEP, TODAY, new Set(['top'])).map((r) => r.habit.id), ['top', 'other'])
+
+// A parent that is not on the list, or a cycle somebody hand-edited in, leaves
+// the child with nowhere to hang — and it stands at the top rather than
+// vanishing. This is the one rule here that can lose data instead of misdrawing
+// it, so it is asserted in both shapes.
+assert.deepEqual(shape([habit('lost', { parentId: 'nobody' })]), [['lost', 0, false, false, true]])
+const cyclic = [habit('a', { parentId: 'b' }), habit('b', { parentId: 'a' })]
+assert.deepEqual(shape(cyclic), [
+  ['a', 0, false, false, true],
+  ['b', 0, false, false, true],
+])
+
+// The roster's question: `day` is null, so everything is there and nothing is
+// done — a paused routine included, which is the whole reason the Manage page
+// asks its own question rather than the day's.
+// Listed with the suspended routine first, and drawn with it last: the roster is
+// in `byStart` order — the order the rows have always been in — and the array
+// order decides nothing. A day filter would have dropped `paused` altogether,
+// which is the whole reason the roster asks its own question.
+const roster = [habit('paused', { paused: true, pauseDate: TODAY }), ...GROUP]
+assert.deepEqual(shape(roster, null), [
+  ['group', 0, true, false, true],
+  ['run', 1, false, false, true],
+  ['stretch', 1, false, false, true],
+  ['paused', 0, false, false, true],
+])
+assert.equal(rowOf(allTick, 'group', new Set()).done, true, 'a day, the same board')
+assert.equal(routineRows(allTick, null).find((r) => r.habit.id === 'group').done, false, 'the roster, not a day')
+
+// The digest's slice: the day's routines that are neither headings nor done.
+assert.deepEqual(
+  routineRows([GROUP[0], tickedFixture(GROUP[1]), GROUP[2]], TODAY)
+    .filter((r) => !r.hasKids && !r.done)
+    .map((r) => r.habit.title),
+  ['stretch'],
+)
+
+// Sorting a copy, not the board: the store's array is shared with everything
+// else reading it, and `byStart` is the order the rows are drawn in.
+const before = GROUP.map((h) => h.id)
+routineRows(GROUP, TODAY)
+assert.deepEqual(GROUP.map((h) => h.id), before)
+
+// A heading is refused a tick of its own — for a different reason from `mwf`
+// above: it runs every day, so `runsOn` would let this one through, and what it
+// would leave behind is a day nothing reads, because `routineRows` takes a
+// heading's done from its children. The refusal is what keeps `doneDays` empty
+// on a heading by construction rather than by nobody ever asking.
+useStore.setState({ today: TODAY, habits: GROUP })
+useStore.getState().toggleHabit('group')
+assert.deepEqual(doneDaysOf('group'), [], 'a heading has no tick of its own to write')
+useStore.getState().toggleHabit('run')
+assert.deepEqual(doneDaysOf('run'), [TODAY], 'and its children tick as they always did')
+
+// --- the branch, and what deleting a heading takes --------------------------
+assert.deepEqual([...habitBranch(DEEP, 'top')].sort(), ['deep', 'mid', 'top'])
+assert.deepEqual([...habitBranch(DEEP, 'mid')].sort(), ['deep', 'mid'])
+assert.deepEqual([...habitBranch(DEEP, 'other')], ['other'])
+assert.deepEqual([...habitBranch(cyclic, 'a')].sort(), ['a', 'b'], 'a cycle still terminates')
+
+useStore.setState({ habits: GROUP })
+useStore.getState().deleteHabit('group')
+assert.deepEqual(useStore.getState().habits, [], 'deleting a heading takes its children with it')
+useStore.setState({ habits: DEEP })
+useStore.getState().deleteHabit('mid')
+assert.deepEqual(useStore.getState().habits.map((h) => h.id), ['top', 'other'], 'and only its own branch')
 
 await server.close()
 console.log('habits: ok')

@@ -206,6 +206,398 @@ export function placeTasks(
 }
 
 /**
+ * What a set of ticks means: the projects that move as projects, and the tasks
+ * that move as tasks.
+ *
+ * The tree hands in every id a box was ticked on, and the boxes follow the three
+ * rules a checkbox tree follows — ticking a node ticks its subtree, unticking one
+ * drops its ancestors, and what actually moves is the tick set's **maximal
+ * elements**. Both of the other rules exist to make this one true: an ancestor
+ * that is ticked covers everything under it, so its descendants are cargo rather
+ * than a second thing to place, and a node whose ancestor was unticked is
+ * standing on its own.
+ *
+ * A ticked project is a unit in its own right — it is not "all of its tasks".
+ * Ticking one moves the project *as a project*, which is the thing that makes a
+ * folder named after it in the target; ticking its tasks individually moves the
+ * same rows without the project's name coming along. Both are wanted, and the
+ * difference is exactly which row carries the tick.
+ *
+ * A project with nothing in it is not a unit: there is nothing to move and the
+ * only result is that the project is gone, which is a thing to do from the
+ * projects list rather than here. (It is still a perfectly good *destination*.)
+ *
+ * A tick on a filed-away row is ignored. Archived work is off the board, and
+ * moving it is an operation with no visible result — the same rule `placeTasks`
+ * already applies to rows dropped into the drawer.
+ *
+ * Pure, and in `lib/` rather than in the component because it is the one rule
+ * here that can be got subtly wrong, and a rule inside a component is one no
+ * check can reach.
+ */
+export function movingUnits(
+  tasks: Task[],
+  projects: Project[],
+  ticked: ReadonlySet<string>,
+): { projects: string[]; tasks: string[] } {
+  const byId = new Map(tasks.map((t) => [t.id, t]))
+  const outProjects: string[] = []
+  const carried = new Set<string>()
+
+  for (const p of projects) {
+    if (!ticked.has(p.id)) continue
+    let any = false
+    for (const t of tasks) {
+      if (t.projectId !== p.id) continue
+      any = true
+      carried.add(t.id)
+    }
+    if (any) outProjects.push(p.id)
+  }
+
+  const outTasks: string[] = []
+  for (const t of tasks) {
+    if (!ticked.has(t.id) || carried.has(t.id) || isArchived(t)) continue
+    // An ancestor that is itself ticked already covers this row. `seen` is not
+    // decoration: a hand-edited file can hold a cycle, and without it this walk
+    // would not return.
+    const seen = new Set([t.id])
+    let above = t.parentId
+    let covered = false
+    while (above != null && !seen.has(above)) {
+      seen.add(above)
+      if (ticked.has(above)) {
+        covered = true
+        break
+      }
+      above = byId.get(above)?.parentId ?? null
+    }
+    if (!covered) outTasks.push(t.id)
+  }
+
+  return { projects: outProjects, tasks: outTasks }
+}
+
+/**
+ * Everything a tick on this row covers.
+ *
+ * A project's is every row it owns; a task's is itself and its descendants.
+ * Exported alongside `toggleTicked` because it is the same set read at a
+ * different moment — it is also what tells the target tree which rows cannot be
+ * moved into the thing being moved.
+ */
+export function tickedSubtree(tasks: Task[], projects: Project[], id: string): string[] {
+  if (projects.some((p) => p.id === id)) return tasks.filter((t) => t.projectId === id).map((t) => t.id)
+  return [id, ...collectDescendants(tasks, id)]
+}
+
+/**
+ * A tick set with one row's box just changed.
+ *
+ * The two rules that are not "what moves" — the third is `movingUnits`, and these
+ * two are what make it true:
+ *
+ *   - **Ticking a row ticks its whole subtree.** Ticking a project is therefore
+ *     ticking everything in it, which is what a tick on a project line has to
+ *     mean.
+ *   - **Unticking a row drops its ancestors, and takes its subtree with it.** The
+ *     ancestors go because a ticked ancestor covers everything under it and this
+ *     row is no longer covered — leaving the ancestor ticked would move the row
+ *     the person just said not to move. The subtree goes for the mirror reason:
+ *     leaving the children ticked under an unticked parent draws a row that reads
+ *     as off with ticked rows hanging under it, and those rows *would* move.
+ *
+ *   Together they are what makes "untick one leaf under a ticked project" mean
+ *   "everything except that" — and what makes a row and its own descendant ticked
+ *   at once unreachable, which is why nothing downstream has to explain which of
+ *   them wins.
+ *
+ * Pure, and here rather than in the component for the reason every other rule in
+ * this file is: a rule inside a component is one no check can reach.
+ */
+export function toggleTicked(
+  tasks: Task[],
+  projects: Project[],
+  ticked: ReadonlySet<string>,
+  id: string,
+  on: boolean,
+): Set<string> {
+  const next = new Set(ticked)
+  for (const x of tickedSubtree(tasks, projects, id)) {
+    if (on) next.add(x)
+    else next.delete(x)
+  }
+  if (on) {
+    next.add(id)
+    return next
+  }
+  next.delete(id)
+  const byId = new Map(tasks.map((t) => [t.id, t]))
+  // `seen` because a hand-edited file can hold a cycle, and a walk that did not
+  // remember where it had been would not return.
+  const seen = new Set([id])
+  let above = byId.get(id)?.parentId ?? null
+  while (above != null && !seen.has(above)) {
+    seen.add(above)
+    next.delete(above)
+    above = byId.get(above)?.parentId ?? null
+  }
+  // The project line above it all, which is ticked exactly when everything under
+  // it is.
+  next.delete(byId.get(id)?.projectId ?? id)
+  return next
+}
+
+/**
+ * A task becomes a project of its own.
+ *
+ * **The mirror image of moving a project into another one.** There, a root
+ * directory stops being a root and becomes a task; here a task stops being a task
+ * and becomes a root directory. Both are one operation on the same model, and
+ * neither needs a field the model did not have.
+ *
+ * What was under it does not move sideways — it comes **up**, and the amount is
+ * not one level but one for the task that is no longer above it plus one for
+ * every level that task was itself buried under. A task sitting at depth n hands
+ * its children the top of the board: their parent is gone and so is everything
+ * that used to be above it. The subtree's own shape is untouched — a grandchild
+ * is still under its parent, it has just travelled up with it.
+ *
+ * Everything under it changes project, because it now belongs to the new one;
+ * the project it came out of keeps everything else and is not otherwise touched.
+ *
+ * Pure, and in `lib/` for the same reason as the rest of this file: what it moves
+ * is a whole subtree, and getting the relabelling half right is the kind of thing
+ * that looks fine until a project filter is turned on.
+ *
+ * Returns null for a row that cannot be promoted — one that is not there, or is
+ * filed away. A to-do is allowed: it is a task like any other here, and the
+ * project it becomes is a container rather than a claim about the work.
+ */
+export function promoteTask(
+  tasks: Task[],
+  projects: Project[],
+  taskId: string,
+  fresh: { id: string; color: string },
+): { tasks: Task[]; projects: Project[] } | null {
+  const task = tasks.find((t) => t.id === taskId)
+  if (!task || isArchived(task)) return null
+  const under = new Set(collectDescendants(tasks, taskId))
+
+  return {
+    tasks: tasks
+      .filter((t) => t.id !== taskId)
+      .map((t) =>
+        under.has(t.id)
+          ? // Everything below comes up with it; only the rows that hung directly
+            // off it become the new project's top level, and the rest keep the
+            // parent they had, which is now one level higher up the board.
+            { ...t, parentId: t.parentId === taskId ? null : t.parentId, projectId: fresh.id }
+          : t,
+      ),
+    projects: [
+      ...projects,
+      { id: fresh.id, name: task.name, color: fresh.color, description: task.description },
+    ],
+  }
+}
+
+/**
+ * The board as it would be if these things were moved into that place.
+ *
+ * **A move, whichever end is what.** A project is a root directory and a task is
+ * a file or a folder; moving one into a project's top level, under another task,
+ * or into a brand-new project are the same operation with different destinations.
+ * So this takes a set of units and one target and returns two filtered arrays —
+ * no `MovedThing` for everything downstream to learn, and no field the model did
+ * not already have.
+ *
+ * `target` is a *place*, not an id: `{ parentId: null, projectId }` is a
+ * project's top level and `{ parentId: taskId, projectId }` is under that task.
+ * That pair is the whole of what `placeTasks` needs, so a target that is a task
+ * costs nothing new — which is the point, because "put it under that task" is
+ * where a picker beats dragging.
+ *
+ * `asFolder` is the whole of the difference between the two shapes a *project*
+ * can arrive in. With it, a source becomes one new task — a folder, named after
+ * the project, holding that project's former top level. Without it, those rows
+ * are poured straight into the target's own list and the source's name goes with
+ * the source. It decides nothing about a source that is a task: a task arrives
+ * as itself.
+ *
+ * Pure, and shared with the dialog's preview — the same reason `placeTasks` is
+ * shared with the drag's. What the picture shows before the button is pressed is
+ * produced by the function the button then calls, so the picture cannot promise
+ * a rearrangement the move will not make. That is why the new folder's id is a
+ * parameter rather than a call to `uid()` in here: the preview has no use for a
+ * real one, and a function that made its own would have to be called twice and
+ * disagree with itself.
+ *
+ * Returns null when the move is impossible or empty — no such target, a target
+ * that is a to-do or filed away, a destination inside something that is moving,
+ * or nothing that would actually move — and the caller does nothing.
+ */
+export function moveInto(
+  tasks: Task[],
+  projects: Project[],
+  units: { projects: string[]; tasks: string[] },
+  target: { parentId: string | null; projectId: string },
+  asFolder: boolean,
+  newId: (project: Project) => string,
+): { tasks: Task[]; projects: Project[] } | null {
+  if (!projects.some((p) => p.id === target.projectId)) return null
+  // Two of the three rules `placeTasks` applies to a destination, and for the
+  // same reasons: a to-do is a holding pen rather than a container, and a
+  // filed-away row is not on the board to be dropped into.
+  if (target.parentId !== null) {
+    const at = tasks.find((t) => t.id === target.parentId)
+    if (!at || at.isTodo || isArchived(at)) return null
+  }
+
+  // A project asked to move into itself is not a second thing to carry, and ids
+  // that name no project are a caller's mistake rather than a unit.
+  const gone = new Set(
+    units.projects.filter((id) => id !== target.projectId && projects.some((p) => p.id === id)),
+  )
+  const sources = projects.filter((p) => gone.has(p.id))
+
+  // Read off each source's top level *before* any project id is rewritten below.
+  // Afterwards nothing in the data says which rows were its roots — they are all
+  // just rows of the target — so this has to come first or every later step is
+  // guessing. Filed-away branches are deliberately not in here: see the remap.
+  const rootsBySource = new Map<string, string[]>()
+  for (const p of sources) {
+    rootsBySource.set(
+      p.id,
+      tasks.filter((t) => t.projectId === p.id && t.parentId === null && !isArchived(t)).map((t) => t.id),
+    )
+  }
+
+  // Everything that will end up somewhere else, so a destination inside it can
+  // be refused. A move into your own subtree is a cycle, and unlike the two
+  // cases above `placeTasks` cannot see this one: the folder it would place is
+  // brand new, so nothing about the folder looks like a descendant.
+  const moving = new Set<string>()
+  for (const id of units.tasks) {
+    moving.add(id)
+    for (const d of collectDescendants(tasks, id)) moving.add(d)
+  }
+  for (const p of sources) for (const t of tasks) if (t.projectId === p.id) moving.add(t.id)
+  if (target.parentId !== null && moving.has(target.parentId)) return null
+
+  const byId = new Map(tasks.map((t) => [t.id, t]))
+  const carried = new Set<string>()
+  for (const p of sources) for (const t of tasks) if (t.projectId === p.id) carried.add(t.id)
+
+  // The rows are placed first and relabelled last, and the order is load
+  // bearing: `placeTasks` builds its destination list out of the rows that
+  // already name the target, so a source whose `projectId` had been rewritten
+  // first would be counted among the target's own rows — inflating the
+  // renumbering, and interleaving the source's rows into it by the old
+  // comparator before they were ever put in their new place.
+  let next = tasks
+  const now = new Date().toISOString()
+  const placed: string[] = []
+  const folders: { id: string; roots: string[] }[] = []
+
+  for (const p of sources) {
+    const roots = rootsBySource.get(p.id) ?? []
+    // A project with nothing live on it gets no folder: a folder standing over
+    // no rows is a row spent saying "empty", and it would be one you would have
+    // to open to find that out. (A project's own line is a different case and
+    // does draw when empty — see `visitRoots` — because there it is the only row
+    // that says the project exists, and here the source project is about to stop
+    // existing whatever the folder does.) Its filed-away work still travels, on
+    // the remap below.
+    if (roots.length === 0) continue
+    if (!asFolder) {
+      // Pouring straight in is a placement like any other: the destination is a
+      // real sibling list with an order of its own.
+      placed.push(...roots)
+      continue
+    }
+    const folder: Task = {
+      id: newId(p),
+      name: p.name,
+      description: '',
+      parentId: null,
+      projectId: target.projectId,
+      type: 'phase',
+      isTodo: false,
+      // No window of its own: an ordinary phase parent, whose dates
+      // `syncParentDates` derives from its children on the next frame.
+      startDate: null,
+      endDate: null,
+      strictProgress: false,
+      confirmedDays: [],
+      paused: false,
+      pauseDate: null,
+      pauses: [],
+      priority: 'medium',
+      tags: [],
+      dependencies: [],
+      createdAt: now,
+      updatedAt: now,
+    }
+    next = [...next, folder]
+    folders.push({ id: folder.id, roots })
+    placed.push(folder.id)
+  }
+
+  for (const id of units.tasks) {
+    const t = byId.get(id)
+    // A task already carried by a moving project, or sitting inside another
+    // moving task, is cargo rather than a second thing to place. `movingUnits`
+    // has usually settled this; this is the same rule applied once more for a
+    // caller that handed both in.
+    if (!t || isArchived(t) || carried.has(id)) continue
+    let above = t.parentId
+    const seen = new Set([id])
+    let nested = false
+    while (above != null && !seen.has(above)) {
+      seen.add(above)
+      if (units.tasks.includes(above)) {
+        nested = true
+        break
+      }
+      above = byId.get(above)?.parentId ?? null
+    }
+    if (!nested) placed.push(id)
+  }
+
+  if (gone.size === 0 && placed.length === 0) return null
+
+  // One placement for the lot — the new folders and the tasks that came on their
+  // own — in the order they were listed. Everything arrives at the end of the
+  // destination's list: this decides *whose* a row is, not *where among its
+  // siblings*, which is the one thing only a drag can say.
+  if (placed.length > 0) {
+    next = placeTasks(next, placed, target.parentId, null, target.projectId) ?? next
+  }
+
+  // The rows arriving *inside* a new folder need no placement: that list is
+  // empty and nothing is displaced by them, so patching `parentId` is the whole
+  // move and it leaves the order they came in untouched. Routing them through
+  // `placeTasks` would renumber a list that never had a reason to change.
+  for (const { id, roots } of folders) {
+    const inside = new Set(roots)
+    next = next.map((t) => (inside.has(t.id) ? { ...t, parentId: id } : t))
+  }
+
+  // Everything the placements did not relabel, which is two kinds of row and
+  // both have to travel: a filed-away branch, which is deliberately not placed
+  // anywhere (it keeps its `parentId` and becomes an archived root of the
+  // target — the same place it was drawn from, the drawer, never under its
+  // parent, and it still comes back on restore), and a row whose `parentId`
+  // names something that is not there, which no walk from a root would ever
+  // have reached. The project is about to stop existing, and a task still
+  // pointing at it is a task no project line can reach.
+  next = next.map((t) => (gone.has(t.projectId) ? { ...t, projectId: target.projectId } : t))
+
+  return { tasks: next, projects: projects.filter((p) => !gone.has(p.id)) }
+}
+
+/**
  * The names above a task, nearest parent first — the chain a list prints before
  * a row to say which branch it came from.
  *
@@ -559,6 +951,15 @@ export interface RowProject {
   id: string // see `projectRowId` — doubles as the expand/collapse key
   project: Project
   depth: 0
+  /**
+   * Whether anything hangs under it.
+   *
+   * A project with nothing in it still gets its line — see `visitRoots` — but
+   * not a chevron. One that folds nothing is the same lie as a button that does
+   * nothing, and this is the row that shows exactly the case it would be lying
+   * about.
+   */
+  hasKids: boolean
 }
 
 /**
@@ -594,6 +995,41 @@ export interface RowArchiveGroup {
 export type Row = RowTask | RowTodoGroup | RowProject | RowArchiveGroup
 
 export const projectRowId = (projectId: string) => `project:${projectId}`
+
+/**
+ * How many rows merging this project would take with it.
+ *
+ * **Every** row it owns, archived included — the filed-away ones travel to the
+ * target's drawer rather than staying put, so a project with nothing live on it
+ * is still not a project with nothing to move. Only zero means the merge would
+ * change nothing you could see: the source project would be removed and that is
+ * the whole of it.
+ *
+ * That is the number the merge dialog needs, and it is why it is a function
+ * rather than a `filter(...).length` written in the dialog: the dialog greys a
+ * project on this being zero, and the day `mergeInto` grows a second thing to
+ * carry along, the greying has to grow with it. One definition, next to the
+ * thing it describes, and `check-project-merge.mjs` holds the two together.
+ */
+export const rowsOwnedBy = (tasks: Task[], projectId: string) =>
+  tasks.filter((t) => t.projectId === projectId).length
+
+/**
+ * The projects a view is showing, for the same filter that narrows the tasks.
+ *
+ * The two have to be narrowed together, and that only started to matter when
+ * empty projects began drawing lines. `buildRows` is handed the tasks that are
+ * in view and draws one line per project it is given — so before, passing every
+ * project was harmless, because a project with no visible tasks was skipped
+ * anyway. Now it would draw a line for every project on the board under any
+ * filter, which is a filter that does not filter.
+ *
+ * A helper rather than the same ternary in both callers: this is one rule about
+ * two arrays, and written twice it is a rule one of them eventually loses.
+ */
+export function projectsInView(projects: Project[], projectFilter: string): Project[] {
+  return projectFilter === 'all' ? projects : projects.filter((p) => p.id === projectFilter)
+}
 
 // There is one archive group, so its key is a constant rather than a function.
 export const archiveGroupId = 'archiveGroup'
@@ -758,19 +1194,33 @@ export function buildRows(tasks: Task[], expanded: Record<string, boolean>, proj
   /**
    * One project's roots, under that project's line.
    *
-   * A project with nothing on it gets no line: a header standing over no rows
-   * is a row spent saying "empty", and the projects list on the left is where
-   * an empty project is a thing you can see.
-   *
    * The tasks keep depth 0. The project's line is a band across the top of its
    * group rather than a step in the hierarchy — indenting everything under it
    * would have shrunk every name one size and pushed the whole tree right, to
    * say something the band already says.
+   *
+   * **A project gets its line whether or not anything is under it.** It used to
+   * be skipped when empty, on the grounds that a header standing over no rows is
+   * a row spent saying "empty". What that missed is that the line is not only a
+   * header: it is where a task is dropped into the project, the only row that
+   * says the project exists at all, and — now that a project can be made from
+   * the new button on this very page — the row a freshly made one would
+   * otherwise be invisible behind until something was put in it.
+   *
+   * The projectless group at the bottom is the exception and stays one: it is
+   * roots whose project is gone, so it has no name to print and nothing to be a
+   * place for.
    */
   const visitRoots = (project: Project | null, projectId: string, list: Task[]) => {
-    if (list.length === 0) return
+    if (!project && list.length === 0) return
     if (project) {
-      rows.push({ kind: 'project', id: projectRowId(project.id), project, depth: 0 })
+      rows.push({
+        kind: 'project',
+        id: projectRowId(project.id),
+        project,
+        depth: 0,
+        hasKids: list.length > 0,
+      })
       // Expanded by default, like tasks and unlike the to-do folders, so this
       // is an explicit `false` that folds it.
       if (expanded[projectRowId(project.id)] === false) return

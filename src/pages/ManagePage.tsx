@@ -1,14 +1,14 @@
 import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Pencil, Plus, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { Habit, Project, Task, TaskStatus } from '../types'
 import { addDays, toDate, toISO, todayISO } from '../lib/dates'
-import { PROJECT_COLORS, STATUS_META, STATUS_ORDER, priorityMeta, priorityWash, sig, sigText } from '../lib/ui'
+import { STATUS_META, STATUS_ORDER, priorityMeta, priorityWash, sig, sigText, toggleIn } from '../lib/ui'
 import { formatShortDate, weekdayLabels } from '../lib/i18n'
 import { useLang, useT } from '../lib/useT'
 import { archivedRoots, collectDescendants, compareSiblings, computeWbs, effectiveStates, isArchived, liveTasks } from '../lib/tree'
-import { ALL_DAYS } from '../lib/habits'
+import { ALL_DAYS, RoutineRow, routineRows } from '../lib/habits'
 import { useDialogs } from '../components/dialogs'
 import { HabitDialog } from '../components/HabitDialog'
 import { Stat } from '../components/ui'
@@ -29,7 +29,7 @@ const NEW = 'new'
 export function ManagePage() {
   const t = useT()
   const lang = useLang()
-  const { ask, askText, element: dialogs } = useDialogs()
+  const { ask, element: dialogs } = useDialogs()
   const tasks = useStore((s) => s.tasks)
   const projects = useStore((s) => s.projects)
   const logs = useStore((s) => s.logs)
@@ -40,7 +40,6 @@ export function ManagePage() {
   const unarchiveTasks = useStore((s) => s.unarchiveTasks)
   const setActiveView = useStore((s) => s.setActiveView)
   const setProjectFilter = useStore((s) => s.setProjectFilter)
-  const addProject = useStore((s) => s.addProject)
   const updateProject = useStore((s) => s.updateProject)
   const deleteProject = useStore((s) => s.deleteProject)
 
@@ -51,6 +50,10 @@ export function ManagePage() {
   // state rather than a boolean plus a nullable habit, so the dialog can never
   // be open in a state that means neither.
   const [habitEditing, setHabitEditing] = useState<Habit | typeof NEW | null>(null)
+  // Folded routines, as everywhere else that draws their tree: a branch nobody
+  // has touched is open, because the roster is a list of what there is.
+  const [foldedHabits, setFoldedHabits] = useState<Set<string>>(() => new Set())
+  const roster = useMemo(() => routineRows(habits, null, foldedHabits), [habits, foldedHabits])
 
   const today = todayISO()
   const weekISO = toISO(addDays(new Date(), 7))
@@ -203,33 +206,35 @@ export function ManagePage() {
           {/* The whole list, including suspended items — this is the one place
               they are still visible, which is the point of suspending rather
               than deleting. Everywhere else a suspended habit is simply absent,
-              because everywhere else is a day it does not run on. */}
+              because everywhere else is a day it does not run on.
+              `day` is null, which is the roster's question rather than a day's:
+              every routine, tree and all, and nothing counted as done. */}
           <div className="bg-panel border border-border rounded-[3px]">
-            {habits.length === 0 ? (
+            {roster.length === 0 ? (
               <div className="px-4 py-3 text-[12px] text-dim">{t('habit.none')}</div>
             ) : (
-              habits.map((h) => (
-                <HabitRow key={h.id} habit={h} onEdit={() => setHabitEditing(h)} />
+              roster.map((row) => (
+                <HabitRow
+                  key={row.habit.id}
+                  row={row}
+                  onEdit={() => setHabitEditing(row.habit)}
+                  onToggleFold={() => setFoldedHabits((f) => toggleIn(f, row.habit.id))}
+                />
               ))
             )}
           </div>
         </div>
 
         {/* ---- Projects ---- */}
+        {/* No button here that makes anything. Everything this page used to
+            create, it created by a thinner means than the board does — a project
+            by a bare name prompt, with no colour and nothing to say what it was
+            for until you had made it and gone back in to edit it. Creating a
+            project is the new button on the Gantt now, and the two forms behind
+            it are the same ones this page's edit buttons open. This page reads
+            the board; it does not add to it. */}
         <div>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-[14px] font-semibold text-fg">{t('sidebar.projects')}</h2>
-            <button
-              onClick={() =>
-                askText(t('manage.projectNamePrompt'), '', (name) =>
-                  addProject(name, PROJECT_COLORS[projects.length % PROJECT_COLORS.length]),
-                )
-              }
-              className="h-8 px-3 inline-flex items-center gap-1.5 text-[12px] font-medium bg-accent text-on-accent rounded-[3px] hover:brightness-110"
-            >
-              <Plus size={14} /> {t('manage.newProject')}
-            </button>
-          </div>
+          <h2 className="text-[14px] font-semibold text-fg mb-3">{t('sidebar.projects')}</h2>
           <div className="grid grid-cols-2 gap-3">
             {projects.map((p) => {
               const s = statsFor(p.id)
@@ -407,37 +412,61 @@ export function ManagePage() {
 }
 
 /**
- * One habit in the Manage page's list: what it is, when it runs, and a way in.
+ * One routine in the Manage page's list: what it is, when it runs, and a way in.
  *
  * No delete button of its own. Deleting lives in the editor, which the pencil
  * opens — one destructive path with one confirmation, rather than a second one
  * on the row that would have to be kept saying the same thing.
  *
- * The only place a suspended habit is ever listed. Everywhere else it is simply
- * absent, because everywhere else answers "what does this day hold" and a
- * suspended habit holds none of them.
+ * The only place a suspended routine is ever listed. Everywhere else it is
+ * simply absent, because everywhere else answers "what does this day hold" and
+ * a suspended routine holds none of them.
+ *
+ * A routine that holds others shows no end date and no suspension badge,
+ * because neither is read once it has children — printing them would be stating
+ * something the app does not act on. It does show days: `row.weekdays` is the
+ * union of everything under it, which is what a heading's days are, and it
+ * keeps the note, which is a remark about the routine rather than its schedule.
  */
-function HabitRow({ habit, onEdit }: { habit: Habit; onEdit: () => void }) {
+function HabitRow({ row, onEdit, onToggleFold }: { row: RoutineRow; onEdit: () => void; onToggleFold: () => void }) {
   const t = useT()
   const lang = useLang()
   const labels = weekdayLabels(lang)
-  const everyDay = habit.weekdays.length === ALL_DAYS.length
+  const { habit, depth, hasKids, open, weekdays } = row
+  const everyDay = weekdays.length === ALL_DAYS.length
 
   return (
-    <div className="flex items-start gap-3 px-4 py-2.5 border-b border-border last:border-b-0">
+    <div
+      className="flex items-start gap-3 pr-4 py-2.5 border-b border-border last:border-b-0"
+      style={{ paddingLeft: 16 + depth * 16 }}
+    >
+      {/* Holds the triangle's column on every row that has none, so a heading's
+          name and a plain routine's name stand at the same x. */}
+      {hasKids ? (
+        <button
+          onClick={onToggleFold}
+          aria-expanded={open}
+          aria-label={open ? t('common.collapse') : t('common.expand')}
+          className="shrink-0 mt-0.5 text-dim hover:text-fg"
+        >
+          {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        </button>
+      ) : (
+        <span className="shrink-0 w-[13px]" />
+      )}
       <div className="min-w-0 flex-1">
-        <div className={`text-[13px] ${habit.paused ? 'text-dim' : 'text-fg'}`}>{habit.title}</div>
+        <div className={`text-[13px] ${habit.paused && !hasKids ? 'text-dim' : 'text-fg'}`}>{habit.title}</div>
         <div className="flex items-center gap-2 mt-0.5 text-[11px] text-dim">
           <span className="shrink-0">
-            {everyDay ? t('habit.everyDay') : habit.weekdays.map((d) => labels[d]).join(' · ')}
+            {everyDay ? t('habit.everyDay') : weekdays.map((d) => labels[d]).join(' · ')}
           </span>
-          {habit.endDate && (
+          {!hasKids && habit.endDate && (
             <span className="shrink-0 font-mono">
               {t('habit.endDate')} {formatShortDate(lang, toDate(habit.endDate))}
             </span>
           )}
           {habit.note && <span className="min-w-0 truncate">{habit.note}</span>}
-          {habit.paused && (
+          {!hasKids && habit.paused && (
             <span className="shrink-0 px-1 h-4 inline-flex items-center text-[9px] font-medium rounded-[2px] bg-paused/15 text-paused border border-paused/30">
               {t('habit.paused')}
             </span>

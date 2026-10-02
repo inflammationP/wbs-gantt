@@ -130,6 +130,17 @@ export interface Habit {
   id: string
   title: string
   note: string // one line, may be empty
+  /**
+   * The routine this one hangs under, or null at the top.
+   *
+   * A routine that has children is a **heading, not a checkbox**: what it shows
+   * is its children's ticks, exactly as a phase task's progress is its
+   * subtasks'. So its own `weekdays`, `endDate`, `paused` and `doneDays` are not
+   * read once it has one — the same bargain `syncParentDates` strikes for a task
+   * parent's window. `routineRows` in `lib/habits.ts` is where that is written
+   * down, and the only place anything reads this field.
+   */
+  parentId: string | null
   startDate: string // yyyy-MM-dd, the day it was put on; never rewritten
   endDate: string | null // yyyy-MM-dd inclusive, null while it runs on
   /**

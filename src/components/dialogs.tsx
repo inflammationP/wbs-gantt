@@ -1,10 +1,10 @@
 import { useCallback, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Modal, inputCls } from './ui'
+import { Modal } from './ui'
 import { useT } from '../lib/useT'
 
 /**
- * `confirm` / `alert` / `prompt`, rebuilt inside the app.
+ * `confirm` and `alert`, rebuilt inside the app.
  *
  * The native dialogs are a dead end for a translated interface: their *message*
  * would follow the app's language, but their buttons are drawn by the operating
@@ -23,20 +23,16 @@ export interface Dialogs {
   ask: (message: string, onConfirm: () => void) => void
   /** Report something. Replaces `window.alert`. */
   notice: (message: string) => void
-  /** Ask for a string. Replaces `window.prompt`; not called if cancelled. */
-  askText: (label: string, initial: string, onSubmit: (value: string) => void) => void
   element: ReactNode
 }
 
 type Pending =
   | { kind: 'confirm'; message: string; onConfirm: () => void }
   | { kind: 'notice'; message: string }
-  | { kind: 'text'; label: string; initial: string; onSubmit: (value: string) => void }
 
 export function useDialogs(): Dialogs {
   const t = useT()
   const [pending, setPending] = useState<Pending | null>(null)
-  const [text, setText] = useState('')
 
   const ask = useCallback((message: string, onConfirm: () => void) => {
     setPending({ kind: 'confirm', message, onConfirm })
@@ -45,14 +41,6 @@ export function useDialogs(): Dialogs {
   const notice = useCallback((message: string) => {
     setPending({ kind: 'notice', message })
   }, [])
-
-  const askText = useCallback(
-    (label: string, initial: string, onSubmit: (value: string) => void) => {
-      setText(initial)
-      setPending({ kind: 'text', label, initial, onSubmit })
-    },
-    [],
-  )
 
   const close = () => setPending(null)
 
@@ -93,39 +81,7 @@ export function useDialogs(): Dialogs {
         </div>
       </Modal>
     )
-  } else if (pending?.kind === 'text') {
-    element = (
-      <Modal title={pending.label} onClose={close} width={420}>
-        <input
-          className={inputCls}
-          value={text}
-          autoFocus
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && text.trim()) {
-              pending.onSubmit(text.trim())
-              close()
-            }
-          }}
-        />
-        <div className="flex justify-end gap-2 pt-4">
-          <button onClick={close} className="h-8 px-3 text-[12px] text-muted hover:text-fg border border-border rounded-[3px]">
-            {t('common.cancel')}
-          </button>
-          <button
-            onClick={() => {
-              pending.onSubmit(text.trim())
-              close()
-            }}
-            disabled={!text.trim()}
-            className="h-8 px-4 text-[12px] font-medium bg-accent text-on-accent disabled:opacity-40 rounded-[3px]"
-          >
-            {t('common.save')}
-          </button>
-        </div>
-      </Modal>
-    )
   }
 
-  return { ask, notice, askText, element }
+  return { ask, notice, element }
 }

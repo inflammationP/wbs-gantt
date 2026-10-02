@@ -63,6 +63,7 @@ useStore.setState({
     current: '0.9.0',
     notes: asNotes('0.12.0'),
     date: null,
+    download: async () => {},
     install: async () => {},
     dismiss: async () => {},
   },

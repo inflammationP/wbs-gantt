@@ -252,7 +252,12 @@ clearUndo()
 const f1 = addTask({ name: 'one', projectId: 'p', startDate: '2026-09-01', endDate: '2026-09-02' })
 const f2 = addTask({ name: 'two', projectId: 'p', startDate: '2026-09-03', endDate: '2026-09-04' })
 const f3 = addTask({ name: 'three', projectId: 'p', startDate: '2026-09-05', endDate: '2026-09-06' })
-assert.equal(lastUndo(), null, 'a board nobody has dragged has nothing to undo')
+// The baseline is the arrangement, not the absence of an undo offer. Three
+// `addTask`s are three steps of the history now, so there is always an offer —
+// what matters here is that nothing has been given a place by hand, which is
+// what a drop into this list has to leave alone.
+assert.deepEqual(read(), [f1, f2, f3], 'a board nobody has dragged is in date order')
+assert.ok(read().every((t) => t.order === undefined), 'and no row carries a hand-set place')
 
 moveTasks([f3], null, f1, 'p')
 assert.deepEqual(read(), [f3, f1, f2])
@@ -276,25 +281,27 @@ assert.equal(lastUndo(), null, 'and it is one step, so the offer is spent')
 moveTasks([f1], f1, null, 'p')
 assert.equal(lastUndo(), null, 'a drop that changes nothing offers no undo')
 
-// Why a move's record is a few fields and not a snapshot of the board. A task
-// deleted in the meantime must stay deleted: an undo that resurrects one is
-// worse than the wrong drop it was there to fix. (A *delete's* own undo does
-// resurrect — that is the whole of what it is for — but it is a different step,
-// recorded differently, and it never rides along with a move.)
+// A step touches only what it did, and the top of the stack comes off first.
+// A delete's own undo does resurrect — that is the whole of what it is for —
+// and what must not happen is a *move's* undo resurrecting something the move
+// never touched, which is why a move records the fields it wrote and not a copy
+// of the board.
 moveTasks([f3], f2, null, 'p')
 assert.deepEqual(kids(f2), [f3], 'f3 is inside f2, so it is no longer one of the roots')
 deleteTask(f3)
 undoLast()
-assert.ok(!board().some((t) => t.id === f3), 'undo does not resurrect a task deleted since')
-assert.deepEqual(read(), [f1, f2], 'and the rows that are still there go back regardless')
+assert.ok(board().some((t) => t.id === f3), 'the delete is on top, so that is the step taken back')
+assert.deepEqual(kids(f2), [f3], 'and the move below it is untouched')
+undoLast()
+assert.equal(board().find((t) => t.id === f3).parentId, null, 'one more press takes the move back too')
 
-// Same for anything else done to a row in the meantime: the place comes back,
-// the edit does not.
+// The same the other way round: the edit is on top, so the edit is what comes
+// off, and the place the move gave the row stays.
 moveTasks([f1], f2, null, 'p')
 updateTask(f1, { name: 'renamed' })
 undoLast()
-assert.deepEqual(read(), [f1, f2])
-assert.equal(board().find((t) => t.id === f1).name, 'renamed', 'undo restores where a row sits, not what it says')
+assert.equal(board().find((t) => t.id === f1).name, 'one', 'the rename is the step on top')
+assert.equal(board().find((t) => t.id === f1).parentId, f2, 'and the move below it is untouched')
 
 clearUndo()
 assert.equal(lastUndo(), null)
@@ -392,16 +399,19 @@ undoLast()
 assert.equal(find(g2).isTodo, true, 'undoing a restore files the row back as a to-do')
 assert.equal(find(g2).startDate, null, 'with the schedule it was given taken off again')
 
-// The offer belongs to the Gantt: the strip that shows it is there and nowhere
-// else, and the task panel opens over every page. A step taken anywhere else is
-// done, not offered.
+// The view no longer decides whether a step is kept. It used to: nothing was
+// recorded off the Gantt, because the strip that offered it back was drawn
+// there and nowhere else — which left a pause taken from the task panel on the
+// Today page with no way back at all. The strip is still the Gantt's, but the
+// history is the board's.
 useStore.setState({ activeView: 'today' })
+const offGantt = useStore.getState().history.steps.length
 withUndo('paused one', () => pauseTask(g1))
 assert.equal(find(g1).paused, true, 'the action still happens')
-assert.equal(lastUndo(), null, 'but nothing is offered for it off the Gantt')
+assert.equal(useStore.getState().history.steps.length, offGantt + 1, 'and it is a step off the Gantt too')
 useStore.setState({ activeView: 'gantt' })
 withUndo('resumed one', () => resumeTask(g1))
-assert.ok(lastUndo(), 'and the same step is offered again on the board')
+assert.ok(lastUndo(), 'the same step is offered on the board')
 undoLast()
 
 // A run that changes nothing is not a step, and does not clear the offer either.

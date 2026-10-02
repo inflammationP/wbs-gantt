@@ -34,6 +34,36 @@ import { createServer } from 'vite'
 globalThis.document = { documentElement: { dataset: {}, style: { setProperty() {} } } }
 globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} }
 
+// The clock is frozen, and it is the fixture's, not the calendar's.
+//
+// Every window below is in one September, and the statuses asserted off those
+// windows — running, completed, past due — are derived by comparing against
+// today. This script used to leave the clock alone, which made it a time bomb:
+// green the day it was written, red the morning after the last end date in it.
+// It went off on 2026-10-01, on a `2026-09-30` window, blaming the rules for
+// what was the calendar.
+//
+// Same fix, and the same reasoning, as PR #2 did for `check-habits.mjs`:
+// `new Date()` and `Date.now()` stand still, so today stops being an input to
+// an assertion about the rules. `setTime` on a real instance rather than
+// returning a substitute object, so `instanceof Date` keeps meaning what it
+// meant for anything downstream that asks.
+//
+// 2026-09-15 rather than the first or last day of a window: a fixture date
+// asserted to be `in-progress` needs today to be *inside* its span, and being
+// inside all of them at once is the whole reason one instant can serve.
+const RealDate = Date
+const FROZEN = new RealDate(2026, 8, 15, 12, 0, 0) // Tue 2026-09-15, local midday
+globalThis.Date = class extends RealDate {
+  constructor(...args) {
+    super(...args)
+    if (args.length === 0) this.setTime(FROZEN.getTime())
+  }
+  static now() {
+    return FROZEN.getTime()
+  }
+}
+
 const server = await createServer({
   server: { middlewareMode: true },
   appType: 'custom',
@@ -118,15 +148,21 @@ assert.deepEqual(shape({ [archiveGroupId]: true }, numbered), [
 // A row inside the drawer folds like any other, by the same rule: tasks are
 // expanded until told otherwise. The chevron the row draws has to do something —
 // it is the same component that draws the board's.
+//
+// The project's line is at the top of both, and that is the point of these two:
+// every task it had is in the drawer, so it has nothing live under it at all,
+// and it still stands. Its line is where a task would be dropped into it and the
+// only row that says it exists, so a project cannot be allowed to disappear the
+// moment its last task is filed away.
 const nested = [
   filed({ id: 'P', order: 0 }),
   filed({ id: 'k', parentId: 'P', order: 0 }),
 ]
 assert.deepEqual(shape({ [archiveGroupId]: true }, nested).map((r) => r[1]), [
-  'archiveGroup', 'P', 'k',
+  'project:p', 'archiveGroup', 'P', 'k',
 ])
 assert.deepEqual(shape({ [archiveGroupId]: true, P: false }, nested).map((r) => r[1]), [
-  'archiveGroup', 'P',
+  'project:p', 'archiveGroup', 'P',
 ])
 
 // --- a branch is the unit --------------------------------------------------
@@ -274,11 +310,14 @@ unarchiveTasks([phase])
 // --- undo ------------------------------------------------------------------
 
 clearUndo()
+const beforeArchive = useStore.getState().history.steps.length
 withUndo('archived', () => archiveTasks([phase]))
 assert.ok(isArchived(byId(phase)), 'the branch is in the drawer')
+const step = useStore.getState().history.steps[beforeArchive]
+assert.equal(useStore.getState().history.steps.length, beforeArchive + 1, 'one gesture, one step')
 assert.ok(
-  useStore.getState().lastUndo.patches.some((p) => p.id === phase && 'archivedAt' in p.patch),
-  'the step records the field it wrote',
+  step.delta.changed.some((c) => c.id === phase && 'archivedAt' in c.before && 'archivedAt' in c.after),
+  'the step records the field it wrote, on both sides — that is what makes it reversible',
 )
 undoLast()
 assert.ok(branchIds.every((id) => !isArchived(byId(id))), 'and one press takes the whole branch back out')

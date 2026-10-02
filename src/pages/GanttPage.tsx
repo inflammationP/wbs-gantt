@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { MouseEvent, ReactNode } from 'react'
-import { Check, FolderTree, Plus, X } from 'lucide-react'
+import { Check, FolderInput, FolderTree, History, Plus, X } from 'lucide-react'
 import { UndoStep, useStore, useRows, useTimelineRange } from '../store/useStore'
 import { Task, TaskLog, ViewMode } from '../types'
 import { addDays } from '../lib/dates'
@@ -9,9 +9,12 @@ import { Dict } from '../lib/i18n'
 import { useLang, useT } from '../lib/useT'
 import { Modal, Segmented } from '../components/ui'
 import { GanttChart } from '../components/gantt/GanttChart'
-import { RowTask, archiveCascade, isArchived, todoCascadeIds } from '../lib/tree'
+import { RowTask, archiveCascade, isArchived, movingUnits, todoCascadeIds } from '../lib/tree'
 import { ArchiveActions, TodoActions } from '../components/gantt/RowLeft'
 import { TaskDialog } from '../components/TaskDialog'
+import { ProjectManageDialog } from '../components/ProjectManageDialog'
+import { HistoryDialog } from '../components/HistoryDialog'
+import { NewDialog } from '../components/NewDialog'
 import { LogDialog } from '../components/LogDialog'
 import { StartTodoDialog } from '../components/StartTodoDialog'
 import { ContextMenu, MenuState } from '../components/gantt/ContextMenu'
@@ -70,12 +73,26 @@ export function GanttPage() {
     projectId?: string
     isTodo?: boolean
   } | null>(null)
+  // The toolbar's new button, which asks what is being made. Every other way
+  // into a new task — a row's "+", the context menu — knows already and goes
+  // through `openCreate` to the task form directly.
+  const [newOpen, setNewOpen] = useState(false)
   const [menu, setMenu] = useState<MenuState | null>(null)
   const [logDialog, setLogDialog] = useState<{ taskId: string; existing?: TaskLog | null } | null>(null)
   const [startTodo, setStartTodo] = useState<string[] | null>(null)
   // Shown in place of the task dialog while the board has no project — see
   // `openCreate`.
   const [noProject, setNoProject] = useState(false)
+  // The project-level move, which is why it is reachable only from the edit
+  // mode: it is the same kind of change to the board's structure that dragging
+  // a row is, and it is kept off the toolbar the rest of the time for the same
+  // reason the bulk actions are.
+  const [mergeOpen, setMergeOpen] = useState(false)
+  // The history tree. Its own entry point rather than a tab inside the project
+  // dialog, because it is about every structural change and not only the
+  // project-level ones — and it is here, beside the mode that makes those
+  // changes, rather than on a page of its own.
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   // What editing mode has picked out. Held here rather than in the chart because
   // two things read it: the rows, which paint it and drag it, and the bar above
@@ -122,7 +139,8 @@ export function GanttPage() {
   // a mode people get stuck in; but Escape is also how the context menu and the
   // dialogs close, and one keypress cannot mean two things at the same level.
   const overlayOpen =
-    menu !== null || dialog !== null || logDialog !== null || startTodo !== null || noProject
+    menu !== null || dialog !== null || logDialog !== null || startTodo !== null || noProject ||
+    mergeOpen || historyOpen || newOpen
   const hasSelection = sel.size > 0
   useEffect(() => {
     if (!editing || overlayOpen) return
@@ -211,6 +229,24 @@ export function GanttPage() {
   // React renders once and every write composes on the one before it.
   // ponytail: fine for a screenful of rows; a bulk action belongs in the store
   // if a selection ever gets big enough for N passes over the task list to show.
+  /**
+   * Every bulk button ends the same way, so they all take the same road out.
+   *
+   * A selection that survives the action it ordered is a selection that will
+   * order it again: the rows are still ticked, the bar still counts them, and the
+   * next press archives what was just brought back or pauses what was just
+   * resumed. The ticks have done their job when the action runs.
+   *
+   * Inside the confirmation and not when it opens. A cancelled action did
+   * nothing, and taking the selection away for it would be the button doing
+   * something it was told not to — the same reason the confirmations exist.
+   */
+  const afterBulk = (label: string, run: () => void) =>
+    withUndo(label, () => {
+      run()
+      setSel(new Set())
+    })
+
   const handleBulkTodo = () => {
     if (parkable.length === 0) return
     // The union of the branches, not the sum: a picked task sitting inside
@@ -221,20 +257,26 @@ export function GanttPage() {
     const subs = branch.size - parkable.length
     ask(
       t(subs > 0 ? 'gantt.setTodoManyWithSubtasks' : 'gantt.setTodoMany', { count: parkable.length, subs }),
-      () => withUndo(t('gantt.undoTodo', { what: whatOf(parkable) }), () => {
+      () => afterBulk(t('gantt.undoTodo', { what: whatOf(parkable) }), () => {
         for (const r of parkable) setTaskTodo(r.id)
       }),
     )
   }
 
   const handleBulkDelete = () => {
-    const ids = picked.map((r) => r.id)
-    if (ids.length === 0) return
-    const kids = ids.some((id) => tasks.some((tk) => tk.parentId === id))
+    // The **roots** of the selection, not every ticked row. Ticking a parent now
+    // ticks its whole branch, so counting the ticks would make the confirmation
+    // read "delete these 3 and their subtasks" about a 3 that already is the
+    // subtasks. What it says and what the store takes have to be the same set,
+    // and the store takes branches.
+    const roots = movingUnits(tasks, projects, sel).tasks
+    if (roots.length === 0) return
+    const kids = roots.some((id) => tasks.some((tk) => tk.parentId === id))
+    const named = picked.filter((r) => roots.includes(r.id))
     ask(
-      t(kids ? 'gantt.deleteSelectedWithSubtasks' : 'gantt.deleteSelected', { count: ids.length }),
-      () => withUndo(t('gantt.undoDelete', { what: whatOf(picked) }), () => {
-        for (const id of ids) deleteTask(id)
+      t(kids ? 'gantt.deleteSelectedWithSubtasks' : 'gantt.deleteSelected', { count: roots.length }),
+      () => afterBulk(t('gantt.undoDelete', { what: whatOf(named) }), () => {
+        for (const id of roots) deleteTask(id)
       }),
     )
   }
@@ -267,7 +309,7 @@ export function GanttPage() {
   const handleBulkPause = () => {
     if (toPause.length === 0) return
     ask(t('gantt.pauseMany', { count: toPause.length }), () =>
-      withUndo(t('gantt.undoPause', { what: whatOf(toPause) }), () => {
+      afterBulk(t('gantt.undoPause', { what: whatOf(toPause) }), () => {
         for (const r of toPause) pauseTask(r.id)
       }),
     )
@@ -276,7 +318,7 @@ export function GanttPage() {
   const handleBulkResume = () => {
     if (toResume.length === 0) return
     ask(t('gantt.resumeMany', { count: toResume.length }), () =>
-      withUndo(t('gantt.undoResume', { what: whatOf(toResume) }), () => {
+      afterBulk(t('gantt.undoResume', { what: whatOf(toResume) }), () => {
         for (const r of toResume) resumeTask(r.id)
       }),
     )
@@ -287,7 +329,7 @@ export function GanttPage() {
     if (ids.length === 0) return
     ask(
       t(takesMore(ids) ? 'gantt.archiveManyWithSubtasks' : 'gantt.archiveMany', { count: ids.length }),
-      () => withUndo(t('gantt.undoArchive', { what: whatOf(picked) }), () => archiveTasks(ids)),
+      () => afterBulk(t('gantt.undoArchive', { what: whatOf(picked) }), () => archiveTasks(ids)),
     )
   }
 
@@ -324,32 +366,15 @@ export function GanttPage() {
 
   return (
     <div className="relative flex-1 flex flex-col overflow-hidden">
-      {/* The toolbar gives way to the selection's own bar while rows are picked,
-          rather than a second strip appearing under it. Nothing moves — the bar
-          takes the same 48px — and the actions for a selection belong at the top
-          of the window, which is where the rest of the world puts them. The X or
-          Escape puts the toolbar back. */}
-      {editing && picked.length > 0 ? (
-        <div className="shrink-0 h-12 flex items-center gap-3 px-3 border-b border-border bg-panel">
-          <button
-            onClick={() => setSel(new Set())}
-            title={t('gantt.clearSelection')}
-            aria-label={t('gantt.clearSelection')}
-            className="p-1 text-dim hover:text-fg"
-          >
-            <X size={16} />
-          </button>
-          <span className="text-[12px] text-fg whitespace-nowrap">{t('gantt.selected', { count: picked.length })}</span>
-          <div className="w-px h-6 bg-border" />
-          <BulkButton onClick={handleBulkTodo} disabled={parkable.length === 0}>{t('task.setAsTodo')}</BulkButton>
-          <BulkButton onClick={handleBulkArchive}>{t('task.archive')}</BulkButton>
-          <BulkButton onClick={handleBulkPause} disabled={toPause.length === 0}>{t('task.pause')}</BulkButton>
-          <BulkButton onClick={handleBulkResume} disabled={toResume.length === 0}>{t('task.resume')}</BulkButton>
-          <div className="w-px h-6 bg-border" />
-          <BulkButton onClick={handleBulkDelete} danger>{t('common.delete')}</BulkButton>
-        </div>
-      ) : (
-      /* toolbar */
+      {/* The toolbar — always. It used to give way to the selection's own bar, on
+          the grounds that nothing should move: the bar took the same 48px and the
+          actions for a selection belong at the top of the window. What that cost
+          was the one button the mode is left by. Pick a row and `编辑模式` — now
+          reading `完成` — disappeared, so the way out of the mode went with it,
+          and the only thing left was a button that renamed itself. A mode you can
+          only leave by knowing about Escape is a mode people get stuck in.
+          So the selection's actions are a second, shorter strip underneath, and
+          everything above it stays exactly where it was. */}
       <div className="shrink-0 h-12 flex items-center gap-3 px-3 border-b border-border bg-panel">
         <Segmented value={viewMode} onChange={setViewMode} options={VIEWS.map((v) => ({ value: v.value, label: t(v.labelKey) }))} />
         <div className="w-px h-6 bg-border" />
@@ -367,13 +392,13 @@ export function GanttPage() {
         {/* The toolbar sits in whatever the filter put on screen, so a task made
             here belongs to the project being looked at. "All projects" has no
             such context and leaves the choice to the dialog. */}
-        <button onClick={() => openCreate(null, projectFilter === 'all' ? undefined : projectFilter)} className="h-7 px-3 inline-flex items-center gap-1.5 text-[12px] font-medium bg-accent text-on-accent rounded-[3px] hover:brightness-110">
-          <Plus size={14} /> {t('gantt.newTask')}
+        <button onClick={() => setNewOpen(true)} className="h-7 px-3 inline-flex items-center gap-1.5 text-[12px] font-medium bg-accent text-on-accent rounded-[3px] hover:brightness-110">
+          <Plus size={14} /> {t('gantt.newTaskOrProject')}
         </button>
         <div className="w-px h-6 bg-border" />
         {/* One button for both directions, because it is one mode. The label and
             the icon say which way it will go, so a button that only ever said
-            "organize" would be a button you cannot use to stop organizing. */}
+            "edit mode" would be a button you cannot use to leave it. */}
         <button
           onClick={() => setEditing((on) => !on)}
           aria-pressed={editing}
@@ -384,13 +409,61 @@ export function GanttPage() {
           }`}
         >
           {editing ? <Check size={14} /> : <FolderTree size={14} />}
-          {editing ? t('gantt.editDone') : t('gantt.manageTasks')}
+          {editing ? t('gantt.editDone') : t('gantt.editMode')}
         </button>
-        {/* The only sign that the board is in a mode at all, and it says one
-            thing. Everything else about the mode is the rows' cursors and what
-            dragging one does. */}
-        {editing && <span className="text-[11px] text-accent">{t('gantt.editMode')}</span>}
+        {/* The project-level move, and the reason the mode above is no longer
+            named for the tasks: rearranging rows is not the only thing it now
+            holds. It stands where the "editing" badge used to — the button to
+            its left says the mode already, and says it in the accent colour, so
+            a badge repeating the word was a word spent saying nothing.
+            A project line carries no controls at all (see `ProjectRow`), which
+            is why this is reached from the toolbar and not from the rows it
+            acts on. */}
+        {editing && (
+          <button
+            onClick={() => setMergeOpen(true)}
+            className="h-7 px-3 inline-flex items-center gap-1.5 text-[12px] font-medium text-muted hover:text-fg border border-border rounded-[3px] hover:bg-panel2"
+          >
+            <FolderInput size={14} /> {t('project.manage')}
+          </button>
+        )}
+        {/* Available only in the mode, like the move above it — but the history
+            itself is not: a pause or an unarchive from the task panel on another
+            page is a structural change too, and it lands on the tree whether or
+            not this button is on screen. */}
+        {editing && (
+          <button
+            onClick={() => setHistoryOpen(true)}
+            className="h-7 px-3 inline-flex items-center gap-1.5 text-[12px] font-medium text-muted hover:text-fg border border-border rounded-[3px] hover:bg-panel2"
+          >
+            <History size={14} /> {t('history.title')}
+          </button>
+        )}
       </div>
+
+      {/* What the selection's buttons do, under the toolbar rather than in its
+          place. `完成` above is reachable with nothing picked — pressing it with
+          rows ticked and nothing done simply leaves the mode, and the selection
+          goes with it (the effect below does that). */}
+      {editing && picked.length > 0 && (
+        <div className="shrink-0 h-11 flex items-center gap-3 px-3 border-b border-border bg-panel2/40">
+          <button
+            onClick={() => setSel(new Set())}
+            title={t('gantt.clearSelection')}
+            aria-label={t('gantt.clearSelection')}
+            className="p-1 text-dim hover:text-fg"
+          >
+            <X size={16} />
+          </button>
+          <span className="text-[12px] text-fg whitespace-nowrap">{t('gantt.selected', { count: picked.length })}</span>
+          <div className="w-px h-6 bg-border" />
+          <BulkButton onClick={handleBulkTodo} disabled={parkable.length === 0}>{t('task.setAsTodo')}</BulkButton>
+          <BulkButton onClick={handleBulkArchive}>{t('task.archive')}</BulkButton>
+          <BulkButton onClick={handleBulkPause} disabled={toPause.length === 0}>{t('task.pause')}</BulkButton>
+          <BulkButton onClick={handleBulkResume} disabled={toResume.length === 0}>{t('task.resume')}</BulkButton>
+          <div className="w-px h-6 bg-border" />
+          <BulkButton onClick={handleBulkDelete} danger>{t('common.delete')}</BulkButton>
+        </div>
       )}
 
       <GanttChart
@@ -441,6 +514,17 @@ export function GanttPage() {
       {logDialog && <LogDialog taskId={logDialog.taskId} existing={logDialog.existing} onClose={() => setLogDialog(null)} />}
 
       {startTodo && <StartTodoDialog taskIds={startTodo} onClose={() => setStartTodo(null)} />}
+
+      {mergeOpen && <ProjectManageDialog onClose={() => setMergeOpen(false)} />}
+
+      {historyOpen && <HistoryDialog onClose={() => setHistoryOpen(false)} />}
+
+      {newOpen && (
+        <NewDialog
+          onClose={() => setNewOpen(false)}
+          defaultProjectId={projectFilter === 'all' ? undefined : projectFilter}
+        />
+      )}
 
       {/* The one step back, and only while the step is still the last thing that
           happened — a drop, a bulk button, a menu item, whichever it was.

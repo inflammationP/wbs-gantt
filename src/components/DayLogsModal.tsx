@@ -98,7 +98,7 @@ export function DayLogsModal({
               <span className="text-[13px] font-semibold text-fg">{t('notes.title')}</span>
               {/* Same pair, same row as the title, revealed on hovering it —
                   see `NoteSection` in DayBoard. */}
-              <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+              <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 has-[:focus-visible]:opacity-100">
                 <NoteActions day={date} editing={editingNote} onEdit={() => setEditingNote(true)} />
               </div>
             </div>

@@ -22,6 +22,7 @@ export function UpdateOverlays() {
     <>
       <UpdateNag />
       <UpdateDialog />
+      <UpdateReadyDialog />
     </>
   )
 }
@@ -61,6 +62,44 @@ function UpdateNag() {
   )
 }
 
+/**
+ * "It is on disk — restart now, or later?"
+ *
+ * The question the download could not answer when it started, asked at the point
+ * where it can be answered. Asking it up front would be asking the reader to
+ * decide how long they are willing to wait, before anything has told them.
+ *
+ * Closing it is `dismissReady` and not `closeUpdateDialog`: what was fetched
+ * stays fetched, and the version section offers the same button. Throwing the
+ * handle away here would make "later" mean "never", and the download would
+ * happen again on the next launch.
+ */
+function UpdateReadyDialog() {
+  const t = useT()
+  const ready = useStore((s) => s.updateReady)
+  const info = useStore((s) => s.updateInfo)
+  const applyUpdate = useStore((s) => s.applyUpdate)
+  const dismissReady = useStore((s) => s.dismissReady)
+
+  if (!ready || !info) return null
+
+  return (
+    <Modal title={t('update.readyTitle')} onClose={dismissReady} width={420}>
+      <p className="text-[12px] text-fg leading-relaxed">
+        {t('update.readyBody', { version: info.version })}
+      </p>
+      <div className="mt-4 flex justify-end gap-2">
+        <button className={secondaryBtn} onClick={dismissReady}>
+          {t('update.later')}
+        </button>
+        <button className={primaryBtn} onClick={() => void applyUpdate()}>
+          {t('update.now')}
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
 /** Shown only for a manual check that found something. */
 function UpdateDialog() {
   const t = useT()
@@ -72,17 +111,20 @@ function UpdateDialog() {
   const closeUpdateDialog = useStore((s) => s.closeUpdateDialog)
   const snoozeUpdate = useStore((s) => s.snoozeUpdate)
 
-  if (!info) return null
+  // **Out of the way the moment the download starts.** The install used to run
+  // with this dialog up and every button in it disabled, which meant a slow
+  // download — and GitHub is slow or unreachable from where a lot of this app's
+  // users are — was time spent unable to use the app at all. The work is a
+  // download and then a restart; neither needs the user watching it.
+  //
+  // Reopened by a failure, and only by one: `installUpdate` clears `installing`
+  // and leaves `updateError` behind, so the dialog the reader was in comes back
+  // with the reason and the button to try again. On success there is nothing to
+  // come back to — the process is replaced.
+  if (!info || installing) return null
 
   return (
-    <Modal
-      title={t('update.availableTitle')}
-      // Not closable mid-install: the download is already running and the
-      // process is about to be replaced.
-      onClose={() => {
-        if (!installing) closeUpdateDialog()
-      }}
-      width={460}
+    <Modal title={t('update.availableTitle')} onClose={closeUpdateDialog} width={460}
     >
       <p className="text-[12px] text-fg">
         {t('update.availableBody', { version: info.version, current: info.current })}
@@ -124,17 +166,17 @@ function UpdateDialog() {
       {error && <p className="mt-3 text-[11px] text-delayed">{t('update.installFailed', { message: error })}</p>}
 
       <div className="mt-4 flex items-center justify-end gap-2">
-        <button className={secondaryBtn} onClick={closeUpdateDialog} disabled={installing}>
+        <button className={secondaryBtn} onClick={closeUpdateDialog}>
           {t('update.later')}
         </button>
         {/* Names its span rather than saying "for a while", so the cost of the
             click is known before it is made. The number comes from the store
             constant, so changing it changes the copy with it. */}
-        <button className={secondaryBtn} onClick={snoozeUpdate} disabled={installing}>
+        <button className={secondaryBtn} onClick={snoozeUpdate}>
           {t('update.snooze', { days: SNOOZE_DAYS })}
         </button>
-        <button className={primaryBtn} onClick={() => void installUpdate()} disabled={installing}>
-          {installing ? t('update.installing') : t('update.downloadAndInstall')}
+        <button className={primaryBtn} onClick={() => void installUpdate()}>
+          {t('update.downloadAndInstall')}
         </button>
       </div>
     </Modal>

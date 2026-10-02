@@ -4,7 +4,7 @@ import { addDays, toDate, toISO, weekdayIndex } from './dates'
 import { buildChildrenMap } from './tree'
 import { dayStates, milestonesOnDay, strictLogObligations } from './dayTasks'
 import { todaysChores } from './chores'
-import { habitsOn, tickedOn } from './habits'
+import { routineRows } from './habits'
 
 /**
  * The message that gets pushed, already rendered.
@@ -402,10 +402,13 @@ export function collectDay(board: Board, day: string, leadDays: number): DayCats
     dueSoon: soon,
     logsOwed: plain(obligations.filter((o) => !o.logged).map((o) => o.task.name)),
     chores: plain(todaysChores(chores, day).filter((c) => !c.done).map((c) => c.title)),
+    // Undone leaves only: a heading's tick is its children's, so listing it
+    // beside them would name the same outstanding work twice, once as the
+    // routine and once as the group it is in.
     habits: plain(
-      habitsOn(habits, day)
-        .filter((h) => !tickedOn(h, day))
-        .map((h) => h.title),
+      routineRows(habits, day)
+        .filter((r) => !r.hasKids && !r.done)
+        .map((r) => r.habit.title),
     ),
     obligations: plain(obligations.map((o) => o.task.name)),
   }

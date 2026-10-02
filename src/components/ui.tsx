@@ -73,6 +73,60 @@ export function Segmented<T extends string>({
   )
 }
 
+/**
+ * The gutter to the left of a row in a lineage chart — one 12px cell per level.
+ *
+ * `depth` is how many levels the row sits at, `rails[j]` says whether the line
+ * at level `j` carries on past this row, and `first` says there is no sibling
+ * above it. The last cell is the join into the row: an elbow, plus the line up
+ * to the sibling above and the line down to the one below — either, both or
+ * neither, and which of the four it is comes out of one piece of markup:
+ *
+ *   ├  a sibling above and below    └  the last of a list
+ *   ┌  the first of several         └  an only child
+ *
+ * The only child is the case that reads as a bug when it is got wrong. It has no
+ * sibling on either side, so both halves of the vertical could be dropped — and
+ * that leaves a bare stub, a row hanging off nothing. It gets the same `└` as a
+ * last sibling: there is nothing above it but its parent, and the corner is what
+ * says so.
+ *
+ * Drawn rather than typed. Box-drawing characters line up only if the font makes
+ * `│` fill the whole line box, and no font does at a 12px size inside a 24px
+ * row: the trunk comes out as disconnected stubs, which is the one thing a
+ * lineage chart must not be.
+ *
+ * Lifted out of `TaskTreeDialog` when the merge dialog's preview wanted the same
+ * drawing. Two copies of it would be two answers to "what does a branch look
+ * like", and the second one drifts.
+ */
+export function TreeRails({ depth, rails, first }: { depth: number; rails: boolean[]; first: boolean }) {
+  return (
+    <>
+      {Array.from({ length: depth }, (_, i) => {
+        const join = i === depth - 1
+        const below = rails[i]
+        return (
+          <span key={i} className="relative w-3 shrink-0 self-stretch">
+            {join ? (
+              <>
+                <span className="absolute left-1/2 top-1/2 w-1.5 border-t border-dim" />
+                <span
+                  className={`absolute left-1/2 border-l border-dim ${
+                    first && below ? 'top-1/2' : 'top-0'
+                  } ${below ? 'bottom-0' : 'bottom-1/2'}`}
+                />
+              </>
+            ) : (
+              below && <span className="absolute inset-y-0 left-1/2 border-l border-dim" />
+            )}
+          </span>
+        )
+      })}
+    </>
+  )
+}
+
 export function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="block">

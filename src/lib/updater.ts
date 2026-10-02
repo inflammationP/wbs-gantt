@@ -38,6 +38,9 @@ export type CheckResult =
       /** Release notes, as written into `latest.json` by `scripts/release.mjs`. */
       notes: string
       date: string | null
+      /** Fetch it. Separate from `install` so the app can carry on meanwhile. */
+      download: () => Promise<void>
+      /** Replace the process with what `download` fetched. */
       install: () => Promise<void>
       /** Release the handle if the user declines the update. */
       dismiss: () => Promise<void>
@@ -189,10 +192,23 @@ export async function checkForUpdate(): Promise<CheckResult> {
     current: handle.currentVersion,
     notes: handle.body ?? '',
     date: handle.date ?? null,
+    /**
+     * Fetching and installing are two steps, and the user gets a say between
+     * them.
+     *
+     * `downloadAndInstall` would do both in one call, and that is what the app
+     * used to make the button do: the only way to reach `install` was to sit
+     * through a download first. Split, the download runs in the background while
+     * the app stays usable — which matters where GitHub is slow, and it is slow
+     * or unreachable for a good share of this app's users — and the question of
+     * whether to restart **now** is asked when it can be answered, rather than
+     * at the moment the button is pressed and nobody knows how long it will take.
+     */
+    download: () => handle.download(),
     // On Windows this exits the process once the installer is launched, so
     // anything the caller needs kept must be written before it runs.
     install: async () => {
-      await handle.downloadAndInstall()
+      await handle.install()
       await relaunch()
     },
     dismiss: () => handle.close(),

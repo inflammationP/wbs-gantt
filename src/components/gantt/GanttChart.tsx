@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent, PointerEvent } from 'react'
-import { Row, RowTask, buildRows, collectDescendants, isArchived, placeTasks } from '../../lib/tree'
+import { Row, RowTask, buildRows, collectDescendants, isArchived, movingUnits, placeTasks, projectsInView, toggleTicked } from '../../lib/tree'
 import { buildTimeline, dateToX, DateRange, FOCUS_OFFSET_PX } from '../../lib/timeline'
 import { startOfDay, toDate } from '../../lib/dates'
 import { useStore } from '../../store/useStore'
@@ -394,7 +394,7 @@ export function GanttChart({ rows, range, todo, archived, editing, sel, onSel, o
     // while one project is selected would fill the chart with every project as
     // soon as the pointer moved a few pixels.
     const visible = projectFilter === 'all' ? preview : preview.filter((x) => x.projectId === projectFilter)
-    return buildRows(visible, open, projects, logs)
+    return buildRows(visible, open, projectsInView(projects, projectFilter), logs)
   }, [preview, rows, expanded, projects, logs, drag, dropAt, projectFilter])
 
   /**
@@ -462,7 +462,11 @@ export function GanttChart({ rows, range, todo, archived, editing, sel, onSel, o
     // the moment the pointer twitched.
     if ((e.target as HTMLElement).closest('button')) return
 
-    const roots = sel.has(row.id) ? [...sel] : [row.id]
+    // The roots of the selection, not every ticked row: a tick now covers a whole
+    // branch, and a label that counted the ticks would say "moved 12" about one
+    // row being dragged. `placeTasks` sorts this out anyway — a row inside
+    // another moving row is cargo — but the count is read by a person.
+    const roots = sel.has(row.id) ? movingUnits(tasks, projects, sel).tasks : [row.id]
     const blocked = new Set<string>()
     let single = ''
     for (const id of roots) {
@@ -544,6 +548,12 @@ export function GanttChart({ rows, range, todo, archived, editing, sel, onSel, o
       const place = placeFor(at, d.roots)
       if (place) {
         moveTasks(d.roots, place.parentId, place.beforeId, place.projectId)
+        // The gesture is over, so the ticks go with it — the same end the bulk
+        // buttons have, and for the same reason: a selection that outlives the
+        // action it ordered is one that will order it again. Here it would also
+        // be a lie on screen, because the rows have moved and the highlighted set
+        // is still the one from where they used to be.
+        onSel(new Set())
         // A branch that was closed stays closed after a drop into it, which
         // would make the rows just moved look like they had been deleted. Only
         // an explicit `false` is closed — see `toggleExpanded`'s `defaultOpen`.
@@ -633,10 +643,12 @@ export function GanttChart({ rows, range, todo, archived, editing, sel, onSel, o
         return
       }
     }
-    const next = new Set(sel)
-    if (next.has(row.id)) next.delete(row.id)
-    else next.add(row.id)
-    onSel(next)
+    // A tick on a row means that row **and everything under it** — the same three
+    // rules the hierarchy manager's trees follow, and literally the same function
+    // (`toggleTicked`). Before this, ticking a parent and reading "1 selected"
+    // over a delete button that takes forty rows with it was the board saying one
+    // thing and doing another: the strip counts what it will act on.
+    onSel(toggleTicked(tasks, projects, sel, row.id, !sel.has(row.id)))
     anchor.current = row.id
   }
 
