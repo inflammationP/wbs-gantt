@@ -436,92 +436,93 @@
 | 329 | `settings.reminderSent` | Sent. | 已发出。 |
 | 330 | `settings.backgroundAppOnly` | Without it, reminders only go out while this window happens to be open. | 不装的话，只有这个窗口开着的时候才会发。 |
 | 331 | `settings.autostart` | Start with Windows | 开机自启动 |
-| 332 | `tray.open` | Open WBS Gantt | 打开看板 |
-| 333 | `tray.quit` | Quit | 退出 |
-| 334 | `reminder.greeting.dawn` | Still up | 强啊传奇耐熬王 |
-| 335 | `reminder.greeting.early` | Good morning | 早上好 |
-| 336 | `reminder.greeting.morning` | Good morning | 上午好 |
-| 337 | `reminder.greeting.noon` | Midday | 中午好 |
-| 338 | `reminder.greeting.afternoon` | Good afternoon | 下午好 |
-| 339 | `reminder.greeting.dusk` | End of the day | 傍晚了 |
-| 340 | `reminder.greeting.evening` | Good evening | 晚上好 |
-| 341 | `reminder.greeting.night` | Late night | 夜深了 |
-| 342 | `reminder.closing.dawn` |  | ⟨空⟩ |
-| 343 | `reminder.closing.early` |  | ⟨空⟩ |
-| 344 | `reminder.closing.morning` |  | ⟨空⟩ |
-| 345 | `reminder.closing.noon` |  | ⟨空⟩ |
-| 346 | `reminder.closing.afternoon` |  | ⟨空⟩ |
-| 347 | `reminder.closing.dusk` |  | ⟨空⟩ |
-| 348 | `reminder.closing.evening` |  | ⟨空⟩ |
-| 349 | `reminder.closing.night` |  | ⟨空⟩ |
-| 350 | `reminder.starting` | Starting today | 今天该开始 |
-| 351 | `reminder.dueSoon` | Coming up | 即将到期 |
-| 352 | `reminder.reportTitle` | Daily report | 日报 |
-| 353 | `reminder.reportEmpty` | Nothing outstanding today. | 今日无事 |
-| 354 | `reminder.reportYesterday` | Yesterday | 昨日 |
-| 355 | `reminder.reportToday` | Today | 今天 |
-| 356 | `reminder.reportRate` | Completion | 完成率 |
-| 357 | `reminder.groupTasks` | Tasks | 任务清单 |
-| 358 | `reminder.groupDeadlines` | Due & overdue | 到期与逾期 |
-| 359 | `reminder.testTitle` | WBS Gantt — test message | 看板 —— 测试消息 |
-| 360 | `reminder.testBody` | If you are reading this in WeChat, reminders are working. | 你能在微信里看到这条，就说明提醒已经配好了。 |
-| 361 | `reminder.nudgeLogs` | Remember to write logs for the tasks you have finished. | 记得为已经完成的任务填写日志。 |
-| 362 | `reminder.nudgeDebt` | {count} waiting on you — | 还有 {count} 项事项待处理，其中： |
-| 363 | `reminder.nudgeDebtLine` | - {count} {label} | - {count} 项{label} |
-| 364 | `reminder.nudgeTasks` | tasks | 任务 |
-| 365 | `reminder.ack` | Got it | 我知道了 |
-| 366 | `slot.early` | Morning | 早上 |
-| 367 | `slot.noon` | Noon | 中午 |
-| 368 | `slot.dusk` | Evening | 傍晚 |
-| 369 | `reminder.overdue` | Overdue | 已逾期 |
-| 370 | `reminder.dueToday` | Due today | 今天到期 |
-| 371 | `reminder.logsOwed` | Logs owed | 日志缺少 |
-| 372 | `reminder.chores` | Chores | 临时事务 |
-| 373 | `reminder.habits` | Routine | 日常安排 |
-| 374 | `update.check` | Check for updates | 检查更新 |
-| 375 | `update.checking` | Checking… | 检查中… |
-| 376 | `update.upToDate` | You are on the latest version. | 已是最新版本。 |
-| 377 | `update.availableShort` | An update is available. | 有可用更新。 |
-| 378 | `update.unreachable` | Automatic updates are unavailable because GitHub cannot be reached. | 由于无法连接到 GitHub，自动更新不可用。 |
-| 379 | `update.webNote` | Automatic updates apply to the desktop app. In a browser you always load the latest build. | 自动更新只适用于桌面版；在浏览器里打开的始终是最新版本。 |
-| 380 | `update.availableTitle` | Update available | 发现新版本 |
-| 381 | `update.availableBody` | Version {version} has been released. You are on {current}. | 新版本 {version} 已发布，当前版本为 {current}。 |
-| 382 | `update.notes` | Release notes | 更新说明 |
-| 383 | `update.history` | Older releases this update brings along ({count}) | 本次将连带更新的历史版本内容（{count} 个版本） |
-| 384 | `update.noNotes` | This release came with no release notes. | 本次发布未填写更新说明。 |
-| 385 | `update.downloadAndInstall` | Download and install | 下载并安装 |
-| 386 | `update.installing` | Downloading… | 正在下载… |
-| 387 | `update.installFailed` | The update could not be installed: {message} | 更新安装失败：{message} |
-| 388 | `update.later` | Later | 以后再说 |
-| 389 | `update.snooze` | Ignore for {days} days | {days} 天内不再提醒 |
-| 390 | `update.nagTitle` | It has been a while | 已经很久没有更新了 |
-| 391 | `update.nagBody` | It has been over a month since this app last reached GitHub. Take a look for bug fixes and new features? | 要不要连上 GitHub 看一眼有没有 bug 修复和新功能呢？ |
-| 392 | `update.nagGo` | Go to Settings | 去设置看看 |
-| 393 | `update.connectTitle` | Want a stable GitHub connection? | 想稳定连接 GitHub？ |
-| 394 | `update.connectBody` | Watt Toolkit (formerly Steam++) is a free, open-source network accelerator. It speeds up both the GitHub website and Release downloads. | Watt Toolkit（原 Steam++）是免费开源的多平台网络加速工具，可以加速 GitHub 网页和 Release 下载。 |
-| 395 | `update.connectLink` | Download from steampp.net | 前往官网下载（steampp.net） |
-| 396 | `update.opensource` | GitHub is the largest home of open-source software — operating systems, frameworks, ready-made tools, most of it free to use, study and build on. This project’s source and releases live there too. | GitHub 是全球最大的开源社区，托管着数以亿计的开源项目 —— 从操作系统、开发框架到各类现成工具，绝大多数都可以免费使用、学习和二次开发。本项目的源码和版本更新也发布在这里。 |
-| 397 | `update.openRepo` | View on GitHub | 在 GitHub 上查看 |
-| 398 | `theme.graphite.name` | Graphite | 石墨 |
-| 399 | `theme.graphite.hint` | Near-black, neutral | 近黑 · 中性 |
-| 400 | `theme.slate.name` | Slate | 板岩 |
-| 401 | `theme.slate.hint` | Mid grey-blue, cool | 中灰蓝 · 偏冷 |
-| 402 | `theme.ember.name` | Ember | 余烬 |
-| 403 | `theme.ember.hint` | Hazel-black, warm | 榛黑 · 偏暖 |
-| 404 | `theme.paper.name` | Paper | 纸张 |
-| 405 | `theme.paper.hint` | Light, crisp | 浅色 · 清爽 |
-| 406 | `swatch.groupChrome` | Interface | 界面 |
-| 407 | `swatch.groupSignals` | Meaning | 语义 |
-| 408 | `swatch.bg` | Background | 底色 |
-| 409 | `swatch.panel` | Panel | 面板 |
-| 410 | `swatch.panel2` | Field | 输入框 |
-| 411 | `swatch.stripe` | Alt. row | 斑马行 |
-| 412 | `swatch.border` | Border | 边框 |
-| 413 | `swatch.line` | Divider | 分隔线 |
-| 414 | `swatch.fg` | Text | 正文 |
-| 415 | `swatch.muted` | Secondary text | 次要文字 |
-| 416 | `swatch.dim` | Faint text | 弱化文字 |
-| 417 | `swatch.accent` | Accent | 强调色 |
+| 332 | `settings.closeToTray` | Minimize to tray on close | 关闭时最小化到托盘 |
+| 333 | `tray.open` | Open WBS Gantt | 打开看板 |
+| 334 | `tray.quit` | Quit | 退出 |
+| 335 | `reminder.greeting.dawn` | Still up | 强啊传奇耐熬王 |
+| 336 | `reminder.greeting.early` | Good morning | 早上好 |
+| 337 | `reminder.greeting.morning` | Good morning | 上午好 |
+| 338 | `reminder.greeting.noon` | Midday | 中午好 |
+| 339 | `reminder.greeting.afternoon` | Good afternoon | 下午好 |
+| 340 | `reminder.greeting.dusk` | End of the day | 傍晚了 |
+| 341 | `reminder.greeting.evening` | Good evening | 晚上好 |
+| 342 | `reminder.greeting.night` | Late night | 夜深了 |
+| 343 | `reminder.closing.dawn` |  | ⟨空⟩ |
+| 344 | `reminder.closing.early` |  | ⟨空⟩ |
+| 345 | `reminder.closing.morning` |  | ⟨空⟩ |
+| 346 | `reminder.closing.noon` |  | ⟨空⟩ |
+| 347 | `reminder.closing.afternoon` |  | ⟨空⟩ |
+| 348 | `reminder.closing.dusk` |  | ⟨空⟩ |
+| 349 | `reminder.closing.evening` |  | ⟨空⟩ |
+| 350 | `reminder.closing.night` |  | ⟨空⟩ |
+| 351 | `reminder.starting` | Starting today | 今天该开始 |
+| 352 | `reminder.dueSoon` | Coming up | 即将到期 |
+| 353 | `reminder.reportTitle` | Daily report | 日报 |
+| 354 | `reminder.reportEmpty` | Nothing outstanding today. | 今日无事 |
+| 355 | `reminder.reportYesterday` | Yesterday | 昨日 |
+| 356 | `reminder.reportToday` | Today | 今天 |
+| 357 | `reminder.reportRate` | Completion | 完成率 |
+| 358 | `reminder.groupTasks` | Tasks | 任务清单 |
+| 359 | `reminder.groupDeadlines` | Due & overdue | 到期与逾期 |
+| 360 | `reminder.testTitle` | WBS Gantt — test message | 看板 —— 测试消息 |
+| 361 | `reminder.testBody` | If you are reading this in WeChat, reminders are working. | 你能在微信里看到这条，就说明提醒已经配好了。 |
+| 362 | `reminder.nudgeLogs` | Remember to write logs for the tasks you have finished. | 记得为已经完成的任务填写日志。 |
+| 363 | `reminder.nudgeDebt` | {count} waiting on you — | 还有 {count} 项事项待处理，其中： |
+| 364 | `reminder.nudgeDebtLine` | - {count} {label} | - {count} 项{label} |
+| 365 | `reminder.nudgeTasks` | tasks | 任务 |
+| 366 | `reminder.ack` | Got it | 我知道了 |
+| 367 | `slot.early` | Morning | 早上 |
+| 368 | `slot.noon` | Noon | 中午 |
+| 369 | `slot.dusk` | Evening | 傍晚 |
+| 370 | `reminder.overdue` | Overdue | 已逾期 |
+| 371 | `reminder.dueToday` | Due today | 今天到期 |
+| 372 | `reminder.logsOwed` | Logs owed | 日志缺少 |
+| 373 | `reminder.chores` | Chores | 临时事务 |
+| 374 | `reminder.habits` | Routine | 日常安排 |
+| 375 | `update.check` | Check for updates | 检查更新 |
+| 376 | `update.checking` | Checking… | 检查中… |
+| 377 | `update.upToDate` | You are on the latest version. | 已是最新版本。 |
+| 378 | `update.availableShort` | An update is available. | 有可用更新。 |
+| 379 | `update.unreachable` | Automatic updates are unavailable because GitHub cannot be reached. | 由于无法连接到 GitHub，自动更新不可用。 |
+| 380 | `update.webNote` | Automatic updates apply to the desktop app. In a browser you always load the latest build. | 自动更新只适用于桌面版；在浏览器里打开的始终是最新版本。 |
+| 381 | `update.availableTitle` | Update available | 发现新版本 |
+| 382 | `update.availableBody` | Version {version} has been released. You are on {current}. | 新版本 {version} 已发布，当前版本为 {current}。 |
+| 383 | `update.notes` | Release notes | 更新说明 |
+| 384 | `update.history` | Older releases this update brings along ({count}) | 本次将连带更新的历史版本内容（{count} 个版本） |
+| 385 | `update.noNotes` | This release came with no release notes. | 本次发布未填写更新说明。 |
+| 386 | `update.downloadAndInstall` | Download and install | 下载并安装 |
+| 387 | `update.installing` | Downloading… | 正在下载… |
+| 388 | `update.installFailed` | The update could not be installed: {message} | 更新安装失败：{message} |
+| 389 | `update.later` | Later | 以后再说 |
+| 390 | `update.snooze` | Ignore for {days} days | {days} 天内不再提醒 |
+| 391 | `update.nagTitle` | It has been a while | 已经很久没有更新了 |
+| 392 | `update.nagBody` | It has been over a month since this app last reached GitHub. Take a look for bug fixes and new features? | 要不要连上 GitHub 看一眼有没有 bug 修复和新功能呢？ |
+| 393 | `update.nagGo` | Go to Settings | 去设置看看 |
+| 394 | `update.connectTitle` | Want a stable GitHub connection? | 想稳定连接 GitHub？ |
+| 395 | `update.connectBody` | Watt Toolkit (formerly Steam++) is a free, open-source network accelerator. It speeds up both the GitHub website and Release downloads. | Watt Toolkit（原 Steam++）是免费开源的多平台网络加速工具，可以加速 GitHub 网页和 Release 下载。 |
+| 396 | `update.connectLink` | Download from steampp.net | 前往官网下载（steampp.net） |
+| 397 | `update.opensource` | GitHub is the largest home of open-source software — operating systems, frameworks, ready-made tools, most of it free to use, study and build on. This project’s source and releases live there too. | GitHub 是全球最大的开源社区，托管着数以亿计的开源项目 —— 从操作系统、开发框架到各类现成工具，绝大多数都可以免费使用、学习和二次开发。本项目的源码和版本更新也发布在这里。 |
+| 398 | `update.openRepo` | View on GitHub | 在 GitHub 上查看 |
+| 399 | `theme.graphite.name` | Graphite | 石墨 |
+| 400 | `theme.graphite.hint` | Near-black, neutral | 近黑 · 中性 |
+| 401 | `theme.slate.name` | Slate | 板岩 |
+| 402 | `theme.slate.hint` | Mid grey-blue, cool | 中灰蓝 · 偏冷 |
+| 403 | `theme.ember.name` | Ember | 余烬 |
+| 404 | `theme.ember.hint` | Hazel-black, warm | 榛黑 · 偏暖 |
+| 405 | `theme.paper.name` | Paper | 纸张 |
+| 406 | `theme.paper.hint` | Light, crisp | 浅色 · 清爽 |
+| 407 | `swatch.groupChrome` | Interface | 界面 |
+| 408 | `swatch.groupSignals` | Meaning | 语义 |
+| 409 | `swatch.bg` | Background | 底色 |
+| 410 | `swatch.panel` | Panel | 面板 |
+| 411 | `swatch.panel2` | Field | 输入框 |
+| 412 | `swatch.stripe` | Alt. row | 斑马行 |
+| 413 | `swatch.border` | Border | 边框 |
+| 414 | `swatch.line` | Divider | 分隔线 |
+| 415 | `swatch.fg` | Text | 正文 |
+| 416 | `swatch.muted` | Secondary text | 次要文字 |
+| 417 | `swatch.dim` | Faint text | 弱化文字 |
+| 418 | `swatch.accent` | Accent | 强调色 |
 
 ---
 

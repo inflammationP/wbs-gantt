@@ -46,6 +46,9 @@ export function SettingsPage() {
         {/* ---- Version ---- */}
         <VersionSection />
 
+        {/* ---- Closing the window ---- */}
+        <CloseToTrayRow />
+
         {/* ---- Start with Windows ---- */}
         <AutostartRow />
       </div>
@@ -54,6 +57,31 @@ export function SettingsPage() {
 }
 
 const linkCls = 'mt-1.5 text-[12px] text-accent hover:underline'
+
+/** What the close button does: hide to the tray, or quit the app. */
+function CloseToTrayRow() {
+  const t = useT()
+  const closeToTray = useStore((s) => s.closeToTray)
+  const setCloseToTray = useStore((s) => s.setCloseToTray)
+  if (!isTauri()) return null
+
+  return (
+    <section className="border-t border-line pt-4">
+      <div className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          id="closeToTray"
+          checked={closeToTray}
+          onChange={(e) => setCloseToTray(e.target.checked)}
+          className="accent-accent"
+        />
+        <label htmlFor="closeToTray" className="text-[12px] text-muted cursor-pointer">
+          {t('settings.closeToTray')}
+        </label>
+      </div>
+    </section>
+  )
+}
 
 /**
  * Start with Windows, demoted to the last line of the page.

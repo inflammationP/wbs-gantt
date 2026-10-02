@@ -181,6 +181,14 @@ export interface Prefs {
    * writes what the plugin reports after every change, so the two cannot drift.
    */
   autostart: boolean
+  /**
+   * Whether the window's close button hides the window instead of quitting.
+   *
+   * Read from the frontend, which is where the close request arrives: the
+   * preference lives in `localStorage` and Rust cannot reach it, so the handler
+   * in `App.tsx` decides. Off means the button quits, as every window's does.
+   */
+  closeToTray: boolean
 }
 
 const PREF_KEY = 'wbs-gantt.prefs'
@@ -226,6 +234,9 @@ export const DEFAULT_PREFS: Prefs = {
   // and needs no account, so the app ships ready to remind — and a machine that
   // starts the app is the half of that the user would otherwise have to arrange.
   autostart: true,
+  // On by default: the app is a reminder service as much as a board, and one
+  // that quits when its window is closed stops reminding.
+  closeToTray: true,
 }
 
 // An instant this module wrote itself. Anything else — absent, from an older
@@ -310,6 +321,8 @@ export function loadPrefs(): Prefs {
       reminderToken:
         typeof parsed.reminderToken === 'string' ? parsed.reminderToken : DEFAULT_PREFS.reminderToken,
       autostart: typeof parsed.autostart === 'boolean' ? parsed.autostart : DEFAULT_PREFS.autostart,
+      closeToTray:
+        typeof parsed.closeToTray === 'boolean' ? parsed.closeToTray : DEFAULT_PREFS.closeToTray,
     }
   } catch {
     return DEFAULT_PREFS

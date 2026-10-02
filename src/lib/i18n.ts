@@ -546,6 +546,7 @@ const en = {
   'settings.backgroundAppOnly':
     'Without it, reminders only go out while this window happens to be open.',
   'settings.autostart': 'Start with Windows',
+  'settings.closeToTray': 'Minimize to tray on close',
 
   'tray.open': 'Open WBS Gantt',
   'tray.quit': 'Quit',
@@ -1046,6 +1047,7 @@ const zh: Dict = {
   'settings.reminderSent': '已发出。',
   'settings.backgroundAppOnly': '不装的话，只有这个窗口开着的时候才会发。',
   'settings.autostart': '开机自启动',
+  'settings.closeToTray': '关闭时最小化到托盘',
 
   'tray.open': '打开看板',
   'tray.quit': '退出',
@@ -1560,6 +1562,7 @@ const fr: Dict = {
   'settings.backgroundAppOnly':
     'Sans lui, les rappels ne partent que pendant que cette fenêtre est ouverte.',
   'settings.autostart': 'Lancer avec Windows',
+  'settings.closeToTray': 'Réduire dans la zone de notification à la fermeture',
 
   'tray.open': 'Ouvrir WBS Gantt',
   'tray.quit': 'Quitter',

@@ -13,6 +13,7 @@ import { UpdateOverlays } from './components/UpdateOverlays'
 import { useStore } from './store/useStore'
 import { useT } from './lib/useT'
 import { setTrayLabels } from './lib/notify'
+import { isTauri } from './lib/updater'
 
 export default function App() {
   const t = useT()
@@ -73,6 +74,27 @@ export default function App() {
   useEffect(() => {
     void setTrayLabels(t('tray.open'), t('tray.quit'))
   }, [t])
+
+  // The close button hides the window rather than quitting, unless the settings
+  // say otherwise. Handled here because the preference is a `localStorage` one
+  // and Rust cannot read it; the tray's "quit" item calls `app.exit` directly
+  // and so quits whatever this says. Read from `getState` inside the handler
+  // rather than closed over, so the listener is installed once and still sees
+  // the preference as it stands at the moment the button is pressed.
+  useEffect(() => {
+    if (!isTauri()) return
+    let unlisten: (() => void) | undefined
+    void (async () => {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window')
+      const win = getCurrentWindow()
+      unlisten = await win.onCloseRequested((event) => {
+        if (!useStore.getState().closeToTray) return
+        event.preventDefault()
+        void win.hide()
+      })
+    })()
+    return () => unlisten?.()
+  }, [])
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-bg text-fg">

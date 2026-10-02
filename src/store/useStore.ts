@@ -214,6 +214,7 @@ interface State {
   reportSeenDay: string | null
   reminderToken: string
   autostart: boolean
+  closeToTray: boolean
   reminderPhase: ReminderPhase
   reminderError: string | null
   /** Whether Windows currently has the scheduled task. Asked, never remembered. */
@@ -360,6 +361,7 @@ interface State {
   removeReminderTask: () => Promise<void>
   refreshReminderTask: () => Promise<void>
   setAutostart: (on: boolean) => Promise<void>
+  setCloseToTray: (on: boolean) => void
 }
 
 function uid(): string {
@@ -426,6 +428,7 @@ function persistPrefs(): void {
     reportSeenDay,
     reminderToken,
     autostart,
+    closeToTray,
   } = useStore.getState()
   savePrefs({
     lang,
@@ -442,6 +445,7 @@ function persistPrefs(): void {
     reportSeenDay,
     reminderToken,
     autostart,
+    closeToTray,
   })
 }
 
@@ -522,6 +526,7 @@ export const useStore = create<State>()((set, get) => ({
   reportSeenDay: prefs.reportSeenDay,
   reminderToken: prefs.reminderToken,
   autostart: prefs.autostart,
+  closeToTray: prefs.closeToTray,
   reminderPhase: 'idle',
   reminderError: null,
   reminderTaskInstalled: false,
@@ -1425,6 +1430,11 @@ export const useStore = create<State>()((set, get) => ({
       console.warn('Autostart change failed:', err)
       set({ reminderError: err instanceof Error ? err.message : String(err) })
     }
+  },
+
+  setCloseToTray: (on) => {
+    set({ closeToTray: on })
+    persistPrefs()
   },
 }))
 

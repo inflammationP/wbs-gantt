@@ -8,7 +8,7 @@ use std::time::Duration;
 use chrono::Datelike;
 
 use tauri::menu::{Menu, MenuItem};
-use tauri::tray::TrayIconBuilder;
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::Manager;
 
 /// The name Windows knows the reminder task by.
@@ -491,10 +491,11 @@ pub fn run() {
                 }
             }
 
-            // The tray exists for the hidden case and for it alone. Closing the
-            // window still quits — the reminders do not depend on this process,
-            // since Task Scheduler has its own copy of the sender, so hiding on
-            // close would buy nothing and leave a window that refuses to close.
+            // The tray is the way back to a window that is not on screen: the
+            // `--hidden` boot case, and every close while "close to tray" is on.
+            // The reminders do not depend on this process either way — Task
+            // Scheduler has its own copy of the sender, so nothing here has to
+            // stay alive for them.
             //
             // No `.unwrap()` on the icon: it reads the build's own `bundle.icon`
             // list, so a missing or renamed entry would panic here and the app
@@ -508,6 +509,21 @@ pub fn run() {
                     // the first render — `set_tray_labels` is what makes it follow
                     // the language setting.
                     .menu(&tray_menu(app.handle(), "Open WBS Gantt", "Quit")?)
+                    // The menu moves to the right button; the left one opens the
+                    // window, which is what a tray icon is expected to do.
+                    .show_menu_on_left_click(false)
+                    .on_tray_icon_event(|tray, event| {
+                        // The release, not the press: Windows sends both, and
+                        // acting on both would reveal twice per click.
+                        if let TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } = event
+                        {
+                            reveal_main_window(tray.app_handle());
+                        }
+                    })
                     .on_menu_event(|app, event| match event.id.as_ref() {
                         "open" => reveal_main_window(app),
                         "quit" => app.exit(0),
