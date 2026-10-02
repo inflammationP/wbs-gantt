@@ -15,13 +15,15 @@ import { Stat } from '../components/ui'
 import { CompletionHeatmap, YEAR_WEEKS } from '../components/CompletionHeatmap'
 
 /**
- * The "creating" value of `habitEditing`.
+ * What the routine dialog is open on: an existing routine, or a new one and
+ * where it hangs.
  *
- * A sentinel rather than a second boolean beside a nullable habit: the dialog
- * has exactly three states — shut, editing one, creating one — and two pieces of
- * state would allow a fourth that means neither.
+ * One piece of state rather than a boolean plus a nullable habit, and the
+ * "creating" case carries the parent rather than being a bare flag: a row's "+"
+ * is the same request as the section's button with one thing already answered,
+ * and two pieces of state would allow a fourth combination that means neither.
  */
-const NEW = 'new'
+type HabitEditing = { mode: 'edit'; habit: Habit } | { mode: 'new'; parentId: string | null }
 
 // Dashboard, Tasks, Projects and Statistics used to be four separate pages that
 // each re-derived the same numbers. They are one page now: overview, heatmap,
@@ -46,10 +48,7 @@ export function ManagePage() {
   const [statusFilter, setStatusFilter] = useState<TaskStatus | 'all'>('all')
   const [editing, setEditing] = useState<string | null>(null)
   const [newName, setNewName] = useState('')
-  // The habit being edited, or `NEW` while one is being created. One piece of
-  // state rather than a boolean plus a nullable habit, so the dialog can never
-  // be open in a state that means neither.
-  const [habitEditing, setHabitEditing] = useState<Habit | typeof NEW | null>(null)
+  const [habitEditing, setHabitEditing] = useState<HabitEditing | null>(null)
   // Folded routines, as everywhere else that draws their tree: a branch nobody
   // has touched is open, because the roster is a list of what there is.
   const [foldedHabits, setFoldedHabits] = useState<Set<string>>(() => new Set())
@@ -197,7 +196,7 @@ export function ManagePage() {
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-[14px] font-semibold text-fg">{t('habit.section')}</h2>
             <button
-              onClick={() => setHabitEditing(NEW)}
+              onClick={() => setHabitEditing({ mode: 'new', parentId: null })}
               className="h-8 px-3 inline-flex items-center gap-1.5 text-[12px] font-medium bg-accent text-on-accent rounded-[3px] hover:brightness-110"
             >
               <Plus size={14} /> {t('habit.new')}
@@ -217,7 +216,8 @@ export function ManagePage() {
                 <HabitRow
                   key={row.habit.id}
                   row={row}
-                  onEdit={() => setHabitEditing(row.habit)}
+                  onEdit={() => setHabitEditing({ mode: 'edit', habit: row.habit })}
+                  onAddChild={() => setHabitEditing({ mode: 'new', parentId: row.habit.id })}
                   onToggleFold={() => setFoldedHabits((f) => toggleIn(f, row.habit.id))}
                 />
               ))
@@ -390,16 +390,17 @@ export function ManagePage() {
       </div>
       {habitEditing && (
         <HabitDialog
-          habit={habitEditing === NEW ? undefined : habitEditing}
+          habit={habitEditing.mode === 'edit' ? habitEditing.habit : undefined}
+          defaultParentId={habitEditing.mode === 'new' ? habitEditing.parentId : undefined}
           onClose={() => setHabitEditing(null)}
           // Closing first, then asking, so the two modals never stack — the
           // question has to be put by something that outlives the dialog it was
           // asked from, which is why it is held here and not inside it.
           onDelete={
-            habitEditing === NEW
+            habitEditing.mode === 'new'
               ? undefined
               : () => {
-                  const h = habitEditing
+                  const h = habitEditing.habit
                   setHabitEditing(null)
                   ask(t('habit.deleteAsk', { name: h.title }), () => deleteHabit(h.id))
                 }
@@ -428,7 +429,18 @@ export function ManagePage() {
  * union of everything under it, which is what a heading's days are, and it
  * keeps the note, which is a remark about the routine rather than its schedule.
  */
-function HabitRow({ row, onEdit, onToggleFold }: { row: RoutineRow; onEdit: () => void; onToggleFold: () => void }) {
+function HabitRow({
+  row,
+  onEdit,
+  onAddChild,
+  onToggleFold,
+}: {
+  row: RoutineRow
+  onEdit: () => void
+  /** Another routine under this one — the row's own "+", as on a task row. */
+  onAddChild: () => void
+  onToggleFold: () => void
+}) {
   const t = useT()
   const lang = useLang()
   const labels = weekdayLabels(lang)
@@ -473,6 +485,14 @@ function HabitRow({ row, onEdit, onToggleFold }: { row: RoutineRow; onEdit: () =
           )}
         </div>
       </div>
+      <button
+        onClick={onAddChild}
+        title={t('habit.addSubtask')}
+        aria-label={t('habit.addSubtask')}
+        className="shrink-0 mt-0.5 p-1 text-dim hover:text-fg"
+      >
+        <Plus size={13} />
+      </button>
       <button
         onClick={onEdit}
         title={t('common.edit')}

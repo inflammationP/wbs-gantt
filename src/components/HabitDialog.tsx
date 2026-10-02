@@ -25,11 +25,24 @@ import { Field, Modal, inputCls } from './ui'
  */
 export function HabitDialog({
   habit,
+  defaultParentId,
   onDelete,
   onClose,
 }: {
   /** Absent means creating. */
   habit?: Habit
+  /**
+   * Where a *new* routine hangs, when the dialog was opened from a row rather
+   * than from the section's own button.
+   *
+   * The routine's `TaskDialog.defaultParentId`, one collection over: the row's
+   * "+" means "another one at this place", so the place is part of the request
+   * and the form starts with it filled in. Nothing else about the row is
+   * carried — a task's "+" inherits its project and nothing else either, and
+   * copying days or an end date across is a guess about what the child is,
+   * which is the one thing the form is open to ask.
+   */
+  defaultParentId?: string | null
   /** Absent means no delete button — which is the case when creating. */
   onDelete?: () => void
   onClose: () => void
@@ -42,7 +55,7 @@ export function HabitDialog({
 
   const [title, setTitle] = useState(habit?.title ?? '')
   const [note, setNote] = useState(habit?.note ?? '')
-  const [parentId, setParentId] = useState(habit?.parentId ?? null)
+  const [parentId, setParentId] = useState(habit?.parentId ?? defaultParentId ?? null)
   const [weekdays, setWeekdays] = useState<number[]>(habit?.weekdays ?? [...ALL_DAYS])
   // `''` rather than `null` throughout, because that is what an empty
   // `<input type="date">` reads and writes. It is turned back into `null` on the

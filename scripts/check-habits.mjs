@@ -403,6 +403,27 @@ assert.deepEqual(doneDaysOf('group'), [], 'a heading has no tick of its own to w
 useStore.getState().toggleHabit('run')
 assert.deepEqual(doneDaysOf('run'), [TODAY], 'and its children tick as they always did')
 
+// --- what a row's "+" goes through -------------------------------------------
+//
+// The one part of the "add a sub-routine from the row" feature a check can
+// reach: the store has to keep the parent it was handed. Losing it would leave
+// the new routine at the top of the list, which is the failure that looks like
+// the button did nothing at all.
+useStore.setState({ habits: GROUP })
+useStore.getState().addHabit('kid', { parentId: 'run' })
+const kid = useStore.getState().habits.find((h) => h.title === 'kid')
+assert.equal(kid.parentId, 'run')
+assert.deepEqual(
+  routineRows(useStore.getState().habits, null)
+    .filter((r) => r.habit.id === kid.id)
+    .map((r) => r.depth),
+  [2],
+  'and it is drawn under the routine the "+" was on',
+)
+// The section's own button is the same call with nothing answered.
+useStore.getState().addHabit('top')
+assert.equal(useStore.getState().habits.find((h) => h.title === 'top').parentId, null)
+
 // --- the branch, and what deleting a heading takes --------------------------
 assert.deepEqual([...habitBranch(DEEP, 'top')].sort(), ['deep', 'mid', 'top'])
 assert.deepEqual([...habitBranch(DEEP, 'mid')].sort(), ['deep', 'mid'])

@@ -526,6 +526,7 @@ const en = {
   'habit.paused': 'Suspended',
   'habit.parent': 'Parent',
   'habit.topLevel': '— Top level —',
+  'habit.addSubtask': 'Add sub-routine',
 
   // --- manage ---
   'manage.overall': 'Overall',
@@ -1098,6 +1099,7 @@ const zh: Dict = {
   'habit.paused': '停用',
   'habit.parent': '上级日常安排',
   'habit.topLevel': '最顶层日常安排',
+  'habit.addSubtask': '添加子日常安排',
 
   'manage.overall': '总览',
   'manage.heat': '完成热力图',
@@ -1656,6 +1658,7 @@ const fr: Dict = {
   'habit.paused': 'Suspendu',
   'habit.parent': 'Parent',
   'habit.topLevel': '— Niveau supérieur —',
+  'habit.addSubtask': 'Ajouter une sous-routine',
 
   'manage.overall': 'Vue d’ensemble',
   'manage.heat': 'Carte de complétion',

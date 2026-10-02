@@ -889,6 +889,7 @@ function HabitLine({
   const t = useT()
   const deleteHabit = useStore((s) => s.deleteHabit)
   const [editing, setEditing] = useState(false)
+  const [adding, setAdding] = useState(false)
   const { ask, element: dialogs } = useDialogs()
   const { habit, depth, hasKids, done: ticked, open } = row
   const green = sig('completed')
@@ -942,15 +943,31 @@ function HabitLine({
       </div>
 
       {editable && (
-        <button
-          onClick={() => setEditing(true)}
-          title={t('habit.edit')}
-          aria-label={t('habit.edit')}
-          className="shrink-0 mt-[1px] p-0.5 rounded-[3px] text-dim hover:text-fg opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
-        >
-          <Pencil size={12} />
-        </button>
+        <>
+          {/* Another routine at this place — the row's own "+", and the same
+              offer the Gantt puts on a task row. A routine can always hold
+              another one, so unlike a to-do there is no row where this has to
+              mean "beside it" instead. */}
+          <button
+            onClick={() => setAdding(true)}
+            title={t('habit.addSubtask')}
+            aria-label={t('habit.addSubtask')}
+            className="shrink-0 mt-[1px] p-0.5 rounded-[3px] text-dim hover:text-fg opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+          >
+            <Plus size={12} />
+          </button>
+          <button
+            onClick={() => setEditing(true)}
+            title={t('habit.edit')}
+            aria-label={t('habit.edit')}
+            className="shrink-0 mt-[1px] p-0.5 rounded-[3px] text-dim hover:text-fg opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+          >
+            <Pencil size={12} />
+          </button>
+        </>
       )}
+
+      {adding && <HabitDialog defaultParentId={habit.id} onClose={() => setAdding(false)} />}
 
       {editing && (
         <HabitDialog
