@@ -169,7 +169,10 @@ assert.equal(steps().length, 1, 'undoing is not itself recorded')
 // --- undoing a delete brings its logs back --------------------------------
 
 seed([task({ id: 'a', projectId: 'p1' }), task({ id: 'b', projectId: 'p1' })])
-addLog({ taskId: 'a', date: '2026-09-01', content: 'wrote this' })
+// Dated the store's own day, not a fixture date: a log is only ever written on
+// the day it belongs to (`isLogDayOpen`), and this file's clock is frozen at
+// 2026-09-15. A hard-coded date here is a write the store is right to refuse.
+addLog({ taskId: 'a', date: useStore.getState().today, content: 'wrote this' })
 assert.equal(useStore.getState().logs.length, 1)
 useStore.getState().withUndo('delete a', () => deleteTask('a'))
 assert.equal(useStore.getState().logs.length, 0, 'the delete takes the log with it')
@@ -196,7 +199,7 @@ assert.equal(board().length, 1, 'a created row is a row the undo can take away a
 
 seed([task({ id: 'a', projectId: 'p1' }), task({ id: 'b', projectId: 'p1' })])
 useStore.getState().withUndo('delete a', () => deleteTask('a'))
-addLog({ taskId: 'b', date: '2026-09-02', content: 'written after the step' })
+addLog({ taskId: 'b', date: useStore.getState().today, content: 'written after the step' })
 assert.equal(useStore.getState().logs.length, 1)
 undoLast()
 assert.equal(useStore.getState().logs.length, 1, 'a log the step never touched is still there')

@@ -196,3 +196,48 @@ export function groupLogsByDate(logs: TaskLog[]): { date: string; logs: TaskLog[
 export function logsForTask(logs: TaskLog[], taskId: string): TaskLog[] {
   return logs.filter((l) => l.taskId === taskId).sort((a, b) => b.date.localeCompare(a.date))
 }
+
+/**
+ * Whether `date`'s entry may still be written, corrected or removed: only on
+ * the day itself.
+ *
+ * A log is the record of a day's work, and a record that can be rewritten the
+ * next morning is not a record of anything — it is a draft that happened to
+ * have a date on it. So the day it belongs to is the whole of its window: while
+ * that day is running the entry is open and can be corrected as often as the
+ * person writing it likes; once the day is over it says what was said, and what
+ * is on it — the text, the figures, the date — is fixed.
+ *
+ * That is stricter than "not in the past", deliberately. A future day is not
+ * history, but an entry dated ahead of today is a record of work that has not
+ * happened yet, and it would sit at the end of the task's own list and be the
+ * figure the task reads — so writing today's entry would move nothing. One day
+ * wide is also the rule that needs no explaining: the day you are looking at is
+ * the day you can write on.
+ *
+ * The consequence is that a day nobody wrote about stays blank. That is the
+ * point rather than the price: a gap in the record is what not writing it down
+ * looks like, and filling it in afterwards is the thing this exists to prevent.
+ */
+export function isLogDayOpen(date: string, today: string): boolean {
+  return date === today
+}
+
+/**
+ * Whether the log about to be written would be the first one this task has on
+ * `date` — the entry that opens the day and says where the day left it.
+ *
+ * A day's first entry is the one that moves the task's number. A second entry
+ * on the same day is more of the same day's writing — another paragraph, added
+ * later — and it states nothing new, which is what `taskProgress` leans on when
+ * it walks back for the latest entry that *does* state a target: a blank one
+ * never erases the number an earlier one wrote.
+ *
+ * Asked as a question about the log list rather than counted anywhere, so a log
+ * deleted, moved to another day, or edited into having a target all change the
+ * answer by themselves. There being no second place that tracks "has this day
+ * been opened" is the point.
+ */
+export function opensLogDay(logs: TaskLog[], taskId: string, date: string): boolean {
+  return !logs.some((l) => l.taskId === taskId && l.date === date)
+}

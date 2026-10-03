@@ -342,7 +342,9 @@ clearUndo()
 const g1 = addTask({ name: 'one', projectId: 'p', startDate: '2026-09-01', endDate: '2026-09-02' })
 const g2 = addTask({ name: 'two', projectId: 'p', startDate: '2026-09-03', endDate: '2026-09-04' })
 const g3 = addTask({ name: 'three', projectId: 'p', startDate: '2026-09-05', endDate: '2026-09-06', strictProgress: true })
-addLog({ taskId: g3, date: '2026-09-05', content: 'wrote it up' })
+// The day it is for, rather than a fixture date: a log is written on its own day
+// and no other (`isLogDayOpen`), and this file runs against the real clock.
+addLog({ taskId: g3, date: useStore.getState().today, content: 'wrote it up' })
 const find = (id) => board().find((t) => t.id === id)
 
 withUndo('paused two', () => {

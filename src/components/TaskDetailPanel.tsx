@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { FolderTree, NotebookText, Pencil, Trash2, X } from 'lucide-react'
+import { FolderTree, NotebookText, Pencil, X } from 'lucide-react'
 import { Task, TaskLog } from '../types'
 import { useStore } from '../store/useStore'
 import { computeWbs, effectiveStates, isArchived, nameQualifiers, todoCascadeIds } from '../lib/tree'
-import { logsForTask } from '../lib/logs'
+import { isLogDayOpen, logsForTask } from '../lib/logs'
 import { LogLines } from './LogLines'
 import { hasStrictLeafUnder, pendingLogsUnder } from '../lib/dayTasks'
 import { STATUS_META, priorityMeta, sig, sigText } from '../lib/ui'
@@ -40,14 +40,15 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
   // to it means the reminder rolls over at midnight like every other count.
   const today = useStore((s) => s.today)
   const setSelected = useStore((s) => s.setSelected)
-  const deleteLog = useStore((s) => s.deleteLog)
   const pauseTask = useStore((s) => s.pauseTask)
   const resumeTask = useStore((s) => s.resumeTask)
   const setTaskTodo = useStore((s) => s.setTaskTodo)
   const unarchiveTasks = useStore((s) => s.unarchiveTasks)
   const withUndo = useStore((s) => s.withUndo)
 
-  const [logDialog, setLogDialog] = useState<{ existing?: TaskLog | null } | null>(null)
+  const [logOpen, setLogOpen] = useState(false)
+  /** The entry whose figure is being corrected — see `LogDialog`'s `existing`. */
+  const [fixLog, setFixLog] = useState<TaskLog | null>(null)
   const [treeOpen, setTreeOpen] = useState(false)
   const [startTodo, setStartTodo] = useState<string[] | null>(null)
   const [showHistory, setShowHistory] = useState(true)
@@ -165,7 +166,7 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
             takes this button's place is the "still to log" list below, which is
             the thing a parent is actually for. */}
         {isLoggable && !hasKids && (
-          <button onClick={() => setLogDialog({ existing: null })} className="w-full h-8 inline-flex items-center justify-center gap-1.5 text-[12px] font-medium bg-accent text-on-accent rounded-[3px] hover:brightness-110">
+          <button onClick={() => setLogOpen(true)} className="w-full h-8 inline-flex items-center justify-center gap-1.5 text-[12px] font-medium bg-accent text-on-accent rounded-[3px] hover:brightness-110">
             <NotebookText size={14} /> {t('log.write')}
           </button>
         )}
@@ -226,19 +227,25 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
                 <div key={log.id} className="border border-border rounded-[3px] p-2">
                   <div className="flex items-center justify-between mb-1">
                     <span className="font-mono text-[11px] text-dim">{formatDate(log.date)}</span>
-                    {/* Pencil and bin stay on a parent's history. Only the
-                        *new* entry is the folder's problem — the entries below
-                        were written while this task was still a leaf, and
-                        correcting or removing one is managing a record, not a
-                        container doing its contents' work. */}
-                    <div className="flex items-center gap-0.5">
-                      <button onClick={() => setLogDialog({ existing: log })} title={t('common.edit')} className="p-0.5 text-dim hover:text-fg"><Pencil size={12} /></button>
-                      <button onClick={() => deleteLog(log.id)} title={t('common.delete')} className="p-0.5 text-dim hover:text-delayed"><Trash2 size={12} /></button>
-                    </div>
                   </div>
                   <LogLines content={log.content} stamps={log.stamps} />
                   {log.targetProgress != null && (
-                    <div className="text-[11px] text-dim mt-1">{t('common.targetProgress', { percent: log.targetProgress })}</div>
+                    <div className="text-[11px] text-dim mt-1 flex items-center gap-1.5">
+                      {t('common.targetProgress', { percent: log.targetProgress })}
+                      {/* The whole of what is still editable about a written
+                          entry, and only on the day it was written: the figure.
+                          The text above it is the record. */}
+                      {isLogDayOpen(log.date, today) && (
+                        <button
+                          onClick={() => setFixLog(log)}
+                          title={t('log.editProgress')}
+                          aria-label={t('log.editProgress')}
+                          className="text-dim hover:text-fg"
+                        >
+                          <Pencil size={11} />
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               ))}
@@ -442,7 +449,8 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
         </div>
       </div>
     </aside>
-    {logDialog && <LogDialog taskId={task.id} existing={logDialog.existing} onClose={() => setLogDialog(null)} />}
+    {logOpen && <LogDialog taskId={task.id} onClose={() => setLogOpen(false)} />}
+    {fixLog && <LogDialog taskId={task.id} existing={fixLog} onClose={() => setFixLog(null)} />}
     {treeOpen && (
       <TaskTreeDialog
         taskId={task.id}

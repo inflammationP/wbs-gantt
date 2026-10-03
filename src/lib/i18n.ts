@@ -181,7 +181,7 @@ const en = {
   // Shown in place of the task dialog when the board has no project yet. A task
   // has to live in one, so the dialog's project picker would have nothing to
   // offer and a saved task would be a row nothing can place.
-  'gantt.noProject': 'A task has to live in a project — create one first, in {manage}, on the left sidebar.',
+  'gantt.noProject': 'A task has to live in a project — create one first.',
   // The same dialog's two explainer paragraphs: what the tree is, and what a
   // project is for.
   'gantt.noProject.p1':
@@ -417,7 +417,7 @@ const en = {
 
   // --- logs ---
   'log.write': 'Write log',
-  'log.edit': 'Edit log',
+  'log.editProgress': 'Correct progress',
   'log.label': 'Log',
   'log.contentPlaceholder': 'What did you work on?',
   'log.editedAt': 'edited {time}',
@@ -489,8 +489,6 @@ const en = {
   'day.readLogs': 'Read this day’s logs',
   'day.readLogsCount': 'Read this day’s logs ({count})',
   'day.noProgress': 'No progress',
-  'day.belongsTo': 'in',
-  'day.parentPath': 'Show the whole path',
   'day.viewTask': 'View task →',
 
   // --- chores (the Today page) ---
@@ -509,6 +507,19 @@ const en = {
   'chore.note': 'Note',
   'chore.notePlaceholder': 'Optional',
   'chore.day': 'Day',
+  'chore.slot': 'Part of day',
+  'chore.slot.none': 'Anytime',
+  'chore.slot.dawn': 'Early morning',
+  'chore.slot.am': 'Morning',
+  'chore.slot.pm': 'Afternoon',
+  'chore.slot.eve': 'Evening',
+  'chore.time': 'Exact time',
+  'chore.timePlaceholder': 'e.g. 9:30 / 9:30pm / 21:30',
+  'chore.timeHint': '12-hour with am/pm, or 24-hour',
+  'chore.timeUnreadable': 'Not a time we can read',
+  'chore.timeMismatch': '{time} is in {timeSlot}, not the {slot} picked above. Which should it use?',
+  'chore.preferTime': 'Switch to {slot}',
+  'chore.preferSlot': 'Keep {slot}',
   'chore.carriedTitle': 'Meant for {date}',
 
   'habit.section': 'Routine',
@@ -602,6 +613,7 @@ const en = {
   'settings.active': 'Current',
   'settings.version': 'Version',
   'settings.versionHint': 'The desktop app checks for updates on every launch.',
+  'settings.releaseHistory': 'Release history',
 
   // --- reminders ---
   'settings.reminder': 'Reminders',
@@ -674,11 +686,15 @@ const en = {
   'update.upToDate': 'You are on the latest version.',
   'update.availableShort': 'An update is available.',
   'update.unreachable': 'Automatic updates are unavailable because GitHub cannot be reached.',
+  'update.unreachableHide': 'Hide for this run',
   'update.webNote': 'Automatic updates apply to the desktop app. In a browser you always load the latest build.',
   'update.availableTitle': 'Update available',
   'update.availableBody': 'Version {version} has been released. You are on {current}.',
   'update.notes': 'Release notes',
   'update.history': 'Older releases this update brings along ({count})',
+  'update.historyTitle': 'Release history',
+  'update.historyLoading': 'Loading…',
+  'update.historyFailed': 'Could not read the release list from GitHub.',
   'update.noNotes': 'This release came with no release notes.',
   'update.downloadAndInstall': 'Update in background',
   'update.readyTitle': 'Update downloaded',
@@ -828,7 +844,7 @@ const zh: Dict = {
   'new.task': '任务',
   'new.project': '项目',
   'gantt.newTaskOrProject': '新建任务/项目',
-  'gantt.noProject': '任务要放在项目里 —— 请先在左侧导航栏「{manage}」中新建一个项目。',
+  'gantt.noProject': '任务要放在项目里 —— 请先新建一个项目。',
   'gantt.noProject.p1':
     'WBS-gantt 管理项目和任务的方式与电脑操作系统管理文件的方式（目录树）很像。在这里，项目（project）是最顶层的根目录，而每个项目下属的所有任务都可以视作一个文件 / 文件夹。显然文件得存放在根目录下，所以在新建任务前，需要为其指定一个项目。我十分推荐你这样理解你未来即将构建的任务网络，因为……软件就是这么设计的。',
   'gantt.noProject.p2':
@@ -1010,7 +1026,7 @@ const zh: Dict = {
   'task.markedCompleted': '已标记为完成',
 
   'log.write': '写日志',
-  'log.edit': '编辑日志',
+  'log.editProgress': '修改进度',
   'log.label': '日志',
   'log.contentPlaceholder': '今天做了什么？',
   'log.editedAt': '编辑于 {time}',
@@ -1066,8 +1082,6 @@ const zh: Dict = {
   'day.readLogs': '查看当天的日志',
   'day.readLogsCount': '查看当天的日志（{count}）',
   'day.noProgress': '无进度',
-  'day.belongsTo': '属于',
-  'day.parentPath': '展开完整路径',
   'day.viewTask': '查看任务 →',
 
   'chore.section': '临时事务',
@@ -1082,6 +1096,19 @@ const zh: Dict = {
   'chore.note': '备注',
   'chore.notePlaceholder': '可不填',
   'chore.day': '日期',
+  'chore.slot': '时段',
+  'chore.slot.none': '不限',
+  'chore.slot.dawn': '凌晨',
+  'chore.slot.am': '上午',
+  'chore.slot.pm': '下午',
+  'chore.slot.eve': '晚上',
+  'chore.time': '时间点',
+  'chore.timePlaceholder': '如 9:30 / 9:30pm / 21:30',
+  'chore.timeHint': '12 小时制带 am/pm，或直接写 24 小时制',
+  'chore.timeUnreadable': '看不懂这个时间',
+  'chore.timeMismatch': '{time} 属于「{timeSlot}」，和上面选的「{slot}」不一致。以哪个为准？',
+  'chore.preferTime': '改为{slot}',
+  'chore.preferSlot': '保持{slot}',
   'chore.carriedTitle': '原本定于 {date}',
 
   'habit.section': '日常安排',
@@ -1153,6 +1180,7 @@ const zh: Dict = {
   'settings.active': '当前',
   'settings.version': '版本',
   'settings.versionHint': '桌面版每次启动会自动检查更新。',
+  'settings.releaseHistory': '历史版本',
 
   // --- reminders ---
   'settings.reminder': '提醒',
@@ -1222,11 +1250,15 @@ const zh: Dict = {
   'update.upToDate': '已是最新版本。',
   'update.availableShort': '有可用更新。',
   'update.unreachable': '由于无法连接到 GitHub，自动更新不可用。',
+  'update.unreachableHide': '本次运行不显示',
   'update.webNote': '自动更新只适用于桌面版；在浏览器里打开的始终是最新版本。',
   'update.availableTitle': '发现新版本',
   'update.availableBody': '新版本 {version} 已发布，当前版本为 {current}。',
   'update.notes': '更新说明',
   'update.history': '本次将连带更新的历史版本内容（{count} 个版本）',
+  'update.historyTitle': '历史版本更新说明',
+  'update.historyLoading': '读取中…',
+  'update.historyFailed': '没能从 GitHub 读到版本列表。',
   'update.noNotes': '本次发布未填写更新说明。',
   'update.downloadAndInstall': '后台更新',
   'update.readyTitle': '更新已下载',
@@ -1375,7 +1407,7 @@ const fr: Dict = {
   'new.task': 'Tâche',
   'new.project': 'Projet',
   'gantt.newTaskOrProject': 'Nouvelle tâche / projet',
-  'gantt.noProject': 'Une tâche doit vivre dans un projet — créez-en un d’abord, dans {manage}, sur la barre latérale de gauche.',
+  'gantt.noProject': 'Une tâche doit vivre dans un projet — créez-en un d’abord.',
   'gantt.noProject.p1':
     'WBS-gantt gère les projets et les tâches à peu près comme un système d’exploitation gère ses fichiers : une arborescence. Un projet est le dossier racine, tout en haut, et chaque tâche qu’il contient est un fichier ou un dossier. Un fichier se range bien sous une racine : une tâche a donc besoin d’un projet avant de pouvoir être créée. Je vous conseille vraiment de lire ainsi le réseau de tâches que vous allez bâtir, parce que… c’est comme ça que le logiciel est conçu.',
   'gantt.noProject.p2':
@@ -1569,7 +1601,7 @@ const fr: Dict = {
   'task.markedCompleted': 'Marquée comme terminée',
 
   'log.write': 'Écrire un journal',
-  'log.edit': 'Modifier le journal',
+  'log.editProgress': 'Corriger l’avancement',
   'log.label': 'Journal',
   'log.contentPlaceholder': 'Sur quoi avez-vous travaillé ?',
   'log.editedAt': 'modifié à {time}',
@@ -1625,8 +1657,6 @@ const fr: Dict = {
   'day.readLogs': 'Lire les journaux du jour',
   'day.readLogsCount': 'Lire les journaux du jour ({count})',
   'day.noProgress': 'Aucun avancement',
-  'day.belongsTo': 'dans',
-  'day.parentPath': 'Afficher tout le chemin',
   'day.viewTask': 'Voir la tâche →',
 
   'chore.section': 'Menues tâches',
@@ -1641,6 +1671,19 @@ const fr: Dict = {
   'chore.note': 'Remarque',
   'chore.notePlaceholder': 'Facultatif',
   'chore.day': 'Jour',
+  'chore.slot': 'Moment de la journée',
+  'chore.slot.none': 'À tout moment',
+  'chore.slot.dawn': 'Petit matin',
+  'chore.slot.am': 'Matin',
+  'chore.slot.pm': 'Après-midi',
+  'chore.slot.eve': 'Soir',
+  'chore.time': 'Heure précise',
+  'chore.timePlaceholder': 'ex. 9:30 / 9:30pm / 21:30',
+  'chore.timeHint': '12 h avec am/pm, ou 24 h',
+  'chore.timeUnreadable': 'Heure illisible',
+  'chore.timeMismatch': '{time} tombe dans « {timeSlot} », pas dans « {slot} » choisi plus haut. Lequel garder ?',
+  'chore.preferTime': 'Passer à {slot}',
+  'chore.preferSlot': 'Garder {slot}',
   'chore.carriedTitle': 'Prévu le {date}',
 
   'habit.section': 'Routine',
@@ -1712,6 +1755,7 @@ const fr: Dict = {
   'settings.active': 'Actuel',
   'settings.version': 'Version',
   'settings.versionHint': 'L’application de bureau vérifie les mises à jour à chaque lancement.',
+  'settings.releaseHistory': 'Historique des versions',
 
   // --- reminders ---
   'settings.reminder': 'Rappels',
@@ -1785,12 +1829,16 @@ const fr: Dict = {
   'update.availableShort': 'Une mise à jour est disponible.',
   'update.unreachable':
     'Les mises à jour automatiques sont indisponibles : GitHub est injoignable.',
+  'update.unreachableHide': 'Masquer pour cette session',
   'update.webNote':
     'Les mises à jour concernent l’application de bureau ; dans un navigateur vous chargez toujours la dernière version.',
   'update.availableTitle': 'Mise à jour disponible',
   'update.availableBody': 'La version {version} est disponible. Vous avez la {current}.',
   'update.notes': 'Nouveautés',
   'update.history': 'Versions plus anciennes incluses ({count})',
+  'update.historyTitle': 'Historique des versions',
+  'update.historyLoading': 'Chargement…',
+  'update.historyFailed': 'Impossible de lire la liste des versions depuis GitHub.',
   'update.noNotes': 'Cette version n’est accompagnée d’aucune note.',
   'update.downloadAndInstall': 'Mettre à jour en arrière-plan',
   'update.readyTitle': 'Mise à jour téléchargée',

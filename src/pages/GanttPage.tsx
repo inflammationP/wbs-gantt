@@ -7,14 +7,14 @@ import { addDays } from '../lib/dates'
 import { formatDateRange } from '../lib/i18n'
 import { Dict } from '../lib/i18n'
 import { useLang, useT } from '../lib/useT'
-import { Modal, Segmented } from '../components/ui'
+import { Segmented } from '../components/ui'
 import { GanttChart } from '../components/gantt/GanttChart'
 import { RowTask, archiveCascade, isArchived, movingUnits, todoCascadeIds } from '../lib/tree'
 import { ArchiveActions, TodoActions } from '../components/gantt/RowLeft'
 import { TaskDialog } from '../components/TaskDialog'
 import { ProjectManageDialog } from '../components/ProjectManageDialog'
 import { HistoryDialog } from '../components/HistoryDialog'
-import { NewDialog } from '../components/NewDialog'
+import { NewDialog, NoProjectDialog } from '../components/NewDialog'
 import { LogDialog } from '../components/LogDialog'
 import { StartTodoDialog } from '../components/StartTodoDialog'
 import { ContextMenu, MenuState } from '../components/gantt/ContextMenu'
@@ -78,7 +78,7 @@ export function GanttPage() {
   // through `openCreate` to the task form directly.
   const [newOpen, setNewOpen] = useState(false)
   const [menu, setMenu] = useState<MenuState | null>(null)
-  const [logDialog, setLogDialog] = useState<{ taskId: string; existing?: TaskLog | null } | null>(null)
+  const [logDialog, setLogDialog] = useState<string | null>(null)
   const [startTodo, setStartTodo] = useState<string[] | null>(null)
   // Shown in place of the task dialog while the board has no project — see
   // `openCreate`.
@@ -166,7 +166,7 @@ export function GanttPage() {
     setDialog({ mode: 'create', parentId, projectId, isTodo })
   }
   const openEdit = (row: RowTask) => setDialog({ mode: 'edit', task: row.task })
-  const openLog = (row: RowTask) => setLogDialog({ taskId: row.id })
+  const openLog = (row: RowTask) => setLogDialog(row.id)
 
   const handleContext = (e: MouseEvent<HTMLDivElement>, row: RowTask) => {
     e.preventDefault()
@@ -511,7 +511,6 @@ export function GanttPage() {
         />
       )}
 
-      {logDialog && <LogDialog taskId={logDialog.taskId} existing={logDialog.existing} onClose={() => setLogDialog(null)} />}
 
       {startTodo && <StartTodoDialog taskIds={startTodo} onClose={() => setStartTodo(null)} />}
 
@@ -547,38 +546,6 @@ export function GanttPage() {
   )
 }
 
-/**
- * What a board with no projects says instead of the task dialog.
- *
- * A dialog rather than a one-line notice, because this is the first thing a new
- * board can be asked and the answer is structural rather than administrative: a
- * task has to live in a project, and a project is the root of the tree. So the
- * prompt is followed by the two paragraphs that say what that means.
- *
- * It stands in for the dialog rather than warning beside it — hence the button
- * only acknowledging, with nothing to save.
- */
-function NoProjectDialog({ onClose }: { onClose: () => void }) {
-  const t = useT()
-  return (
-    <Modal title={t('common.noticeTitle')} onClose={onClose} width={520}>
-      <div className="space-y-3 text-[12px] leading-relaxed text-muted">
-        <p className="text-fg">{t('gantt.noProject', { manage: t('nav.manage') })}</p>
-        <p>{t('gantt.noProject.p1')}</p>
-        <p>{t('gantt.noProject.p2')}</p>
-      </div>
-      <div className="flex justify-end pt-4">
-        <button
-          onClick={onClose}
-          autoFocus
-          className="h-8 px-4 text-[12px] font-medium bg-accent text-on-accent rounded-[3px]"
-        >
-          {t('common.gotIt')}
-        </button>
-      </div>
-    </Modal>
-  )
-}
 
 /**
  * The one step back, as a strip under the board: what just happened, the way

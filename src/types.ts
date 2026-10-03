@@ -80,6 +80,18 @@ export interface Task {
 }
 
 /**
+ * The part of the day a chore belongs to: 凌晨 0–7, 上午 7–12, 下午 12–18,
+ * 晚上 18–24.
+ *
+ * The boundaries are `slotOfTime`'s, in `lib/chores.ts`, and they are written
+ * down there once. They matter in exactly one place: a chore carries this slot
+ * from the moment it is created, and a precise `time` typed later *may* fall in
+ * a different one — which is a question for the person who typed it, not a rule
+ * for the code to settle quietly.
+ */
+export type ChoreSlot = 'dawn' | 'am' | 'pm' | 'eve'
+
+/**
  * A chore — the short, day-sized thing you handle today or tomorrow.
  *
  * Deliberately its own collection rather than a `Task` with a flag. Nothing on
@@ -99,6 +111,29 @@ export interface Chore {
   title: string
   note: string // one line, may be empty
   date: string // yyyy-MM-dd, the day it was put on; never rewritten
+  /**
+   * The part of the day it belongs to, chosen when it is created, or null when
+   * nothing was chosen. Null is what every chore written before this existed
+   * reads as, which is why it is a value rather than a default of `'am'`: the
+   * group it lands in has to be the group that means "nobody said".
+   *
+   * Unknown words from a hand-edited file read as null too — see `choreSlot`.
+   */
+  slot?: ChoreSlot | null
+  /**
+   * A precise time of day, `HH:MM`, or null for none.
+   *
+   * Optional and note-like: it is typed into the edit dialog only, by someone
+   * who wants to be exact, and it is only ever a sort key inside its slot —
+   * chores that have one come before the ones that do not, earliest first.
+   * Nothing is measured against it, and nothing is late at 12:01: the point of
+   * asking for a rough slot first is to keep the day from turning back into a
+   * schedule.
+   *
+   * It may disagree with `slot` — the two are typed in different places at
+   * different times. `ChoreDialog` asks which one wins rather than picking.
+   */
+  time?: string | null
   done: boolean
   completedDate: string | null // yyyy-MM-dd, null while open. The heatmap reads this
   createdAt: string

@@ -123,43 +123,98 @@ export function releasesBetween(
 let releaseCache: ReleaseNotes[] | null = null
 
 /**
- * What the versions in between had to say.
+ * The releases, by whichever HTTP the app has.
+ *
+ * Two transports for one GET. Inside Tauri it is the plugin's fetch, which is
+ * not subject to the webview's CORS rules; outside it — the browser build, and
+ * `npm run dev` — the platform's own fetch, because GitHub's API answers with
+ * `Access-Control-Allow-Origin: *` and there is nothing here to bypass. The
+ * timeout is the plugin's own option and has no browser equivalent, which is
+ * the only thing the two lines differ by beyond which `fetch` is meant.
+ *
+ * Nothing about reading a changelog needs an installed app, and the page that
+ * shows it is worth being able to open while developing it.
+ */
+async function getReleases(): Promise<RawRelease[]> {
+  const headers = { Accept: 'application/vnd.github+json' }
+  if (isTauri()) {
+    const { fetch } = await import('@tauri-apps/plugin-http')
+    const res = await fetch(RELEASES_URL, { headers, connectTimeout: CHECK_TIMEOUT_MS })
+    return res.ok ? ((await res.json()) as RawRelease[]) : []
+  }
+  const res = await fetch(RELEASES_URL, { headers })
+  return res.ok ? ((await res.json()) as RawRelease[]) : []
+}
+
+/**
+ * The published releases, as GitHub has them.
  *
  * Fetched rather than shipped, because it cannot be shipped: the notes for
  * 0.10.0 have to be readable by someone still on 0.9.0, and any copy baked into
- * that build predates them.
+ * that build predates them. Both callers below want the same list read the same
+ * way, and they are one cache apart from each other — the update dialog's
+ * "what did I skip" and the settings page's "what has this app ever shipped"
+ * are the same data asked two questions of.
  *
- * Every failure returns an empty list. The user this happens to — the one who
- * cannot reach GitHub — already has the "automatic updates are unavailable"
- * banner to explain it, and this list is the one part of the update check that
- * does not affect whether the update can be installed. `kind: 'error'` exists
- * for the part that does; a second notice here would be noise about something
- * nobody has to act on.
+ * Every failure returns an empty list. For the update check that is deliberate:
+ * the user this happens to already has the "automatic updates are unavailable"
+ * banner, and the skipped-versions list is the one part of the check that does
+ * not affect whether the update can be installed. The settings page's history
+ * is a screen the user asked for, so there an empty list has to be said out
+ * loud rather than drawn as a blank.
  */
-export async function fetchReleaseHistory(current: string, target: string): Promise<ReleaseNotes[]> {
-  if (!isTauri()) return []
-
+async function loadReleases(): Promise<ReleaseNotes[]> {
+  if (releaseCache) return releaseCache
   try {
-    if (!releaseCache) {
-      const { fetch } = await import('@tauri-apps/plugin-http')
-      const res = await fetch(RELEASES_URL, {
-        headers: { Accept: 'application/vnd.github+json' },
-        connectTimeout: CHECK_TIMEOUT_MS,
-      })
-      if (!res.ok) return []
-      const json = (await res.json()) as { tag_name?: string; body?: string; draft?: boolean }[]
-      releaseCache = json
-        .filter((r) => !r.draft && r.tag_name)
-        .map((r) => {
-          const body = (r.body ?? '').trim()
-          return { version: r.tag_name!.replace(/^v/, ''), notes: body === NO_NOTES ? '' : body }
-        })
-    }
-    return releasesBetween(releaseCache, current, target)
+    releaseCache = parseReleases(await getReleases())
+    return releaseCache
   } catch (err) {
     console.warn('Release history unavailable:', err)
     return []
   }
+}
+
+/** One release as the API hands it over. */
+interface RawRelease {
+  tag_name?: string
+  body?: string
+  draft?: boolean
+}
+
+/**
+ * The API's answer read into the shape the app draws.
+ *
+ * Split out from the fetch so it can be checked without a network: every rule
+ * here fails silently. A draft that slips through is a release nobody has been
+ * told about appearing in the history; a tag left as `v0.10.0` is a version
+ * that will not compare against the `0.9.0` the app calls itself, which drops
+ * it from the skipped list rather than misplacing it; and an unread `NO_NOTES`
+ * is that English sentence in the middle of someone's Chinese notes.
+ */
+export function parseReleases(json: RawRelease[]): ReleaseNotes[] {
+  return json
+    .filter((r) => !r.draft && r.tag_name)
+    .map((r) => {
+      const body = (r.body ?? '').trim()
+      return { version: r.tag_name!.replace(/^v/, ''), notes: body === NO_NOTES ? '' : body }
+    })
+}
+
+/** The releases strictly between what is installed and what is on offer. */
+export async function fetchReleaseHistory(current: string, target: string): Promise<ReleaseNotes[]> {
+  return releasesBetween(await loadReleases(), current, target)
+}
+
+/**
+ * Everything the app has ever shipped, newest first.
+ *
+ * Sorted here rather than at the API, which answers in publication order and
+ * is not obliged to keep doing so. The copy matters: `releasesBetween` sorts its
+ * own filtered array, and sorting the cache in place would be this function
+ * quietly reordering what the update dialog reads.
+ */
+export async function fetchAllReleases(): Promise<ReleaseNotes[]> {
+  return [...(await loadReleases())].sort((a, b) => compareVersions(b.version, a.version))
 }
 
 /**

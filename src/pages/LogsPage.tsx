@@ -24,15 +24,14 @@ export function LogsPage() {
   const projects = useStore((s) => s.projects)
   const logs = useStore((s) => s.logs)
   const notes = useStore((s) => s.notes)
-  const deleteLog = useStore((s) => s.deleteLog)
   const today = useStore((s) => s.today)
 
   // Which of the two the page is showing. Not persisted: the nav entry is one
   // entry, so re-entering it should land where it always lands — on the logs.
   const [mode, setMode] = useState<Mode>('logs')
   const [filter, setFilter] = useState<Filter>({ kind: 'all' })
-  const [logDialog, setLogDialog] = useState<{ taskId: string; existing?: TaskLog | null } | null>(null)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const [fixLog, setFixLog] = useState<TaskLog | null>(null)
   // Any day can be opened, not only one the grid has a card for.
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
   // The day the "write something" box is composing for, or null when it is
@@ -293,13 +292,12 @@ export function LogsPage() {
           tasks={tasks}
           projects={projects}
           onClose={() => setSelectedDay(null)}
-          onEdit={(log) => setLogDialog({ taskId: log.taskId, existing: log })}
-          onDelete={deleteLog}
+          onEdit={(log) => setFixLog(log)}
           notes={{ note: selected.note }}
         />
       )}
 
-      {logDialog && <LogDialog taskId={logDialog.taskId} existing={logDialog.existing} onClose={() => setLogDialog(null)} />}
+      {fixLog && <LogDialog taskId={fixLog.taskId} existing={fixLog} onClose={() => setFixLog(null)} />}
       {compose && <NoteDialog date={compose} onClose={() => setCompose(null)} />}
     </div>
   )

@@ -113,7 +113,7 @@ function Column({
         dayChores={dayChores}
         habits={habits}
         layout="side"
-        onAddChore={(title) => addChore(title, date)}
+        onAddChore={(title, slot) => addChore(title, date, slot)}
         habitsEditable={editable}
         onToggleHabit={editable ? toggleHabit : undefined}
       />

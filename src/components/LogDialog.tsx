@@ -3,10 +3,11 @@ import type { KeyboardEvent } from 'react'
 import { Modal, Field, inputCls } from './ui'
 import { useStore } from '../store/useStore'
 import { Task, TaskLog } from '../types'
-import { addDays, toDate, toISO, todayISO } from '../lib/dates'
+import { addDays, toDate, toISO } from '../lib/dates'
 import { isStrictLeaf } from '../lib/dayTasks'
 import { buildChildrenMap, isArchived } from '../lib/tree'
 import { countableDays, taskProgress } from '../lib/progress'
+import { isLogDayOpen, opensLogDay } from '../lib/logs'
 import { useT } from '../lib/useT'
 
 // `inputCls` carries `border-border`, and a red box has to not race it in the
@@ -32,15 +33,25 @@ function parseNum(s: string): number | null {
 
 interface Props {
   taskId: string
+  /**
+   * An entry to correct the figure on, rather than writing a new one.
+   *
+   * Only today's can be passed — see `isLogDayOpen` — and only the figure is
+   * open to change; the text above it is shown, not offered.
+   */
   existing?: TaskLog | null
-  /** Date to prefill for a new log. Defaults to today. */
-  defaultDate?: string
   onClose: () => void
 }
 
 /**
- * Write a log, or edit one — for one task, and only for the task it was opened
- * on.
+ * Write today's log — for one task, and only for the task it was opened on.
+ *
+ * Two things it can be doing, and they are both about one day. It writes today's
+ * entry; or it corrects the figure on today's entry, which is the one thing
+ * about an entry that can still move after it is written. The text is the
+ * record and is read-only in both — more to say is another paragraph, added by
+ * writing, not a rewrite. There is no deleting, and no reaching back past today:
+ * once the day is over the entry says what it said.
  *
  * Writing on a task with subtasks used to open in *batch* mode: a picker of
  * everything under it that still owed a log today, saving advancing to the next
@@ -62,10 +73,8 @@ interface Props {
  * of the same wrong thing. A task that gains a child is a folder from that
  * moment, and a folder has no progress of its own for a log to move.
  *
- * That last step is about *new* entries only — the history is untouched, and
- * the guard names `existing` for exactly that reason.
  */
-export function LogDialog({ taskId, existing, defaultDate, onClose }: Props) {
+export function LogDialog({ taskId, existing, onClose }: Props) {
   const t = useT()
   const tasks = useStore((s) => s.tasks)
   const logs = useStore((s) => s.logs)
@@ -79,52 +88,50 @@ export function LogDialog({ taskId, existing, defaultDate, onClose }: Props) {
 
   // A task with children is a folder, and a folder does not keep a log.
   //
-  // New entries only: `existing` is untouched by this. What a parent keeps is
-  // the history it wrote while it was still a leaf, and that history stays
-  // manageable — editing one fixes a typo, deleting one removes something the
-  // user no longer wants on record, and neither is the folder pretending to be
-  // a task. What the folder cannot do is *start* a new day's work, because a
-  // parent has no progress of its own for a log to move (`taskProgress` is only
-  // ever read off leaves) — a write here would be a number nothing reads.
-  //
+  // A folder has no progress of its own for a log to move (`taskProgress` is
+  // only ever read off leaves), so a write here would be a number nothing reads.
   // Every caller hides its own way in — the context menu's item, the panel's
   // button — and this is the line that makes the rule true rather than merely
   // well hidden. Without it the rule lives in each of those places, and the
   // fifth one added later will not remember.
-  // `existing` deliberately not part of the archived half: editing and deleting
-  // a log an archived task already has is allowed, because a log is a record of
-  // what was written rather than a field of the task. Only *starting* a new one
-  // is blocked —  the day panel that used to be the other way in no longer lists
-  // the row.
-  if (!existing && (tasks.some((x) => x.parentId === task.id) || isArchived(task))) return null
+  if (tasks.some((x) => x.parentId === task.id) || isArchived(task)) return null
 
   const task_ = task
+  // A figure is only ever read back on a strict *leaf* (`isStrictLeaf`), so a
+  // parent would collect a number nothing reads — the same lie the detail panel
+  // used to tell about a parent's progress mode.
+  const strict = isStrictLeaf(task_, buildChildrenMap(tasks))
 
-  const save = (date: string, content: string, targetProgress: number | null) => {
+  // The day is today's throughout — the dialog cannot be about another day at
+  // all — so the date is not something the form carries and not something this
+  // has to pass on. The store checks it again on the way in.
+  //
+  // A day that is over is a record, and correcting a figure is still a write:
+  // it does not open on one, and the entry stays readable in the task's history
+  // and in the Logs page either way.
+  if (existing && (!isLogDayOpen(existing.date, today) || !strict)) return null
+
+  const save = (content: string, targetProgress: number | null) => {
     if (existing) {
-      updateLog(existing.id, { date, content, targetProgress })
+      updateLog(existing.id, targetProgress)
       onClose()
       return
     }
-    addLog({ taskId, date, content, targetProgress })
+    addLog({ taskId, date: today, content, targetProgress })
     onClose()
   }
 
   return (
-    <Modal title={existing ? t('log.edit') : t('log.write')} onClose={onClose} width={560}>
+    <Modal title={existing ? t('log.editProgress') : t('log.write')} onClose={onClose} width={560}>
       <div className="space-y-3">
         <div className="text-[13px] font-medium text-fg">{task_.name}</div>
 
         <LogForm
           task={task_}
           existing={existing}
-          defaultDate={defaultDate}
+          today={today}
           logs={logs}
-          // A target progress is only ever read back on a strict *leaf*
-          // (`isStrictLeaf`), so offering the field on a task with children
-          // would collect a number nothing reads — the same lie the detail
-          // panel used to tell about a parent's progress mode.
-          strict={isStrictLeaf(task_, buildChildrenMap(tasks))}
+          strict={strict}
           onSave={save}
           onCancel={onClose}
         />
@@ -136,7 +143,7 @@ export function LogDialog({ taskId, existing, defaultDate, onClose }: Props) {
 function LogForm({
   task,
   existing,
-  defaultDate,
+  today,
   logs,
   strict,
   onSave,
@@ -144,24 +151,34 @@ function LogForm({
 }: {
   task: Task
   existing?: TaskLog | null
-  defaultDate?: string
+  /** The only day this form can be about. See `isLogDayOpen`. */
+  today: string
   logs: TaskLog[]
   strict: boolean
-  onSave: (date: string, content: string, targetProgress: number | null) => void
+  onSave: (content: string, targetProgress: number | null) => void
   onCancel: () => void
 }) {
   const t = useT()
 
-  const [date, setDate] = useState(existing?.date ?? defaultDate ?? todayISO())
   const [content, setContent] = useState(existing?.content ?? '')
   const [error, setError] = useState<'missing' | 'backward' | null>(null)
 
+  // Whether this dialog is the one that states where the day left the task.
+  //
+  // Only a day's *first* entry does. A second entry on the same day is more of
+  // that day's writing — added hours later, about the same work — and it takes
+  // no number, because a day has one figure and two boxes on the second entry
+  // were two places to keep the same one in step. The figure is not unreachable
+  // Correcting a figure that is already there, or writing the entry that states
+  // the day's first one. A *second* write into a day that already has a figure
+  // is more of the day's paragraphs and asks nothing — the figure is corrected
+  // from the entry it belongs to, which is what `existing` is.
+  const asksProgress = strict && (existing != null || opensLogDay(logs, task.id, today))
+
   // The number the two boxes are measured from.
   //
-  // Normally it is the task's progress at the start of this log's day — the
-  // delta has to mean "how much since that morning" — clipped to the previous
-  // day and to logs other than the one being edited, so pushing the date forward
-  // cannot make a log its own baseline.
+  // Normally it is the task's progress at the start of today — the delta has to
+  // mean "how much since this morning".
   //
   // A task that states no progress anywhere is the exception, and it is not a
   // small one: those are the logs written before the fields were mandatory, so
@@ -175,41 +192,27 @@ function LogForm({
     if (!logs.some((l) => l.taskId === task.id && l.targetProgress != null)) {
       return taskProgress(task, logs, new Date()) ?? 0
     }
-    // Writing another block into a day that already has one. What this write
-    // replaces is *that* entry's number, so the boxes are measured from it —
-    // otherwise the pair started at the morning's value and "add 5" to a day
-    // already sitting at 35 landed the task on 5. Goes for a past day too, where
-    // the panel's "write on this day" merges the same way.
-    if (!existing && date) {
-      const sameDay = logs.filter((l) => l.taskId === task.id && l.date === date)
-      // The last one, which is the one `taskProgress` would count were the day
-      // somehow carrying more than one entry.
-      const stated = sameDay.length ? sameDay[sameDay.length - 1].targetProgress : null
-      if (stated != null) return stated
-    }
-    if (!date) return 0
-    const before = addDays(toDate(date), -1)
-    const prior = logs.filter((l) => l.id !== existing?.id && l.date <= toISO(before))
+    // Writing a *second* entry into a day already carrying one used to measure
+    // its boxes from that day's own number, so that "add 5" to a day sitting at
+    // 35 landed on 40. It does not any more, and the branch went with it: a
+    // second entry asks for no number at all (`asksProgress`), so there are no
+    // boxes to measure from — only the day's first entry states a figure.
+    const before = addDays(toDate(today), -1)
+    const prior = logs.filter((l) => l.date <= toISO(before))
     return taskProgress(task, prior, before) ?? 0
-  }, [logs, task, date, existing?.id])
+  }, [logs, task, today])
 
   // One number, two boxes. `src` is whichever the user typed into and stays the
   // master until they type into the other; the other is re-derived from `base`
-  // on every render, so changing the date moves it with the baseline. Held as
+  // on every render. Held as
   // the raw string rather than a number because "" is a state of its own — an
   // empty required box must not read as 0, and neither must a lone "-".
-  const [prog, setProg] = useState<{ src: 'delta' | 'absolute'; input: string }>(() => {
-    const stored = existing?.targetProgress
-    if (stored != null) return { src: 'absolute', input: String(stored) }
-    // A log written before the field became mandatory has no number of its own.
-    // It opens at the baseline, so saving it untouched writes nothing new —
-    // which is what "don't send the user back to fix old logs" has to mean.
-    return { src: 'absolute', input: existing ? String(base) : '' }
+  const [prog, setProg] = useState<{ src: 'delta' | 'absolute'; input: string }>({
+    // Opened on the figure the entry carries, so correcting it is a change to a
+    // number rather than a question about which number it was.
+    src: 'absolute',
+    input: existing?.targetProgress != null ? String(existing.targetProgress) : '',
   })
-  // Frozen at mount: the number the user was shown, so "left it alone" can be
-  // told apart from "typed the same thing back".
-  const seed = useRef(prog.input).current
-  const touched = prog.input !== seed
 
   const typed = parseNum(prog.input)
   const absolute = typed == null ? null : clampPct(prog.src === 'absolute' ? typed : base + typed)
@@ -279,11 +282,11 @@ function LogForm({
   }
 
   const submit = () => {
-    // A cleared date would be written as '' — which sorts before every real
-    // date and so falls inside `logsUpTo` for every day there has ever been.
-    if (!content.trim() || !date) return
-    if (!strict) {
-      onSave(date, content, null)
+    if (!content.trim()) return
+    // Nothing is asked, so nothing is written: `null` is the entry stating no
+    // figure, and the day keeps the one its first entry gave it.
+    if (!asksProgress) {
+      onSave(content, null)
       return
     }
     if (absolute == null) {
@@ -292,41 +295,39 @@ function LogForm({
     }
     // A retreat is not a typo to be clamped away — the figure is a record of
     // work done, and lowering it rewrites history rather than reporting it.
-    // Only checked on a value the user actually chose: an untouched row writes
-    // back whatever it already carried, including the retreats old data has.
-    if (touched && absolute < base) {
+    if (absolute < base) {
       setError('backward')
       return
     }
-    // Never typed into: write back what the row already carried, so opening a
-    // log and pressing save is a true no-op instead of stamping a number onto a
-    // row that deliberately had none.
-    onSave(date, content, touched ? absolute : (existing?.targetProgress ?? null))
+    onSave(content, absolute)
   }
 
   return (
     <>
-      <Field label={t('common.date')}>
-        <input type="date" className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} />
-      </Field>
-
       <Field label={t('log.label')}>
         <textarea
           ref={taRef}
           // Tall on purpose: a day's entry now carries everything written to it
           // that day, the divider lines included, so the box has to show a block
           // of text rather than a couple of lines of it.
-          className={`${areaCls} h-56 resize-none`}
+          //
+          // Read-only when correcting a figure, and shown rather than hidden:
+          // the sentence you are correcting the number against is the one worth
+          // having in front of you. Dimmed so that "you cannot type here" is
+          // visible before the cursor is tried — the same reason it is not a
+          // `disabled` box, which greys the text itself past reading.
+          readOnly={!!existing}
+          className={`${areaCls} h-56 resize-none ${existing ? 'text-muted' : ''}`}
           value={content}
           onChange={(e) => setContent(e.target.value)}
           onKeyDown={onLogKeyDown}
           placeholder={t('log.contentPlaceholder')}
-          autoFocus
+          autoFocus={!existing}
         />
         <div className="text-[11px] text-dim mt-1">{t('log.hint')}</div>
       </Field>
 
-      {strict && (
+      {asksProgress && (
         <div className="border-t border-line pt-3">
           {/* Two boxes on one number: typing in either fills the other. "Did
               nothing today" is a 0 in the delta — one keystroke, no arithmetic

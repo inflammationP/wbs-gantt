@@ -43,16 +43,35 @@ export function NewDialog({
   const [kind, setKind] = useState<NewKind>(
     () => asked ?? (projects.length === 0 ? 'project' : 'task'),
   )
+  // The click that cannot be honoured, held until the window explaining why is
+  // dismissed. See the tab strip below.
+  const [noProject, setNoProject] = useState(false)
 
   return (
+    <>
     <Modal title={t('new.title')} onClose={onClose} width={560}>
       <div className="space-y-3">
         {/* The tab strip is the top of the dialog, above the fields rather than
-            beside the buttons: it decides which fields there are. */}
+            beside the buttons: it decides which fields there are.
+            A board with no projects opens on the project tab — the form that can
+            actually be saved — but the task tab stays where it is and stays
+            clickable, because the answer to "why not" is a paragraph worth
+            reading rather than a control worth disabling: greying it out states
+            that something is wrong without saying what, and the person who
+            clicks it is exactly the one who needs to be told what a project is
+            for. So the click is taken and the window that says so comes up, with
+            the tab left where it was — behind it there is still nothing to put a
+            task in. */}
         <div className="flex">
           <Segmented
             value={kind}
-            onChange={setKind}
+            onChange={(k) => {
+              if (k === 'task' && projects.length === 0) {
+                setNoProject(true)
+                return
+              }
+              setKind(k)
+            }}
             options={[
               { value: 'task', label: t('new.task') },
               { value: 'project', label: t('new.project') },
@@ -77,6 +96,50 @@ export function NewDialog({
             onClose={onClose}
           />
         )}
+      </div>
+    </Modal>
+    {/* Rendered after the frame, so its portal lands on top of this dialog's:
+        the explanation is about the tab that was just pressed, and the form
+        behind it stays where it was rather than being replaced. */}
+    {noProject && <NoProjectDialog onClose={() => setNoProject(false)} />}
+    </>
+  )
+}
+
+/**
+ * What a board with no projects says instead of the task form.
+ *
+ * A dialog rather than a one-line notice, because this is the first thing a new
+ * board can be asked and the answer is structural rather than administrative: a
+ * task has to live in a project, and a project is the root of the tree. So the
+ * prompt is followed by the two paragraphs that say what that means.
+ *
+ * It stands in for the form rather than warning beside it — hence the button
+ * only acknowledging, with nothing to save.
+ *
+ * Here rather than with the page that first raised it, because both its callers
+ * are about the same thing: the board's new button, which offers the task tab on
+ * a board with no projects, and the row menus' "add subtask", which asks for a
+ * task where there is no board to hold one. The window belongs to the question
+ * "which project does this go in", and that question is this file's.
+ */
+export function NoProjectDialog({ onClose }: { onClose: () => void }) {
+  const t = useT()
+  return (
+    <Modal title={t('common.noticeTitle')} onClose={onClose} width={520}>
+      <div className="space-y-3 text-[12px] leading-relaxed text-muted">
+        <p className="text-fg">{t('gantt.noProject')}</p>
+        <p>{t('gantt.noProject.p1')}</p>
+        <p>{t('gantt.noProject.p2')}</p>
+      </div>
+      <div className="flex justify-end pt-4">
+        <button
+          onClick={onClose}
+          autoFocus
+          className="h-8 px-4 text-[12px] font-medium bg-accent text-on-accent rounded-[3px]"
+        >
+          {t('common.gotIt')}
+        </button>
       </div>
     </Modal>
   )

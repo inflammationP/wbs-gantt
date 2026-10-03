@@ -15,7 +15,8 @@ import assert from 'node:assert/strict'
 import { createServer } from 'vite'
 
 const server = await createServer({ server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' })
-const { todaysChores, plannedFor, choresTouching, carriedSince } = await server.ssrLoadModule('/src/lib/chores.ts')
+const { todaysChores, plannedFor, choresTouching, carriedSince, choreGroups, slotOfTime, parseChoreTime } =
+  await server.ssrLoadModule('/src/lib/chores.ts')
 
 const TODAY = '2026-09-17'
 const TOMORROW = '2026-09-18'
@@ -106,6 +107,131 @@ assert.equal(carriedSince(chore('a', TOMORROW), TODAY), 1)
 assert.deepEqual(todaysChores([], TODAY), [])
 assert.deepEqual(plannedFor([], TOMORROW), [])
 assert.deepEqual(choresTouching([], TODAY), [])
+
+
+// --- the time of day -------------------------------------------------------
+
+// Both clocks, because both are typed. `pm` is the whole difference between
+// them: with no suffix the hour is read as it stands, so `9:30` is nine in the
+// morning and `21:30` is the same instant as `9:30pm`. What comes back is
+// always the `HH:MM` that gets stored.
+assert.equal(parseChoreTime('9:30'), '09:30')
+assert.equal(parseChoreTime('09:30'), '09:30')
+assert.equal(parseChoreTime('21:30'), '21:30')
+assert.equal(parseChoreTime('9:30pm'), '21:30')
+assert.equal(parseChoreTime('9:30 PM'), '21:30')
+assert.equal(parseChoreTime('9:30pm.'), '21:30')
+assert.equal(parseChoreTime('12am'), '00:00')
+assert.equal(parseChoreTime('12pm'), '12:00')
+assert.equal(parseChoreTime('12:00am'), '00:00')
+// `点`/`时`/`半`, which is what a hand reaches for in a text field.
+// Case, spaces and full-width are all folded before anything is read: a time
+// typed on a Chinese IME in 全角 mode is the same time, and someone typing
+// `9 : 30 PM` means one thing by it. Spaces are dropped wherever they fall,
+// including around the colon and in front of the suffix.
+assert.equal(parseChoreTime('9:30PM'), '21:30')
+assert.equal(parseChoreTime('9:30Pm'), '21:30')
+assert.equal(parseChoreTime('9 : 30 pm'), '21:30')
+assert.equal(parseChoreTime(String.fromCharCode(9) + '9:30' + String.fromCharCode(10)), '09:30')
+// Half-width digits and colon come back as half-width, so what is stored is
+// `HH:MM` and nothing else — the displayed value must not keep the wide forms.
+assert.equal(parseChoreTime('９：３０'), '09:30')
+assert.equal(parseChoreTime('９：３０ＰＭ'), '21:30')
+assert.equal(parseChoreTime('９点３０'), '09:30')
+// The ideographic space is whitespace like any other, so a time pasted from
+// somewhere that uses it is still a time.
+assert.equal(parseChoreTime('　9:30　'), '09:30')
+
+assert.equal(parseChoreTime('9点'), '09:00')
+assert.equal(parseChoreTime('9点半'), '09:30')
+assert.equal(parseChoreTime('21时15'), '21:15')
+// Nothing typed and nothing readable are both null — the caller tells them
+// apart by the text being empty, since only the second is worth refusing a save
+// over.
+assert.equal(parseChoreTime(''), null)
+assert.equal(parseChoreTime('   '), null)
+assert.equal(parseChoreTime('morning'), null)
+assert.equal(parseChoreTime('25:00'), null)
+assert.equal(parseChoreTime('13pm'), null)
+assert.equal(parseChoreTime('9:70'), null)
+
+// The boundaries, each asserted on both sides: an hour belongs to the slot it
+// starts, so the four tile the day with no minute in two of them and none in
+// none. This is the whole content of `slotOfTime`, and a boundary moved by one
+// here is a chore filed a slot away from where the reader put it.
+assert.equal(slotOfTime('00:00'), 'dawn')
+assert.equal(slotOfTime('06:59'), 'dawn')
+assert.equal(slotOfTime('07:00'), 'am')
+assert.equal(slotOfTime('11:59'), 'am')
+assert.equal(slotOfTime('12:00'), 'pm')
+assert.equal(slotOfTime('17:59'), 'pm')
+assert.equal(slotOfTime('18:00'), 'eve')
+assert.equal(slotOfTime('23:59'), 'eve')
+// Asked of the same lenient reading, so a hand-written time answers here too.
+assert.equal(slotOfTime('9:30pm'), 'eve')
+assert.equal(slotOfTime(''), null)
+assert.equal(slotOfTime(null), null)
+
+// --- the day's slots -------------------------------------------------------
+
+// Deliberately out of slot order, and with the two chores that share a slot
+// listed so that neither the input order nor the id order is the answer — what
+// puts `m` first inside `am` is that it has a time and `q` does not.
+const GROUPED = [
+  chore('n', TODAY, { slot: 'am' }),
+  chore('m', TODAY, { slot: 'am', time: '09:30' }),
+  chore('q', TODAY, { slot: 'am' }),
+  chore('o', TODAY, { slot: 'eve', time: '19:00' }),
+  // A slot word nothing knows, from a hand-edited file. It keeps the chore on
+  // the day, in the unnamed group, rather than dropping it over a typo.
+  chore('r', TODAY, { slot: 'noon' }),
+  chore('p', TODAY),
+]
+
+// A day runs dawn, am, pm, eve, and only then what nobody said. Empty slots are
+// dropped rather than drawn empty, which is why `dawn` and `pm` are absent.
+const groups = choreGroups(GROUPED)
+assert.deepEqual(
+  groups.map((g) => g.slot),
+  ['am', 'eve', null],
+)
+// Inside `am`: the timed chore first, then the untimed ones in the order they
+// were added. `m` has the latest id of the three and still leads, so this is
+// the time deciding and not the tiebreak.
+assert.deepEqual(ids(groups[0].chores), ['m', 'n', 'q'])
+assert.deepEqual(ids(groups[1].chores), ['o'])
+// `p` (no slot at all) and `r` (a slot word nothing knows) land together here:
+// neither was given a part of the day, and the unnamed group is what "nobody
+// said" means — including "said something unreadable". Same createdAt, so the
+// id breaks the tie exactly as `byPlan` broke it before there were any slots.
+assert.deepEqual(ids(groups[2].chores), ['p', 'r'])
+
+// Times order the block, but only *within* it: a chore that says 06:00 is not
+// pulled out of the evening it was filed under, because the slot was the answer
+// to a question the time does not get to overrule. This is the pair the dialog
+// asks about when both are on screen at once.
+const disagreed = choreGroups([chore('a', TODAY, { slot: 'eve', time: '06:00' })])
+assert.deepEqual(
+  disagreed.map((g) => g.slot),
+  ['eve'],
+)
+
+// Nothing slotted anywhere: one unnamed group, which is the section's cue to
+// draw the flat list it has always drawn.
+const plain = choreGroups(ALL)
+assert.deepEqual(
+  plain.map((g) => g.slot),
+  [null],
+)
+assert.equal(plain[0].chores.length, ALL.length)
+// One group, but a *named* one — the case the feature exists for ("these just
+// need doing in the morning"), and the reason the heading rule the section uses
+// is not `groups.length > 1`.
+assert.deepEqual(
+  choreGroups([chore('m', TODAY, { slot: 'am' })]).map((g) => g.slot),
+  ['am'],
+)
+assert.deepEqual(choreGroups([]), [])
 
 await server.close()
 console.log('chores: ok')

@@ -1,10 +1,12 @@
 import { useState } from 'react'
-import { Pencil, Trash2 } from 'lucide-react'
+import { Pencil } from 'lucide-react'
 import { Modal } from './ui'
 import { LogLines } from './LogLines'
 import { NoteActions, NoteBox } from './NoteBox'
 import { toDate } from '../lib/dates'
+import { isLogDayOpen } from '../lib/logs'
 import { formatLongDate } from '../lib/i18n'
+import { useStore } from '../store/useStore'
 import { useLang, useT } from '../lib/useT'
 import { Note, Project, Task, TaskLog } from '../types'
 
@@ -24,7 +26,6 @@ export function DayLogsModal({
   projects,
   onClose,
   onEdit,
-  onDelete,
   notes,
 }: {
   date: string
@@ -32,8 +33,12 @@ export function DayLogsModal({
   tasks: Task[]
   projects: Project[]
   onClose: () => void
-  onEdit: (log: TaskLog) => void
-  onDelete: (id: string) => void
+  /**
+   * Correct the figure on an entry that is already written. Offered per entry
+   * and only where it can lead somewhere — today's, with a figure on it — so
+   * the panel needs no idea of the rule beyond asking.
+   */
+  onEdit?: (log: TaskLog) => void
   /**
    * Whether to draw the notebook, and what is in it. The wrapper object is the
    * flag — absent means no section at all, which is not the same question as an
@@ -49,6 +54,7 @@ export function DayLogsModal({
 }) {
   const t = useT()
   const lang = useLang()
+  const today = useStore((s) => s.today)
   const [editingNote, setEditingNote] = useState(false)
   const byTask = new Map<string, TaskLog[]>()
   for (const l of logs) {
@@ -74,12 +80,25 @@ export function DayLogsModal({
                       <div className="flex-1 min-w-0">
                         <LogLines content={log.content} stamps={log.stamps} />
                         {log.targetProgress != null && (
-                          <div className="text-[11px] text-dim mt-1.5">{t('common.targetProgress', { percent: log.targetProgress })}</div>
+                          <div className="text-[11px] text-dim mt-1.5 flex items-center gap-1.5">
+                            {t('common.targetProgress', { percent: log.targetProgress })}
+                            {/* The one thing about a written entry that can
+                                still move, and only on the day it was written.
+                                Nothing else here is a control — no edit, no
+                                delete, because a record that can be rewritten
+                                is not a record. */}
+                            {onEdit && isLogDayOpen(log.date, today) && (
+                              <button
+                                onClick={() => onEdit(log)}
+                                title={t('log.editProgress')}
+                                aria-label={t('log.editProgress')}
+                                className="text-dim hover:text-fg"
+                              >
+                                <Pencil size={11} />
+                              </button>
+                            )}
+                          </div>
                         )}
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button onClick={() => onEdit(log)} title={t('common.edit')} className="p-1 text-dim hover:text-fg"><Pencil size={13} /></button>
-                        <button onClick={() => onDelete(log.id)} title={t('common.delete')} className="p-1 text-dim hover:text-delayed"><Trash2 size={13} /></button>
                       </div>
                     </div>
                   </div>

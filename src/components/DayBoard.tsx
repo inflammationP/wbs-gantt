@@ -2,14 +2,14 @@ import { useMemo, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import { Check, ChevronDown, ChevronRight, NotebookText, Pencil, Plus, ScrollText, TriangleAlert } from 'lucide-react'
 import { useStore } from '../store/useStore'
-import { Chore, Habit, TaskLog } from '../types'
-import { DayRow, daySummary } from '../lib/dayTasks'
-import { nameQualifiers } from '../lib/tree'
-import { carriedSince } from '../lib/chores'
+import { Chore, ChoreSlot, Habit, TaskLog } from '../types'
+import { DayRow, daySummary, parentPath } from '../lib/dayTasks'
+import { CHORE_SLOTS, carriedSince, choreGroups, parseChoreTime, slotOfTime } from '../lib/chores'
 import { RoutineRow, routineRows } from '../lib/habits'
+import { isLogDayOpen } from '../lib/logs'
 import { STATUS_META, sig, sigAlpha, toggleIn } from '../lib/ui'
 import { addDays, toDate, toISO } from '../lib/dates'
-import { formatLongDate, formatRelativeDay } from '../lib/i18n'
+import { Dict, formatLongDate, formatRelativeDay } from '../lib/i18n'
 import { useLang, useT } from '../lib/useT'
 import { ProgressRing } from './ProgressRing'
 import { LogDialog } from './LogDialog'
@@ -24,6 +24,35 @@ import { NoteActions, NoteBox } from './NoteBox'
 // moved the border it was meant to match.
 const TRACK = 'rgb(var(--c-border))'
 const ACCENT = 'rgb(var(--c-accent))'
+
+/**
+ * Each slot's heading, as a typed lookup rather than a `chore.slot.${slot}`
+ * template: a template builds a `string`, and a `string` is not a translation
+ * key — so a missing heading would reach the screen as the key itself instead of
+ * failing to compile.
+ */
+const SLOT_LABEL: Record<ChoreSlot, keyof Dict> = {
+  dawn: 'chore.slot.dawn',
+  am: 'chore.slot.am',
+  pm: 'chore.slot.pm',
+  eve: 'chore.slot.eve',
+}
+
+/**
+ * The slot picker, in the composer and in the dialog.
+ *
+ * One control in both places rather than a select in the narrow pane and
+ * buttons in the wide one: five choices is a select's job either way, and the
+ * two would be a second place for the option list to live.
+ */
+const SLOT_SELECT =
+  'h-8 px-1.5 bg-panel2 border border-border rounded-[3px] text-[11px] text-fg focus:outline-none focus:border-accent'
+
+/** The four slots plus "nobody said", which is the value for no slot. */
+const SLOT_OPTIONS: { value: '' | ChoreSlot; key: keyof Dict }[] = [
+  { value: '', key: 'chore.slot.none' },
+  ...CHORE_SLOTS.map((s) => ({ value: s, key: SLOT_LABEL[s] })),
+]
 
 interface Props {
   day: string
@@ -65,7 +94,7 @@ interface Props {
    * board is a record: the day panel takes this path, because a second place to
    * tick a chore is a second place for the two to disagree.
    */
-  onAddChore?: (title: string) => void
+  onAddChore?: (title: string, slot: ChoreSlot | null) => void
   /**
    * Absent means habits are a record here too, on the same grounds.
    *
@@ -94,7 +123,6 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, habitsEdi
   const projects = useStore((s) => s.projects)
   const today = useStore((s) => s.today)
   const setSelected = useStore((s) => s.setSelected)
-  const deleteLog = useStore((s) => s.deleteLog)
 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   // Folded routines, rather than unfolded ones: a branch somebody has not
@@ -105,19 +133,13 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, habitsEdi
   const [foldedHabits, setFoldedHabits] = useState<Set<string>>(() => new Set())
   const [open, setOpen] = useState({ tasks: true, habits: true, chores: true })
   const [logFor, setLogFor] = useState<string | null>(null)
-  const [editLog, setEditLog] = useState<TaskLog | null>(null)
+  /** The entry whose figure is being corrected — see `LogDialog`'s `existing`. */
+  const [fixLog, setFixLog] = useState<TaskLog | null>(null)
   const [logsOpen, setLogsOpen] = useState(false)
 
   const summary = useMemo(() => daySummary(tasks, logs, projects, day, today), [tasks, logs, projects, day, today])
   const routines = useMemo(() => routineRows(habits, day, foldedHabits), [habits, day, foldedHabits])
   const dayLogs = useMemo(() => logs.filter((l) => l.date === day), [logs, day])
-  // Measured over the whole day rather than over `visibleRows`, on purpose: the
-  // qualifier must not appear and disappear as branches are folded. See
-  // `nameQualifiers`.
-  const qualifiers = useMemo(
-    () => nameQualifiers(summary.all.map((r) => ({ id: r.task.id, name: r.task.name, parentId: r.task.parentId })), tasks),
-    [summary.all, tasks],
-  )
   const projectOf = (id: string) => projects.find((p) => p.id === id)
 
   const toggle = (id: string) => setExpanded((e) => ({ ...e, [id]: !e[id] }))
@@ -151,10 +173,14 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, habitsEdi
     expanded,
     day,
     onToggle: toggle,
-    onWriteLog: (id: string) => setLogFor(id),
+    // Only while the day is running. This board draws any day it is pointed at
+    // — the day panel reaches back through the calendar, and the Today page has
+    // a tomorrow column — and a log written onto a day that is not today is
+    // exactly what `isLogDayOpen` refuses. Absent rather than disabled: a button
+    // that is there is a button that promises to write.
+    onWriteLog: isLogDayOpen(day, today) ? (id: string) => setLogFor(id) : undefined,
     onOpenTask: (id: string) => setSelected(id),
     projectName: (id: string) => projectOf(id)?.name ?? '',
-    qualifiers,
   }
 
   // One list, not two. Splitting the day into "strict" and "the rest" put the
@@ -219,6 +245,18 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, habitsEdi
     </Section>
   )
 
+  // The day's chores, gathered into the slots a day runs in — but only once
+  // something has been said about the time. A board where no chore carries a
+  // slot stays the flat list it has always been, so the headings arrive with the
+  // first chore that has one and never before. See `choreGroups`.
+  const groups = choreGroups(dayChores)
+  // One unnamed group is the flat list it has always been; anything else is a
+  // division worth drawing, and a single *named* group still counts — a day of
+  // nothing but morning chores is exactly what the heading is for.
+  const slotted = groups.length > 1 || (groups[0]?.slot ?? null) !== null
+  const choreRow = (c: Chore) =>
+    onAddChore ? <ChoreRow key={c.id} chore={c} today={today} /> : <ChoreLine key={c.id} chore={c} />
+
   const choreSection = (
     <Section
       title={t('chore.section')}
@@ -229,10 +267,20 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, habitsEdi
       {onAddChore && <ChoreComposer day={day} onAdd={onAddChore} />}
       {dayChores.length === 0 ? (
         <Empty>{t('chore.noneOnDay')}</Empty>
-      ) : onAddChore ? (
-        dayChores.map((c) => <ChoreRow key={c.id} chore={c} today={today} />)
+      ) : slotted ? (
+        groups.map((g) => (
+          <div key={g.slot ?? 'none'}>
+            <div className="px-2 pt-1 pb-0.5 text-[10px] uppercase tracking-wider text-dim">
+              {t(g.slot ? SLOT_LABEL[g.slot] : 'chore.slot.none')}
+            </div>
+            {g.chores.map(choreRow)}
+          </div>
+        ))
       ) : (
-        dayChores.map((c) => <ChoreLine key={c.id} chore={c} />)
+        // The single unnamed group, rather than `dayChores` — same list, but it
+        // has been through the same ordering, so a day of chores that all name a
+        // time sorts the same way whether or not any of them named a slot.
+        groups[0].chores.map(choreRow)
       )}
     </Section>
   )
@@ -334,8 +382,8 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, habitsEdi
         </button>
       </div>
 
-      {logFor && <LogDialog taskId={logFor} defaultDate={day} onClose={() => setLogFor(null)} />}
-      {editLog && <LogDialog taskId={editLog.taskId} existing={editLog} onClose={() => setEditLog(null)} />}
+      {logFor && <LogDialog taskId={logFor} onClose={() => setLogFor(null)} />}
+      {fixLog && <LogDialog taskId={fixLog.taskId} existing={fixLog} onClose={() => setFixLog(null)} />}
       {logsOpen && (
         <DayLogsModal
           date={day}
@@ -343,8 +391,7 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, habitsEdi
           tasks={tasks}
           projects={projects}
           onClose={() => setLogsOpen(false)}
-          onEdit={(l) => { setLogsOpen(false); setEditLog(l) }}
-          onDelete={deleteLog}
+          onEdit={(l) => { setLogsOpen(false); setFixLog(l) }}
         />
       )}
     </div>
@@ -453,30 +500,21 @@ function DayRowView({
   onWriteLog,
   onOpenTask,
   projectName,
-  qualifiers,
 }: {
   row: DayRow
   expanded: Record<string, boolean>
   /** The day this row is drawn for — the day a tick would be recorded against. */
   day: string
   onToggle: (id: string) => void
-  onWriteLog: (id: string) => void
+  /** Absent on a day that is over — there is nothing left to write into it. */
+  onWriteLog?: (id: string) => void
   onOpenTask: (id: string) => void
   projectName: (id: string) => string
-  /**
-   * Names to print before a row's own, for the rows whose name collides with
-   * another in this list. Empty for most of them; see `nameQualifiers`.
-   */
-  qualifiers: Map<string, string[]>
 }) {
   const t = useT()
   const toggleTaskDay = useStore((s) => s.toggleTaskDay)
   const meta = STATUS_META[row.status]
   const isOpen = expanded[row.task.id] === true
-  // The chain under the row, spent from the nearest parent outwards. Folded by
-  // default: the row already lives in one branch, and most of the time that
-  // branch is the whole answer.
-  const [pathOpen, setPathOpen] = useState(false)
   const finished = row.status === 'completed'
   // Two kinds of row, and the strike means the thing each of them is about.
   //
@@ -523,22 +561,29 @@ function DayRowView({
           )}
           <span
             className={`min-w-0 truncate text-[12px] ${struck ? 'line-through text-dim' : 'text-fg/90'}`}
-            // The path rather than the WBS number: a number says where a task is
-            // in its project, which is exactly what someone asking "which of
-            // these two is this" does not have in their head. The number is
-            // still on the row, one chevron away, in the strip that unfolds.
-            title={[...(qualifiers.get(row.task.id) ?? []), row.task.name].join(t('common.pathSeparator'))}
+            // The whole chain, unelided: what the row has room for is the two
+            // ends, and hovering is how the steps between them are read. The
+            // path rather than the WBS number, for the reason the number is in
+            // the strip below instead — a number says where a task sits in its
+            // project, which is not what someone asking "which of these two is
+            // this" has in their head.
+            title={[...row.parents].reverse().concat(row.task.name).join(t('common.pathSeparator'))}
           >
-            {/* Only where the bare name would be ambiguous — see
-                `nameQualifiers`. Dim and before the name, so a row that needed
-                no qualification reads exactly as it always did. */}
-            {(qualifiers.get(row.task.id) ?? []).length > 0 && (
-              <span className="text-dim">{qualifiers.get(row.task.id)!.join(t('common.pathSeparator'))}{t('common.pathSeparator')}</span>
+            {/* Where the row sits, in front of what it is called — on every row
+                that has anywhere to sit, not only on the rows whose names
+                collide (see `nameQualifiers`): a path that came and went
+                depending on what else was on the day made the same row read two
+                different ways. Dim, so the name is still what is being read. */}
+            {row.parents.length > 0 && (
+              <span className="text-dim">
+                {parentPath(row.parents).join(t('common.pathSeparator'))}
+                {t('common.pathSeparator')}
+              </span>
             )}
             {row.task.name}
           </span>
         </button>
-        {row.strict && (
+        {row.strict && onWriteLog && (
           <button
             onClick={(e) => {
               // The row as a whole toggles; writing a log is the one thing here
@@ -593,34 +638,6 @@ function DayRowView({
           )}
         </span>
       </div>
-      {/* Which branch this came from — the parent, as a footnote rather than as
-          a row of its own.
-          The name of the nearest parent is always here; the triangle, when
-          there is one, spends the rest of the chain, nearest outwards. So the
-          line answers "which one is this" for free, and "where is this in the
-          project" for one click, without either answer costing a row. */}
-      {row.parents.length > 0 && (
-        <div className="flex items-center gap-1 pl-2 pr-2 text-[10px] text-dim">
-          {row.parents.length > 1 ? (
-            <button
-              onClick={() => setPathOpen((o) => !o)}
-              aria-expanded={pathOpen}
-              aria-label={t('day.parentPath')}
-              className="shrink-0 text-dim hover:text-fg"
-            >
-              {pathOpen ? <ChevronDown size={9} /> : <ChevronRight size={9} />}
-            </button>
-          ) : (
-            // Holds the triangle's column, so the lines under a row with one
-            // parent and a row with several start at the same place.
-            <span className="shrink-0 w-[9px]" />
-          )}
-          <span className="truncate" title={[...row.parents].reverse().join(t('common.pathSeparator'))}>
-            {t('day.belongsTo')}{' '}
-            {pathOpen ? [...row.parents].reverse().join(t('common.pathSeparator')) : row.parents[0]}
-          </span>
-        </div>
-      )}
       {/* The bar stays mounted and animates both axes, so it genuinely grows
           rightward from zero instead of appearing at full width. */}
       <div className={`overflow-hidden transition-[height] duration-300 ease-out ${isOpen ? 'h-[30px]' : 'h-0'}`}>
@@ -648,28 +665,50 @@ function DayRowView({
 }
 
 /** The one-line field that adds a chore to this day. */
-function ChoreComposer({ day, onAdd }: { day: string; onAdd: (title: string) => void }) {
+function ChoreComposer({ day, onAdd }: { day: string; onAdd: (title: string, slot: ChoreSlot | null) => void }) {
   const t = useT()
   const [text, setText] = useState('')
+  const [slot, setSlot] = useState<'' | ChoreSlot>('')
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
     const title = text.trim()
     if (!title) return
-    onAdd(title)
+    onAdd(title, slot || null)
     setText('')
+    // The slot stays where it was put, unlike the title — the reason it is here
+    // at all is that several errands often share one, and re-picking it for each
+    // would be the field working against the person using it. A slot left over
+    // is also visible in the open select, where a mistyped title is not.
   }
 
   return (
-    <form onSubmit={submit} className="px-2 pb-1.5">
+    <form onSubmit={submit} className="px-2 pb-1.5 flex items-center gap-1">
       <input
-        className={inputCls}
+        className={`${inputCls} flex-1 min-w-0`}
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder={t('chore.placeholder')}
         aria-label={t('chore.placeholder')}
         data-chore-input={day}
       />
+      {/* A select rather than the four buttons the dialog could afford: the pane
+          is 240px at its narrowest, and this is a field most chores leave alone.
+          Capped rather than free to size itself — a browser sizes a select to
+          its widest option, and "Early morning" would take the title's room. */}
+      <select
+        value={slot}
+        onChange={(e) => setSlot(e.target.value as '' | ChoreSlot)}
+        aria-label={t('chore.slot')}
+        title={t('chore.slot')}
+        className={`${SLOT_SELECT} shrink-0 max-w-[104px]`}
+      >
+        {SLOT_OPTIONS.map((o) => (
+          <option key={o.value} value={o.value}>
+            {t(o.key)}
+          </option>
+        ))}
+      </select>
     </form>
   )
 }
@@ -704,8 +743,11 @@ function ChoreRow({ chore, today }: { chore: Chore; today: string }) {
             the first line with it, the two compete for a pane that is only ever
             a few hundred pixels wide, and the title — the part being read — is
             what loses. */}
-        {(chore.note || carried) && (
+        {(chore.time || chore.note || carried) && (
           <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-dim">
+            {/* The time leads the line: it is what the row was filed under,
+                while the note is the aside that follows from it. */}
+            {chore.time && <span className="shrink-0 font-mono text-[10px]">{chore.time}</span>}
             {chore.note && <span className="min-w-0 truncate">{chore.note}</span>}
             {carried && (
               <span
@@ -756,7 +798,12 @@ function ChoreLine({ chore }: { chore: Chore }) {
           {chore.title}
         </span>
       </div>
-      {chore.note && <div className="pl-6 text-[11px] text-dim break-words">{chore.note}</div>}
+      {(chore.time || chore.note) && (
+        <div className="pl-6 flex items-center gap-1.5 text-[11px] text-dim">
+          {chore.time && <span className="shrink-0 font-mono text-[10px]">{chore.time}</span>}
+          {chore.note && <span className="min-w-0 break-words">{chore.note}</span>}
+        </div>
+      )}
     </div>
   )
 }
@@ -776,10 +823,35 @@ function ChoreDialog({ chore, onClose }: { chore: Chore; onClose: () => void }) 
   // being written back as a silent reschedule.
   const [date, setDate] = useState(chore.date === tomorrow ? tomorrow : today)
   const [dateTouched, setDateTouched] = useState(false)
+  const [slot, setSlot] = useState<'' | ChoreSlot>(chore.slot ?? '')
+  const [time, setTime] = useState(chore.time ?? '')
+  // Set once the person has said which of the two wins. Any further edit to
+  // either field clears it, because the answer was about *that* pair of values.
+  const [answer, setAnswer] = useState<'time' | 'slot' | null>(null)
+
+  // What was typed, read into the `HH:MM` that would be stored. Null covers both
+  // "nothing typed" and "nothing readable", which are told apart by `time`
+  // itself being empty — and only the second is a reason to refuse the save.
+  const timeValue = parseChoreTime(time)
+  const timeSlot = slotOfTime(timeValue)
+  const unreadable = time.trim() !== '' && timeValue == null
+  // Asked only when *this* session changed one of the two. A chore already saved
+  // with a time that disagrees with its slot is a decision that was taken once,
+  // and opening the dialog to fix a word in the title must not put the question
+  // again — the answer would be the same and the question would be a toll.
+  const touched = time !== (chore.time ?? '') || slot !== (chore.slot ?? '')
+  const contested = touched && timeSlot != null && timeSlot !== (slot || null)
+  const asking = contested && answer == null
+  const slotName = (s: ChoreSlot | null) => t(s ? SLOT_LABEL[s] : 'chore.slot.none')
 
   const save = () => {
+    // Both blocked states are on screen with the control that clears them; a
+    // save that guessed would be the dialog answering for the person.
+    if (unreadable || asking) return
     const patch: Partial<Chore> = { title: title.trim() || chore.title, note }
     if (dateTouched && date !== chore.date) patch.date = date
+    if (slot !== (chore.slot ?? '')) patch.slot = slot || null
+    if (timeValue !== (chore.time ?? null)) patch.time = timeValue
     updateChore(chore.id, patch)
     onClose()
   }
@@ -816,6 +888,74 @@ function ChoreDialog({ chore, onClose }: { chore: Chore; onClose: () => void }) 
             ]}
           />
         </Field>
+        {/* The slot the chore is filed under, chosen here as it was chosen when
+            the chore was created. Empty is a real answer — it is the 不限 group,
+            and the one every chore written before slots existed is in. */}
+        <Field label={t('chore.slot')}>
+          <select
+            value={slot}
+            onChange={(e) => {
+              setSlot(e.target.value as '' | ChoreSlot)
+              setAnswer(null)
+            }}
+            className={`${SLOT_SELECT} w-full`}
+          >
+            {SLOT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {t(o.key)}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        {/* The precise time, for whoever wants one. Free text rather than
+            `<input type="time">`, which takes a 24-hour value and nothing else —
+            both clocks are wanted here, so the field accepts both and says so. */}
+        <Field label={t('chore.time')}>
+          <input
+            className={inputCls}
+            value={time}
+            placeholder={t('chore.timePlaceholder')}
+            onChange={(e) => {
+              setTime(e.target.value)
+              setAnswer(null)
+            }}
+            onKeyDown={onKey}
+          />
+          <div className="mt-1 text-[11px] text-dim">
+            {unreadable
+              ? t('chore.timeUnreadable')
+              : timeValue
+                ? `${timeValue} · ${slotName(timeSlot)}`
+                : t('chore.timeHint')}
+          </div>
+        </Field>
+
+        {/* Which of the two wins, asked where the contradiction is rather than
+            at the door: the buttons say what each answer does, and the select
+            above moves the moment the first one is taken. */}
+        {asking && (
+          <div className="text-[12px] text-fg/90 leading-relaxed">
+            {t('chore.timeMismatch', { time: timeValue!, timeSlot: slotName(timeSlot), slot: slotName(slot || null) })}
+            <div className="flex gap-1.5 mt-1.5">
+              <button
+                onClick={() => {
+                  setSlot(timeSlot!)
+                  setAnswer(null)
+                }}
+                className="h-7 px-2 text-[11px] text-fg/90 border border-border rounded-[3px] hover:bg-panel2"
+              >
+                {t('chore.preferTime', { slot: slotName(timeSlot) })}
+              </button>
+              <button
+                onClick={() => setAnswer('slot')}
+                className="h-7 px-2 text-[11px] text-muted border border-border rounded-[3px] hover:bg-panel2 hover:text-fg"
+              >
+                {t('chore.preferSlot', { slot: slotName(slot || null) })}
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="flex items-center gap-2 pt-1">
           {/* No confirm step: a chore is a line of text, and asking "are you
@@ -832,7 +972,11 @@ function ChoreDialog({ chore, onClose }: { chore: Chore; onClose: () => void }) 
           <button onClick={onClose} className="h-8 px-3 text-[12px] text-muted hover:text-fg border border-border rounded-[3px]">
             {t('common.cancel')}
           </button>
-          <button onClick={save} className="h-8 px-4 text-[12px] font-medium bg-accent text-on-accent rounded-[3px]">
+          <button
+            onClick={save}
+            disabled={unreadable || asking}
+            className="h-8 px-4 text-[12px] font-medium bg-accent text-on-accent disabled:opacity-40 disabled:cursor-default rounded-[3px]"
+          >
             {t('common.save')}
           </button>
         </div>

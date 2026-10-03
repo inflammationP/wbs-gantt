@@ -1,6 +1,7 @@
 import { SNOOZE_DAYS, useStore } from '../store/useStore'
 import { useT } from '../lib/useT'
 import { Modal } from './ui'
+import { ReleaseNotesList } from './ReleaseNotes'
 
 // The canonical button pair. Duplicated from `GettingStarted.tsx` because the
 // repo has no button component and duplicates them per file; promoting them to
@@ -151,14 +152,7 @@ function UpdateDialog() {
             {t('update.history', { count: history.length })}
           </summary>
           <div className="mt-2 max-h-[30vh] overflow-auto space-y-3">
-            {history.map((r) => (
-              <div key={r.version}>
-                <div className="text-[11px] font-semibold text-fg">v{r.version}</div>
-                <div className="mt-0.5 whitespace-pre-wrap leading-relaxed text-[12px] text-muted">
-                  {r.notes || t('update.noNotes')}
-                </div>
-              </div>
-            ))}
+            <ReleaseNotesList releases={history} />
           </div>
         </details>
       )}

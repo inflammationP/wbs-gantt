@@ -1,12 +1,12 @@
 /**
- * The check on "which releases did this update step over" — run with
+ * The check on the release history — run with
  * `node scripts/check-update-history.mjs`.
  *
- * One failure, and it is a silent one. The answer decides which skipped
- * versions the update dialog lists, and a wrong answer is invisible from
- * either end: a version missing from the list looks exactly like a version
- * that had nothing to say, and a version wrongly included looks exactly like
- * one that was missed. Nobody would ever file it.
+ * Two silent failures, on the two halves of the same list. The first is which
+ * releases the update dialog shows as stepped over: a version missing from it
+ * looks exactly like a version that had nothing to say, and one wrongly
+ * included looks exactly like one that was missed. Nobody would ever file it.
+ * The second is reading GitHub's answer at all — see the bottom of this file.
  *
  * The specific trap is that these are version numbers, not strings. `'0.9.0' >
  * '0.10.0'` character by character, so a string compare promotes the older
@@ -28,7 +28,7 @@ const server = await createServer({
   // ever generated.
   optimizeDeps: { entries: [] },
 })
-const { releasesBetween } = await server.ssrLoadModule('/src/lib/updater.ts')
+const { releasesBetween, parseReleases } = await server.ssrLoadModule('/src/lib/updater.ts')
 await server.close()
 
 const rel = (version) => ({ version, notes: `notes for ${version}` })
@@ -69,5 +69,31 @@ assert.deepEqual(versions([rel('0.12.1'), rel('0.12.0.1')], '0.12.0', '0.13.0'),
   '0.12.1',
   '0.12.0.1',
 ])
+
+// --- reading the API's answer ----------------------------------------------
+
+// Three rules, each of which fails silently: a draft that gets through is a
+// release nobody was told about; a tag left as `v0.10.0` stops comparing
+// against the `0.9.0` the app calls itself; and a body that is the placeholder
+// shows an English sentence in the middle of someone's Chinese notes.
+const RAW = [
+  { tag_name: 'v0.12.0', body: 'twelve' },
+  { tag_name: 'v0.11.0', body: 'No release notes.' },
+  { tag_name: 'v0.11.0-rc', body: 'draft', draft: true },
+  { tag_name: 'v0.10.0', body: '  ten  ' },
+  { body: 'a tagless release' },
+  { tag_name: 'v0.9.0' },
+]
+assert.deepEqual(parseReleases(RAW), [
+  { version: '0.12.0', notes: 'twelve' },
+  { version: '0.11.0', notes: '' },
+  { version: '0.10.0', notes: 'ten' },
+  { version: '0.9.0', notes: '' },
+])
+// The `v` is the whole point of the strip, so it is asserted on its own: what
+// comes out of here is fed straight to `releasesBetween`, which compares
+// numbers and would drop a tagged version rather than misplace it.
+assert.equal(parseReleases([{ tag_name: '10.0.0' }])[0].version, '10.0.0')
+assert.deepEqual(parseReleases([]), [])
 
 console.log('update history: all assertions passed')

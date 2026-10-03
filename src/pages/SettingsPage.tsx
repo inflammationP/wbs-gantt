@@ -6,6 +6,7 @@ import { CHROME_TOKENS, SIGNAL_TOKENS, THEME_ORDER, ThemeId, tripletToHex } from
 import { STATUS_META } from '../lib/ui'
 import { useT } from '../lib/useT'
 import { isTauri } from '../lib/updater'
+import { ReleaseHistoryDialog } from '../components/ReleaseNotes'
 import { ACCELERATOR_URL, REPO_URL, openExternal } from '../lib/links'
 
 export function SettingsPage() {
@@ -124,11 +125,14 @@ function VersionSection() {
   const ready = useStore((s) => s.updateReady)
   const applyUpdate = useStore((s) => s.applyUpdate)
   const runUpdateCheck = useStore((s) => s.runUpdateCheck)
+  const unreachableHidden = useStore((s) => s.unreachableHidden)
+  const hideUnreachable = useStore((s) => s.hideUnreachable)
 
   // `ready` counts as busy for the *check* button and only for it: checking
   // again would replace the handle, and the handle is where the downloaded
   // installer lives. The way on is the button beside it.
   const busy = phase === 'checking' || installing || ready
+  const [historyOpen, setHistoryOpen] = useState(false)
   // Reported for the launch check and the manual one alike: the run that just
   // happened is the run being described, and which one it was is not the
   // reader's business. A failure is carried by the banner below instead, so
@@ -152,7 +156,9 @@ function VersionSection() {
         {desktop && (
           <button
             className="h-8 px-3 text-[12px] text-muted hover:text-fg border border-border rounded-[3px] disabled:opacity-40"
-            onClick={() => void runUpdateCheck()}
+            // `true` because a person pressed it: if this one fails, the notice
+            // is shown even if it had been put away for the run.
+            onClick={() => void runUpdateCheck(true)}
             disabled={busy}
           >
             {installing ? t('update.installing') : phase === 'checking' ? t('update.checking') : t('update.check')}
@@ -169,17 +175,40 @@ function VersionSection() {
             {t('update.now')}
           </button>
         )}
+        {/* The same notes the update dialog shows, without an update being the
+            price of reading them. Not gated on `desktop` like the two buttons
+            above it: those act on the installed app, while this only reads a
+            changelog — which the browser build can do as well as the desktop
+            one, and which is the only way to look at this screen in `npm run
+            dev`. */}
+        <button
+          className="h-8 px-3 text-[12px] text-muted hover:text-fg border border-border rounded-[3px]"
+          onClick={() => setHistoryOpen(true)}
+        >
+          {t('settings.releaseHistory')}
+        </button>
         {result && <span className="ml-auto text-[12px] text-muted">{result}</span>}
       </div>
 
-      {/* No dismiss button, deliberately: this states a condition rather than
-          delivering a one-off message, so it is here for exactly as long as the
-          condition holds. There is no way to be rid of it except to let the app
-          reach GitHub, which is the point. The Watt Toolkit block below is the
-          standing way out. */}
-      {desktop && phase === 'unreachable' && (
-        <div className="mt-3 rounded-[3px] border border-delayed/30 bg-delayed/15 p-3">
-          <p className="text-[12px] leading-relaxed text-delayed">{t('update.unreachable')}</p>
+      {historyOpen && <ReleaseHistoryDialog onClose={() => setHistoryOpen(false)} />}
+
+      {/* It states a condition rather than delivering a one-off message, so it
+          is here for exactly as long as the condition holds — and the way out is
+          the condition changing, which is what the Watt Toolkit block below is
+          for. The one exception is the way out that has nothing to do with the
+          cause: someone who cannot fix their route to GitHub this evening, or
+          does not want to, should not have to keep reading a notice about it
+          every time they open this page. So it can be put away until the app
+          restarts, and only until then. */}
+      {desktop && phase === 'unreachable' && !unreachableHidden && (
+        <div className="mt-3 rounded-[3px] border border-delayed/30 bg-delayed/15 p-3 flex items-start gap-3">
+          <p className="flex-1 text-[12px] leading-relaxed text-delayed">{t('update.unreachable')}</p>
+          <button
+            onClick={hideUnreachable}
+            className="shrink-0 h-6 px-2 text-[11px] text-delayed border border-delayed/40 rounded-[3px] hover:text-fg hover:border-border"
+          >
+            {t('update.unreachableHide')}
+          </button>
         </div>
       )}
 

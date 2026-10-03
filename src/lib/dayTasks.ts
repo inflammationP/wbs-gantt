@@ -303,6 +303,25 @@ export function pendingLogsUnder(tasks: Task[], logs: TaskLog[], day: string, ro
   return out
 }
 
+/**
+ * The chain to print in front of a row's own name: where it sits, in the order a
+ * path is read.
+ *
+ * `parents` arrives nearest-first, because that is the order the rest of the app
+ * spends it in — a path is read top-down, so this is where the reversal happens.
+ *
+ * A deep row is elided in the middle, `A › (...) › B`, keeping the two ends.
+ * Those two are the ones that answer anything: the top says which branch the row
+ * came from, and the immediate parent says which of several same-named rows this
+ * is. Everything between them is a step nobody was asking about, and the list is
+ * drawn in a panel a few hundred pixels wide — a full chain spends the row's
+ * width naming places the reader has already walked past.
+ */
+export function parentPath(parents: string[]): string[] {
+  if (parents.length <= 2) return [...parents].reverse()
+  return [parents[parents.length - 1], '(...)', parents[0]]
+}
+
 export interface DayMilestones {
   /** Leaf tasks beginning on `day`. */
   starts: Task[]

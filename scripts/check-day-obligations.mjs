@@ -103,7 +103,7 @@ assert.equal(taskProgress(task({}), stated, new Date(2026, 8, 20)), 100)
 // apart. `worked` is the caller saying something was on the day; a day off and a
 // day that finished all of nothing are otherwise the same rate, and they used to
 // be the same green ring.
-const { dayCellState } = await server.ssrLoadModule('/src/lib/dayTasks.ts')
+const { dayCellState, parentPath } = await server.ssrLoadModule('/src/lib/dayTasks.ts')
 const rate = (done, total) => ({ done, total, pct: total ? Math.round((done / total) * 100) : 0 })
 const cell = (day, worked, r = rate(0, 0)) => dayCellState(day, TODAY, r, worked).kind
 
@@ -177,6 +177,25 @@ assert.deepEqual(rowsFor(away)[0].parents, ['phase'])
 const todoKid = [task({ id: 'a' }), task({ id: 't', parentId: 'a', isTodo: true, startDate: null, endDate: null })]
 assert.deepEqual(list(todoKid), ['a'])
 assert.deepEqual(rowsFor(todoKid)[0].parents, [])
+
+// --- the chain printed in front of a row's name ------------------------------
+
+// `parents` arrives nearest-first, and a path is read top-down: the reversal is
+// the whole of the shallow case, and getting it backwards prints the branch
+// upside down in a way that still reads as a path.
+assert.deepEqual(parentPath([]), [])
+assert.deepEqual(parentPath(['上一级']), ['上一级'])
+assert.deepEqual(parentPath(['上一级', '最高级']), ['最高级', '上一级'])
+// Three deep, one is spent on the mark: the two ends are the two that answer
+// something — where the row came from, and which of several same-named rows it
+// is. The step between them is the one nobody asked about.
+assert.deepEqual(parentPath(['上一级', '中间', '最高级']), ['最高级', '(...)', '上一级'])
+// Still two ends however deep it goes, so the row's width does not depend on how
+// far down the tree the task happens to live.
+assert.deepEqual(
+  parentPath(['上一级', '中间', '更中间', '最高级']),
+  ['最高级', '(...)', '上一级'],
+)
 
 await server.close()
 console.log('day obligations: ok')

@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { create } from 'zustand'
-import { AppView, Chore, Habit, Note, Project, Task, TaskLog, TaskPriority, TaskType, ViewMode } from '../types'
+import { AppView, Chore, ChoreSlot, Habit, Note, Project, Task, TaskLog, TaskPriority, TaskType, ViewMode } from '../types'
 import { ALL_DAYS, habitBranch, runsOn } from '../lib/habits'
 import { todayISO, addDays, diffDays, pad, toDate, toISO } from '../lib/dates'
 import { timelineRange, DateRange } from '../lib/timeline'
@@ -38,7 +38,7 @@ import {
 } from '../lib/history'
 import { loadData, saveData, loadPrefs, savePrefs, PersistedData, Prefs } from './storage'
 import { PROJECT_COLORS } from '../lib/ui'
-import { logStamp, restamp } from '../lib/logs'
+import { isLogDayOpen, logStamp, restamp } from '../lib/logs'
 import { applyLang, Lang, translate } from '../lib/i18n'
 import { applyTheme, ThemeId } from '../lib/theme'
 import { buildSeed } from '../lib/seed'
@@ -221,6 +221,21 @@ interface State {
   updateReady: boolean
   /** Why the install failed, if it did. */
   updateError: string | null
+  /**
+   * "Not this run" — the notice that GitHub could not be reached has been put
+   * away until the app restarts.
+   *
+   * Session-only, and deliberately not one of the durable preferences beside
+   * `updateSnoozeUntil`: a snooze says "leave me alone for a while", and this
+   * says "I have read it", which is a fact about this sitting rather than about
+   * the week. Restarting asks again, because a network that was down last night
+   * is worth retrying without the user having to remember they hid a notice.
+   *
+   * Hidden rather than cleared: the phase still says the check failed, which is
+   * true, and the sidebar's dot and this notice read the same pair of fields so
+   * one cannot outlive the other.
+   */
+  unreachableHidden: boolean
   nagOpen: boolean
   // The persisted half, mirrored into state so components can read it directly.
   updateAnchorAt: string | null
@@ -339,8 +354,17 @@ interface State {
   clearUndo: () => void
 
   addLog: (input: { taskId: string; date: string; content: string; targetProgress?: number | null }) => string
-  updateLog: (id: string, patch: { date?: string; content?: string; targetProgress?: number | null }) => void
-  deleteLog: (id: string) => void
+  /**
+   * Correct the figure on an entry that is already written.
+   *
+   * The figure and nothing else — no text, no date, which is why the parameter
+   * is a number rather than a patch. What a log said and when it said it are the
+   * record; how far along the task was is a claim about the task, and a claim
+   * typed in a hurry the first time is worth being able to fix. Only on the day
+   * it was made, like everything else about an entry: past that it is history,
+   * and history is read.
+   */
+  updateLog: (id: string, targetProgress: number | null) => void
 
   pauseTask: (id: string) => void
   resumeTask: (id: string) => void
@@ -361,7 +385,7 @@ interface State {
   archiveTasks: (ids: string[]) => void
   unarchiveTasks: (ids: string[]) => void
 
-  addChore: (title: string, date: string) => void
+  addChore: (title: string, date: string, slot?: ChoreSlot | null) => void
   updateChore: (id: string, patch: Partial<Chore>) => void
   toggleChore: (id: string) => void
   /** Name a to-do folder, or clear the name by passing a blank one. */
@@ -416,7 +440,13 @@ interface State {
 
   dismissTodoNote: () => void
 
-  runUpdateCheck: () => Promise<void>
+  /**
+   * `manual` is the one thing about the two callers that is allowed to matter.
+   * See the implementation.
+   */
+  runUpdateCheck: (manual?: boolean) => Promise<void>
+  /** Put the "cannot reach GitHub" notice away until the next launch. */
+  hideUnreachable: () => void
   /** Fetch it, in the background. */
   installUpdate: () => Promise<void>
   /** Replace the process with it, once the reader has said when. */
@@ -700,6 +730,7 @@ export const useStore = create<State>()((set, get) => ({
   updateInstalling: false,
   updateReady: false,
   updateError: null,
+  unreachableHidden: false,
   nagOpen: false,
   updateAnchorAt: prefs.updateAnchorAt,
   nagShownAt: prefs.nagShownAt,
@@ -1167,6 +1198,11 @@ export const useStore = create<State>()((set, get) => ({
    */
   addLog: (input) => {
     const now = new Date().toISOString()
+    // A log is only ever written on its own day. Today only — see
+    // `isLogDayOpen` for why a future date is refused as well as a past one.
+    // The callers hide the way in; this is the line that makes the rule true,
+    // so an entry cannot arrive from a path that forgot to ask.
+    if (!isLogDayOpen(input.date, get().today)) return ''
     const existing = get().logs.find((l) => l.taskId === input.taskId && l.date === input.date)
     if (existing) {
       set((s) => ({
@@ -1219,25 +1255,21 @@ export const useStore = create<State>()((set, get) => ({
     }))
     return id
   },
-  updateLog: (id, patch) =>
-    set((s) => ({
-      logs: s.logs.map((l) => {
-        if (l.id !== id) return l
-        // A content change is an edit like any other, so it goes through the
-        // same comparison an append does — otherwise editing an entry's text
-        // would shuffle its paragraphs under readings that no longer belong to
-        // them. Guarded on the text actually differing, because the editor
-        // sends the whole box back on every save and each stamp would otherwise
-        // claim the paragraph was touched again.
-        const stamps =
-          patch.content != null && patch.content !== l.content
-            ? restamp(l.content, l.stamps ?? [], patch.content, logStamp(new Date()))
-            : l.stamps
-        return { ...l, ...patch, stamps, updatedAt: new Date().toISOString() }
-      }),
-    })),
-  deleteLog: (id) =>
-    set((s) => ({ logs: s.logs.filter((l) => l.id !== id) })),
+
+  // Never persisted, and nothing else has to be told: the notice and the
+  // sidebar's dot both read this beside the phase, so one write puts both away.
+  hideUnreachable: () => set({ unreachableHidden: true }),
+
+  updateLog: (id, targetProgress) =>
+    set((s) => {
+      const target = s.logs.find((l) => l.id === id)
+      if (!target || !isLogDayOpen(target.date, s.today)) return {}
+      return {
+        logs: s.logs.map((l) =>
+          l.id === id ? { ...l, targetProgress, updatedAt: new Date().toISOString() } : l,
+        ),
+      }
+    }),
 
   pauseTask: (id) =>
     set((s) => ({
@@ -1333,12 +1365,12 @@ export const useStore = create<State>()((set, get) => ({
       }
     }),
 
-  addChore: (title, date) => {
+  addChore: (title, date, slot = null) => {
     const now = new Date().toISOString()
     set((s) => ({
       chores: [
         ...s.chores,
-        { id: uid(), title, note: '', date, done: false, completedDate: null, createdAt: now, updatedAt: now },
+        { id: uid(), title, note: '', date, slot, done: false, completedDate: null, createdAt: now, updatedAt: now },
       ],
     }))
   },
@@ -1627,11 +1659,18 @@ export const useStore = create<State>()((set, get) => ({
     persistPrefs()
   },
 
-  // Takes no argument on purpose. The launch check *is* a manual check fired on
-  // the app's behalf, so anything that varied the outcome by who asked would be
-  // a difference the user could see — and the two are meant to be
-  // indistinguishable right down to the prompt.
-  runUpdateCheck: async () => {
+  // One check, run for two reasons, and the outcome does not depend on which:
+  // the launch check *is* a manual check fired on the app's behalf, so anything
+  // that varied the answer by who asked would be a difference the user could
+  // see — down to the prompt, which is why there is no second entry point.
+  //
+  // `manual` is the single exception, and it is not about the answer. It only
+  // decides whether a failure may *re-show* a notice the reader has already put
+  // away: putting it away says "I have read this", not "never tell me again",
+  // and pressing the button is asking a fresh question, so the answer has to be
+  // visible. A silent automatic retry later that night stays silent, because
+  // that is exactly what was asked for.
+  runUpdateCheck: async (manual = false) => {
     // Doubles as the double-click guard and as StrictMode's: the launch effect
     // fires twice in development, and a second check while one is in flight is
     // never what anyone wanted.
@@ -1649,7 +1688,7 @@ export const useStore = create<State>()((set, get) => ({
     }
 
     if (result.kind === 'error') {
-      set({ updatePhase: 'unreachable' })
+      set(manual ? { updatePhase: 'unreachable', unreachableHidden: false } : { updatePhase: 'unreachable' })
       maybeNag()
       return
     }

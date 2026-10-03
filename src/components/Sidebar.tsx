@@ -43,8 +43,10 @@ export function Sidebar() {
   const notes = useStore((s) => s.notes)
   // The dot means "there is something to read in Settings", not merely "an
   // update exists" — so it tracks the unreachable-GitHub banner specifically,
-  // and stays lit for exactly as long as that banner is up.
-  const updateUnread = useStore((s) => s.updatePhase === 'unreachable')
+  // and stays lit for exactly as long as that banner is up. `unreachableHidden`
+  // is part of "up": once the notice has been put away for the run, a dot
+  // pointing at Settings to read it would be pointing at nothing.
+  const updateUnread = useStore((s) => s.updatePhase === 'unreachable' && !s.unreachableHidden)
   // There used to be a second mark here, for reminders that could not be
   // delivered. It is gone with the sentence that explained it, and it went for a
   // reason rather than by tidying: Windows notifications are switched on and
