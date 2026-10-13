@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { ChevronDown, ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { Habit, Project, Task, TaskStatus } from '../types'
 import { addDays, toDate, toISO, todayISO } from '../lib/dates'
@@ -13,17 +13,6 @@ import { useDialogs } from '../components/dialogs'
 import { HabitDialog } from '../components/HabitDialog'
 import { Stat } from '../components/ui'
 import { CompletionHeatmap, YEAR_WEEKS } from '../components/CompletionHeatmap'
-
-/**
- * What the routine dialog is open on: an existing routine, or a new one and
- * where it hangs.
- *
- * One piece of state rather than a boolean plus a nullable habit, and the
- * "creating" case carries the parent rather than being a bare flag: a row's "+"
- * is the same request as the section's button with one thing already answered,
- * and two pieces of state would allow a fourth combination that means neither.
- */
-type HabitEditing = { mode: 'edit'; habit: Habit } | { mode: 'new'; parentId: string | null }
 
 // Dashboard, Tasks, Projects and Statistics used to be four separate pages that
 // each re-derived the same numbers. They are one page now: overview, heatmap,
@@ -48,7 +37,10 @@ export function ManagePage() {
   const [statusFilter, setStatusFilter] = useState<TaskStatus | 'all'>('all')
   const [editing, setEditing] = useState<string | null>(null)
   const [newName, setNewName] = useState('')
-  const [habitEditing, setHabitEditing] = useState<HabitEditing | null>(null)
+  // The routine the editor is open on. Editing only — routines are made on the
+  // day board, where the day they run on is already the answer to the first
+  // question the dialog asks, the way projects are made on the Gantt.
+  const [habitEditing, setHabitEditing] = useState<Habit | null>(null)
   // Folded routines, as everywhere else that draws their tree: a branch nobody
   // has touched is open, because the roster is a list of what there is.
   const [foldedHabits, setFoldedHabits] = useState<Set<string>>(() => new Set())
@@ -193,15 +185,9 @@ export function ManagePage() {
 
         {/* ---- Daily ---- */}
         <div>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-[14px] font-semibold text-fg">{t('habit.section')}</h2>
-            <button
-              onClick={() => setHabitEditing({ mode: 'new', parentId: null })}
-              className="h-8 px-3 inline-flex items-center gap-1.5 text-[12px] font-medium bg-accent text-on-accent rounded-[3px] hover:brightness-110"
-            >
-              <Plus size={14} /> {t('habit.new')}
-            </button>
-          </div>
+          {/* No button here that makes anything, as on the projects below:
+              making a routine belongs to the day board, which knows the day. */}
+          <h2 className="text-[14px] font-semibold text-fg mb-3">{t('habit.section')}</h2>
           {/* The whole list, including suspended items — this is the one place
               they are still visible, which is the point of suspending rather
               than deleting. Everywhere else a suspended habit is simply absent,
@@ -216,8 +202,7 @@ export function ManagePage() {
                 <HabitRow
                   key={row.habit.id}
                   row={row}
-                  onEdit={() => setHabitEditing({ mode: 'edit', habit: row.habit })}
-                  onAddChild={() => setHabitEditing({ mode: 'new', parentId: row.habit.id })}
+                  onEdit={() => setHabitEditing(row.habit)}
                   onToggleFold={() => setFoldedHabits((f) => toggleIn(f, row.habit.id))}
                 />
               ))
@@ -390,21 +375,16 @@ export function ManagePage() {
       </div>
       {habitEditing && (
         <HabitDialog
-          habit={habitEditing.mode === 'edit' ? habitEditing.habit : undefined}
-          defaultParentId={habitEditing.mode === 'new' ? habitEditing.parentId : undefined}
+          habit={habitEditing}
           onClose={() => setHabitEditing(null)}
           // Closing first, then asking, so the two modals never stack — the
           // question has to be put by something that outlives the dialog it was
           // asked from, which is why it is held here and not inside it.
-          onDelete={
-            habitEditing.mode === 'new'
-              ? undefined
-              : () => {
-                  const h = habitEditing.habit
-                  setHabitEditing(null)
-                  ask(t('habit.deleteAsk', { name: h.title }), () => deleteHabit(h.id))
-                }
-          }
+          onDelete={() => {
+            const h = habitEditing
+            setHabitEditing(null)
+            ask(t('habit.deleteAsk', { name: h.title }), () => deleteHabit(h.id))
+          }}
         />
       )}
       {dialogs}
@@ -432,13 +412,10 @@ export function ManagePage() {
 function HabitRow({
   row,
   onEdit,
-  onAddChild,
   onToggleFold,
 }: {
   row: RoutineRow
   onEdit: () => void
-  /** Another routine under this one — the row's own "+", as on a task row. */
-  onAddChild: () => void
   onToggleFold: () => void
 }) {
   const t = useT()
@@ -485,14 +462,6 @@ function HabitRow({
           )}
         </div>
       </div>
-      <button
-        onClick={onAddChild}
-        title={t('habit.addSubtask')}
-        aria-label={t('habit.addSubtask')}
-        className="shrink-0 mt-0.5 p-1 text-dim hover:text-fg"
-      >
-        <Plus size={13} />
-      </button>
       <button
         onClick={onEdit}
         title={t('common.edit')}

@@ -1,6 +1,6 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { KeyboardEvent } from 'react'
+import { useMemo, useState } from 'react'
 import { Modal, Field, inputCls } from './ui'
+import { LogTextarea } from './LogTextarea'
 import { useStore } from '../store/useStore'
 import { Task, TaskLog } from '../types'
 import { addDays, toDate, toISO } from '../lib/dates'
@@ -247,40 +247,6 @@ function LogForm({
     return days > 0 ? Math.round(100 / days) : null
   }, [task])
 
-  const taRef = useRef<HTMLTextAreaElement>(null)
-  // Caret position to restore after the controlled re-render; setting
-  // `.value` on a textarea resets the selection to the end.
-  const pendingSel = useRef<[number, number] | null>(null)
-
-  useLayoutEffect(() => {
-    const sel = pendingSel.current
-    if (!sel || !taRef.current) return
-    pendingSel.current = null
-    taRef.current.setSelectionRange(sel[0], sel[1])
-  }, [content])
-
-  // Tab must indent (the log format treats a leading tab as "sub-item"); the
-  // browser default would move focus to the next control instead.
-  const onLogKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key !== 'Tab') return
-    const el = taRef.current
-    if (!el) return
-    e.preventDefault()
-    const { selectionStart: s, selectionEnd: en, value } = el
-
-    if (e.shiftKey) {
-      // Outdent: drop one leading tab from the caret's line.
-      const lineStart = value.lastIndexOf('\n', s - 1) + 1
-      if (value[lineStart] !== '\t') return
-      pendingSel.current = [Math.max(lineStart, s - 1), Math.max(lineStart, en - 1)]
-      setContent(value.slice(0, lineStart) + value.slice(lineStart + 1))
-      return
-    }
-
-    pendingSel.current = [s + 1, en + 1]
-    setContent(value.slice(0, s) + '\t' + value.slice(en))
-  }
-
   const submit = () => {
     if (!content.trim()) return
     // Nothing is asked, so nothing is written: `null` is the entry stating no
@@ -305,22 +271,20 @@ function LogForm({
   return (
     <>
       <Field label={t('log.label')}>
-        <textarea
-          ref={taRef}
-          // Tall on purpose: a day's entry now carries everything written to it
-          // that day, the divider lines included, so the box has to show a block
-          // of text rather than a couple of lines of it.
-          //
-          // Read-only when correcting a figure, and shown rather than hidden:
-          // the sentence you are correcting the number against is the one worth
-          // having in front of you. Dimmed so that "you cannot type here" is
-          // visible before the cursor is tried — the same reason it is not a
-          // `disabled` box, which greys the text itself past reading.
+        {/* Tall on purpose: a day's entry now carries everything written to it
+            that day, the divider lines included, so the box has to show a block
+            of text rather than a couple of lines of it.
+
+            Read-only when correcting a figure, and shown rather than hidden:
+            the sentence you are correcting the number against is the one worth
+            having in front of you. Dimmed so that "you cannot type here" is
+            visible before the cursor is tried — the same reason it is not a
+            `disabled` box, which greys the text itself past reading. */}
+        <LogTextarea
+          value={content}
+          onChange={setContent}
           readOnly={!!existing}
           className={`${areaCls} h-56 resize-none ${existing ? 'text-muted' : ''}`}
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          onKeyDown={onLogKeyDown}
           placeholder={t('log.contentPlaceholder')}
           autoFocus={!existing}
         />

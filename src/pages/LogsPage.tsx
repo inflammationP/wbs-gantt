@@ -4,6 +4,7 @@ import { useStore } from '../store/useStore'
 import { buildChildrenMap } from '../lib/tree'
 import { groupLogsByDate, parseLogContent } from '../lib/logs'
 import { withNotes } from '../lib/notes'
+import { itemLogSubject, withItemLogs } from '../lib/itemLogs'
 import { toDate } from '../lib/dates'
 import { monthAbbr, weekdayName } from '../lib/i18n'
 import { useLang, useT } from '../lib/useT'
@@ -24,6 +25,11 @@ export function LogsPage() {
   const projects = useStore((s) => s.projects)
   const logs = useStore((s) => s.logs)
   const notes = useStore((s) => s.notes)
+  const itemLogs = useStore((s) => s.itemLogs)
+  // Read here only for the names the day cards draw their entries under — see
+  // `itemLogSubject`.
+  const habits = useStore((s) => s.habits)
+  const chores = useStore((s) => s.chores)
   const today = useStore((s) => s.today)
 
   // Which of the two the page is showing. Not persisted: the nav entry is one
@@ -65,20 +71,33 @@ export function LogsPage() {
   // with no visible control and no effect on what is listed would still be
   // deciding whether that edge is drawn. The filter is kept, not cleared, so
   // switching back lands where the user left.
+  // The entries about routines and chores join the union unfiltered, as the
+  // notes do: a routine belongs to no project, so a project filter has nothing
+  // to say about one, and quietly dropping them would mean a day card that
+  // changes its contents for a filter with no bearing on them.
   const days = useMemo(() => {
     const ls = mode === 'logs' && visibleTaskIds ? logs.filter((l) => visibleTaskIds.has(l.taskId)) : logs
-    return withNotes(groupLogsByDate(ls), notes)
-  }, [logs, notes, visibleTaskIds, mode])
+    return withItemLogs(withNotes(groupLogsByDate(ls), notes), itemLogs)
+  }, [logs, notes, itemLogs, visibleTaskIds, mode])
 
+  // A day is a day in logs mode when it has any entry at all — a task's log or
+  // one about a routine. The card is where a day's writing is found, and the
+  // kind of thing written is what the card is for reading.
   const visible = useMemo(
-    () => (mode === 'logs' ? days.filter((d) => d.logs.length > 0) : days.filter((d) => d.note != null)),
+    () =>
+      mode === 'logs'
+        ? days.filter((d) => d.logs.length > 0 || d.itemLogs.length > 0)
+        : days.filter((d) => d.note != null),
     [days, mode],
   )
 
   // A day the grid has no card for still opens — an empty one, which is exactly
   // what writing on a day for the first time needs.
   const selected = useMemo(
-    () => (selectedDay ? days.find((d) => d.date === selectedDay) ?? { date: selectedDay, logs: [], note: null } : null),
+    () =>
+      selectedDay
+        ? days.find((d) => d.date === selectedDay) ?? { date: selectedDay, logs: [], note: null, itemLogs: [] }
+        : null,
     [days, selectedDay],
   )
 
@@ -175,7 +194,7 @@ export function LogsPage() {
           // Keyed on the mode so the swap remounts the grid and replays the
           // animation — a transition cannot express "the contents were replaced".
           <div key={mode} className="swap-in grid items-start gap-x-4 gap-y-6 grid-cols-[repeat(auto-fill,minmax(200px,1fr))]" style={{ maxWidth: 1120 }}>
-            {visible.map(({ date, logs: dayLogs, note }) => {
+            {visible.map(({ date, logs: dayLogs, note, itemLogs: dayItemLogs }) => {
               const d = toDate(date)
               // Group by task; show only parent (depth-0) items in the thumbnail
               // so sub-items don't blur the hierarchy, and each task gets its own
@@ -185,27 +204,62 @@ export function LogsPage() {
                 if (!byTask.has(l.taskId)) byTask.set(l.taskId, [])
                 byTask.get(l.taskId)!.push(l)
               }
-              const taskEntries = [...byTask.entries()]
-              const preview = taskEntries.slice(0, 2).map(([taskId, tlogs]) => {
-                const task = tasks.find((x) => x.id === taskId)
-                const p = task ? projects.find((x) => x.id === task.projectId) : null
-                const items = tlogs
-                  .flatMap((l) => parseLogContent(l.content))
+              const lines = (content: string) =>
+                parseLogContent(content)
                   // A divider is punctuation, not a line of the entry: letting
                   // one through would spend a preview slot saying nothing.
                   .filter((it) => it.kind === 'item' && it.depth === 0)
                   .slice(0, 2)
-                return { taskId, name: task?.name ?? t('common.unknownTask'), color: p?.color, items }
+              const taskEntries = [...byTask.entries()]
+              const taskPreview = taskEntries.slice(0, 2).map(([taskId, tlogs]) => {
+                const task = tasks.find((x) => x.id === taskId)
+                const p = task ? projects.find((x) => x.id === task.projectId) : null
+                return {
+                  key: taskId,
+                  name: task?.name ?? t('common.unknownTask'),
+                  color: p?.color,
+                  tag: undefined,
+                  items: tlogs.flatMap((l) => lines(l.content)),
+                }
               })
-              const moreTasks = taskEntries.length - preview.length
+              // The day's entries about routines and chores, in the same shape
+              // and in the same list — a name with its lines under it. No colour:
+              // the dot beside a task is what claims a project, and neither of
+              // these belongs to one. A word stands where the dot would, because
+              // a bare name in this list says nothing about which of the three
+              // sources the entry came from.
+              const itemPreview = dayItemLogs.slice(0, 2).flatMap((l) => {
+                const name = itemLogSubject(l, habits, chores)
+                return name == null
+                  ? []
+                  : [
+                      {
+                        key: `${l.kind}:${l.ownerId}`,
+                        name,
+                        color: undefined,
+                        tag: t(l.kind === 'habit' ? 'habit.section' : 'chore.section'),
+                        items: lines(l.content),
+                      },
+                    ]
+              })
+              const preview = [...taskPreview, ...itemPreview]
+              const moreTasks = taskEntries.length - taskPreview.length
               // "This day has both kinds" — the one thing neither mode's own
-              // contents can say, since a mode only ever draws its own half.
-              const hasBoth = dayLogs.length > 0 && note != null
+              // contents can say, since a mode only ever draws its own half. An
+              // entry about a routine is one of the logs for this purpose: it is
+              // drawn in the same mode and is hidden by the same switch to notes.
+              const hasEntries = dayLogs.length > 0 || dayItemLogs.length > 0
+              const hasBoth = hasEntries && note != null
               // Composed here rather than through `logs.dayFooter`, which was a
               // fixed two-part template and would have printed "0 logs · 0 tasks"
               // on a day that is a note and nothing else.
+              //
+              // One "logs" figure for both kinds: what the line is counting is
+              // how much was written on the day, and to the reader a line about a
+              // routine is a log like any other. The tasks figure beside it stays
+              // what it always was — how many tasks the day's logs are about.
               const footer = [
-                dayLogs.length ? t('common.logCount', { count: dayLogs.length }) : null,
+                hasEntries ? t('common.logCount', { count: dayLogs.length + dayItemLogs.length }) : null,
                 taskEntries.length ? t('common.taskCount', { count: taskEntries.length }) : null,
                 note ? t('common.noteCount', { count: 1 }) : null,
               ].filter(Boolean).join(' · ')
@@ -241,9 +295,18 @@ export function LogsPage() {
                     <div className="flex-1 space-y-2 pr-1">
                       {mode === 'logs'
                         ? preview.map((tp) => (
-                            <div key={tp.taskId}>
+                            <div key={tp.key}>
                               <div className="flex items-center gap-1.5 mb-0.5">
-                                {tp.color && <span className="w-2 h-2 rounded-full shrink-0" style={{ background: tp.color }} />}
+                                {/* The dot says "this log belongs to a task",
+                                    and the project colour says which. The word
+                                    says which of the other two sources, there
+                                    being no colour to spend on either — one
+                                    colour, one meaning. */}
+                                {tp.color ? (
+                                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: tp.color }} />
+                                ) : (
+                                  <span className="text-[10px] text-dim shrink-0">{tp.tag}</span>
+                                )}
                                 <span className="text-[11px] font-medium text-fg truncate">{tp.name}</span>
                               </div>
                               <div className="space-y-0.5 pl-1">
@@ -284,16 +347,22 @@ export function LogsPage() {
         )}
       </div>
 
-      {/* day detail — both kinds, in one panel */}
+      {/* The day detail, **of the half that is on screen**. The panel can hold
+          three kinds of entry and the page shows one at a time, so opening a day
+          from here hands over that one: in logs mode the entries — the tasks'
+          and the routines' alike — and no notebook; in notes mode the notebook
+          and nothing else. The day panel on the Gantt side still gets all three,
+          because that panel is the day rather than one of its halves. */}
       {selected && (
         <DayLogsModal
           date={selected.date}
-          logs={selected.logs}
+          logs={mode === 'logs' ? selected.logs : []}
           tasks={tasks}
           projects={projects}
           onClose={() => setSelectedDay(null)}
-          onEdit={(log) => setFixLog(log)}
-          notes={{ note: selected.note }}
+          onEdit={mode === 'logs' ? (log) => setFixLog(log) : undefined}
+          notes={mode === 'notes' ? { note: selected.note } : undefined}
+          itemLogs={mode === 'logs' ? selected.itemLogs : []}
         />
       )}
 

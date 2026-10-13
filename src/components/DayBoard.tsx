@@ -2,10 +2,11 @@ import { useMemo, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import { Check, ChevronDown, ChevronRight, NotebookText, Pencil, Plus, ScrollText, TriangleAlert } from 'lucide-react'
 import { useStore } from '../store/useStore'
-import { Chore, ChoreSlot, Habit, TaskLog } from '../types'
+import { Chore, ChoreSlot, Habit, ItemLog, TaskLog } from '../types'
 import { DayRow, daySummary, parentPath } from '../lib/dayTasks'
 import { CHORE_SLOTS, carriedSince, choreGroups, parseChoreTime, slotOfTime } from '../lib/chores'
 import { RoutineRow, routineRows } from '../lib/habits'
+import { itemLogsOn } from '../lib/itemLogs'
 import { isLogDayOpen } from '../lib/logs'
 import { STATUS_META, sig, sigAlpha, toggleIn } from '../lib/ui'
 import { addDays, toDate, toISO } from '../lib/dates'
@@ -13,6 +14,7 @@ import { Dict, formatLongDate, formatRelativeDay } from '../lib/i18n'
 import { useLang, useT } from '../lib/useT'
 import { ProgressRing } from './ProgressRing'
 import { LogDialog } from './LogDialog'
+import { ItemLogDialog } from './ItemLogDialog'
 import { DayLogsModal } from './DayLogsModal'
 import { Field, Modal, Segmented, Stat, inputCls } from './ui'
 import { useDialogs } from './dialogs'
@@ -120,6 +122,7 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, habitsEdi
   const t = useT()
   const tasks = useStore((s) => s.tasks)
   const logs = useStore((s) => s.logs)
+  const itemLogs = useStore((s) => s.itemLogs)
   const projects = useStore((s) => s.projects)
   const today = useStore((s) => s.today)
   const setSelected = useStore((s) => s.setSelected)
@@ -133,6 +136,8 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, habitsEdi
   const [foldedHabits, setFoldedHabits] = useState<Set<string>>(() => new Set())
   const [open, setOpen] = useState({ tasks: true, habits: true, chores: true })
   const [logFor, setLogFor] = useState<string | null>(null)
+  /** The routine or chore today's entry is being written about. */
+  const [itemLogFor, setItemLogFor] = useState<{ kind: ItemLog['kind']; ownerId: string } | null>(null)
   /** The entry whose figure is being corrected — see `LogDialog`'s `existing`. */
   const [fixLog, setFixLog] = useState<TaskLog | null>(null)
   const [logsOpen, setLogsOpen] = useState(false)
@@ -140,6 +145,7 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, habitsEdi
   const summary = useMemo(() => daySummary(tasks, logs, projects, day, today), [tasks, logs, projects, day, today])
   const routines = useMemo(() => routineRows(habits, day, foldedHabits), [habits, day, foldedHabits])
   const dayLogs = useMemo(() => logs.filter((l) => l.date === day), [logs, day])
+  const dayItemLogs = useMemo(() => itemLogsOn(itemLogs, day), [itemLogs, day])
   const projectOf = (id: string) => projects.find((p) => p.id === id)
 
   const toggle = (id: string) => setExpanded((e) => ({ ...e, [id]: !e[id] }))
@@ -182,6 +188,13 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, habitsEdi
     onOpenTask: (id: string) => setSelected(id),
     projectName: (id: string) => projectOf(id)?.name ?? '',
   }
+
+  // What the day's record holds, as the footer button promises it: the tasks'
+  // logs and the entries about routines and chores, which are read in the same
+  // panel. A figure about the panel rather than about anyone's progress — the
+  // ring above is the one that counts work.
+  const logCount = summary.logCount + dayItemLogs.length
+  const writeItemLog = (kind: ItemLog['kind'], ownerId: string) => setItemLogFor({ kind, ownerId })
 
   // One list, not two. Splitting the day into "strict" and "the rest" put the
   // log obligations at the top, but it also meant calling every task one thing
@@ -239,6 +252,14 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, habitsEdi
             editable={!!habitsEditable}
             onToggle={onToggleHabit && !row.hasKids ? () => onToggleHabit(row.habit.id) : undefined}
             onToggleFold={() => setFoldedHabits((f) => toggleIn(f, row.habit.id))}
+            // Written about only where the routine itself is: a heading is a
+            // container with no tick of its own, and the store refuses its entry
+            // on the same grounds (`addItemLog`).
+            onWriteLog={
+              habitsEditable && !row.hasKids && isLogDayOpen(day, today)
+                ? () => writeItemLog('habit', row.habit.id)
+                : undefined
+            }
           />
         ))
       )}
@@ -254,8 +275,19 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, habitsEdi
   // division worth drawing, and a single *named* group still counts — a day of
   // nothing but morning chores is exactly what the heading is for.
   const slotted = groups.length > 1 || (groups[0]?.slot ?? null) !== null
+  // `ChoreRow` only where the chore may be touched at all, which is also the
+  // only place it may be written about — see the `dayChores` comment on `Props`.
   const choreRow = (c: Chore) =>
-    onAddChore ? <ChoreRow key={c.id} chore={c} today={today} /> : <ChoreLine key={c.id} chore={c} />
+    onAddChore ? (
+      <ChoreRow
+        key={c.id}
+        chore={c}
+        today={today}
+        onWriteLog={isLogDayOpen(day, today) ? () => writeItemLog('chore', c.id) : undefined}
+      />
+    ) : (
+      <ChoreLine key={c.id} chore={c} />
+    )
 
   const choreSection = (
     <Section
@@ -375,15 +407,18 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, habitsEdi
       <div className="shrink-0 p-3 border-t border-border">
         <button
           onClick={() => setLogsOpen(true)}
-          disabled={summary.logCount === 0}
+          disabled={logCount === 0}
           className="w-full h-8 inline-flex items-center justify-center gap-1.5 text-[12px] font-medium bg-accent text-on-accent disabled:opacity-40 disabled:cursor-default rounded-[3px] hover:brightness-110"
         >
-          <ScrollText size={14} /> {summary.logCount ? t('day.readLogsCount', { count: summary.logCount }) : t('day.readLogs')}
+          <ScrollText size={14} /> {logCount ? t('day.readLogsCount', { count: logCount }) : t('day.readLogs')}
         </button>
       </div>
 
       {logFor && <LogDialog taskId={logFor} onClose={() => setLogFor(null)} />}
       {fixLog && <LogDialog taskId={fixLog.taskId} existing={fixLog} onClose={() => setFixLog(null)} />}
+      {itemLogFor && (
+        <ItemLogDialog kind={itemLogFor.kind} ownerId={itemLogFor.ownerId} onClose={() => setItemLogFor(null)} />
+      )}
       {logsOpen && (
         <DayLogsModal
           date={day}
@@ -392,6 +427,7 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, habitsEdi
           projects={projects}
           onClose={() => setLogsOpen(false)}
           onEdit={(l) => { setLogsOpen(false); setFixLog(l) }}
+          itemLogs={dayItemLogs}
         />
       )}
     </div>
@@ -683,37 +719,55 @@ function ChoreComposer({ day, onAdd }: { day: string; onAdd: (title: string, slo
   }
 
   return (
-    <form onSubmit={submit} className="px-2 pb-1.5 flex items-center gap-1">
-      <input
-        className={`${inputCls} flex-1 min-w-0`}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder={t('chore.placeholder')}
-        aria-label={t('chore.placeholder')}
-        data-chore-input={day}
-      />
-      {/* A select rather than the four buttons the dialog could afford: the pane
-          is 240px at its narrowest, and this is a field most chores leave alone.
-          Capped rather than free to size itself — a browser sizes a select to
-          its widest option, and "Early morning" would take the title's room. */}
-      <select
-        value={slot}
-        onChange={(e) => setSlot(e.target.value as '' | ChoreSlot)}
-        aria-label={t('chore.slot')}
-        title={t('chore.slot')}
-        className={`${SLOT_SELECT} shrink-0 max-w-[104px]`}
-      >
-        {SLOT_OPTIONS.map((o) => (
-          <option key={o.value} value={o.value}>
-            {t(o.key)}
-          </option>
-        ))}
-      </select>
-    </form>
+    <>
+      <form onSubmit={submit} className="px-2 pb-1 flex items-center gap-1">
+        <input
+          className={`${inputCls} flex-1 min-w-0`}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder={t('chore.placeholder')}
+          aria-label={t('chore.placeholder')}
+          data-chore-input={day}
+        />
+        {/* A select rather than the four buttons the dialog could afford: the pane
+            is 240px at its narrowest, and this is a field most chores leave alone.
+            Capped rather than free to size itself — a browser sizes a select to
+            its widest option, and "Early morning" would take the title's room. */}
+        <select
+          value={slot}
+          onChange={(e) => setSlot(e.target.value as '' | ChoreSlot)}
+          aria-label={t('chore.slot')}
+          title={t('chore.slot')}
+          className={`${SLOT_SELECT} shrink-0 max-w-[104px]`}
+        >
+          {SLOT_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {t(o.key)}
+            </option>
+          ))}
+        </select>
+      </form>
+      {/* There is no button, and Enter is the whole of the way in — which is
+          worth saying rather than leaving to be discovered, since a field with
+          no button beside it reads as a field that does nothing. Right under
+          that row rather than at the foot of the section: the select shares the
+          row, so the sentence has to sit as close to the field it is about as
+          the layout allows. */}
+      <div className="px-2 pb-1.5 text-[11px] leading-snug text-dim">{t('chore.enterHint')}</div>
+    </>
   )
 }
 
-function ChoreRow({ chore, today }: { chore: Chore; today: string }) {
+function ChoreRow({
+  chore,
+  today,
+  onWriteLog,
+}: {
+  chore: Chore
+  today: string
+  /** Today's entry about this chore. Absent on a board that may not write. */
+  onWriteLog?: () => void
+}) {
   const t = useT()
   const lang = useLang()
   const toggleChore = useStore((s) => s.toggleChore)
@@ -760,6 +814,17 @@ function ChoreRow({ chore, today }: { chore: Chore; today: string }) {
           </div>
         )}
       </div>
+
+      {onWriteLog && (
+        <button
+          onClick={onWriteLog}
+          title={t('gantt.writeLogForDay')}
+          aria-label={t('gantt.writeLogForDay')}
+          className="shrink-0 mt-[1px] p-0.5 rounded-[3px] text-dim hover:text-fg opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+        >
+          <NotebookText size={12} />
+        </button>
+      )}
 
       <button
         onClick={() => setEditing(true)}
@@ -1016,6 +1081,7 @@ function HabitLine({
   editable,
   onToggle,
   onToggleFold,
+  onWriteLog,
 }: {
   row: RoutineRow
   /**
@@ -1029,6 +1095,8 @@ function HabitLine({
   editable: boolean
   onToggle?: () => void
   onToggleFold: () => void
+  /** Today's entry about this routine. Absent on a board that may not write. */
+  onWriteLog?: () => void
 }) {
   const t = useT()
   const deleteHabit = useStore((s) => s.deleteHabit)
@@ -1085,6 +1153,17 @@ function HabitLine({
             a few hundred pixels wide, and the part being read is the name. */}
         {habit.note && <div className="text-[11px] text-dim break-words mt-0.5">{habit.note}</div>}
       </div>
+
+      {onWriteLog && (
+        <button
+          onClick={onWriteLog}
+          title={t('gantt.writeLogForDay')}
+          aria-label={t('gantt.writeLogForDay')}
+          className="shrink-0 mt-[1px] p-0.5 rounded-[3px] text-dim hover:text-fg opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+        >
+          <NotebookText size={12} />
+        </button>
+      )}
 
       {editable && (
         <>

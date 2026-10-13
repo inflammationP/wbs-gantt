@@ -497,6 +497,7 @@ const en = {
   // second place for the three languages to drift apart.
   'chore.section': 'Chores',
   'chore.placeholder': 'Add a chore…',
+  'chore.enterHint': 'Type the name in the box and press Enter to create it.',
   'chore.emptyToday': 'Nothing on hand today.',
   'chore.emptyTomorrow': 'Nothing lined up for tomorrow.',
   'chore.noneOnDay': 'No chores on this day.',
@@ -1086,6 +1087,7 @@ const zh: Dict = {
 
   'chore.section': '临时事务',
   'chore.placeholder': '添加临时事务…',
+  'chore.enterHint': '请在文本框内直接输入事项名称，按回车确认创建。',
   'chore.emptyToday': '今天没有临时事务。',
   'chore.emptyTomorrow': '明天还没有安排。',
   'chore.noneOnDay': '当天没有临时事务。',
@@ -1661,6 +1663,7 @@ const fr: Dict = {
 
   'chore.section': 'Menues tâches',
   'chore.placeholder': 'Ajouter une menue tâche…',
+  'chore.enterHint': 'Saisissez le nom dans le champ, puis appuyez sur Entrée pour la créer.',
   'chore.emptyToday': 'Rien à faire aujourd’hui.',
   'chore.emptyTomorrow': 'Rien de prévu pour demain.',
   'chore.noneOnDay': 'Aucune menue tâche ce jour.',

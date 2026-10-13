@@ -264,6 +264,41 @@ export interface Note {
   stamps?: Stamp[]
 }
 
+/**
+ * A day's entry about a routine or a chore — the task log's counterpart, with
+ * no figure on it.
+ *
+ * Its own collection rather than a field on `Habit` or `Chore`, and *not* an
+ * entry in `logs`, for one reason: everything that reads a log wants the
+ * percentage attached to it. `taskProgress`, `strictLogRate`, `boardDayTallies`
+ * and the reminder digest's `collectDay` all read `logs`, and a routine's entry
+ * living there would put "which kind of log is this" into every one of them.
+ * What a routine log is worth is a sentence, and nothing measures it — so the
+ * isolation here is structural rather than a check each of those places has to
+ * remember, exactly as it is for `Chore` and `Habit` themselves.
+ *
+ * Nothing on the Gantt side reads `itemLogs` at all. The two places that do are
+ * the day's record (the Logs page's day card and `DayLogsModal`), which is the
+ * whole point of writing one.
+ *
+ * **One entry per item per day**, which is why there is no `id`: the identity is
+ * the triple below, and a collection keyed by it cannot hold two entries for one
+ * day. Writing again joins the new text onto the same entry as a further
+ * paragraph, exactly as `addLog` does for a task — see `Note`, which is the same
+ * arrangement one level up.
+ */
+export interface ItemLog {
+  /** Which collection `ownerId` names. */
+  kind: 'habit' | 'chore'
+  ownerId: string
+  date: string // yyyy-MM-dd
+  content: string // raw text; newline = item, leading tabs = nesting
+  /** One per paragraph of `content`, in order — see `Stamp`. */
+  stamps?: Stamp[]
+  createdAt: string
+  updatedAt: string
+}
+
 export interface TaskLog {
   id: string
   taskId: string

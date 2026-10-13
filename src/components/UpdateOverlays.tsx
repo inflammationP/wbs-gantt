@@ -1,4 +1,5 @@
 import { SNOOZE_DAYS, useStore } from '../store/useStore'
+import { updateOverlay } from '../lib/updater'
 import { useT } from '../lib/useT'
 import { Modal } from './ui'
 import { ReleaseNotesList } from './ReleaseNotes'
@@ -11,19 +12,44 @@ const primaryBtn = 'h-8 px-4 text-[12px] font-medium bg-accent text-on-accent ro
 const secondaryBtn = 'h-8 px-3 text-[12px] text-muted hover:text-fg border border-border rounded-[3px] disabled:opacity-40'
 
 /**
+ * Which of the two update dialogs is up, read off the store.
+ *
+ * A hook over `updateOverlay` so the choice is made once, above both of them:
+ * mounted independently and each with its own guard, the two overlapped — the
+ * restart question opened on top of the offer that asked for the download.
+ */
+function useUpdateOverlay() {
+  return useStore((s) =>
+    updateOverlay({
+      updateInfo: s.updateInfo,
+      updateInstalling: s.updateInstalling,
+      updateError: s.updateError,
+      updateReady: s.updateReady,
+      updateReadyOpen: s.updateReadyOpen,
+    }),
+  )
+}
+
+/**
  * Both update dialogs, mounted once beside the app shell.
  *
  * Here rather than inside `SettingsPage` because they have to survive
  * navigation: the nag appears over whatever view the user happens to be on, and
  * the update dialog must not disappear because they wandered off Settings while
  * reading the release notes.
+ *
+ * Two of the three are alternatives and exactly one of them is rendered, which
+ * is the whole reason `useUpdateOverlay` exists. The nag stands outside that
+ * choice: it is not about an update on offer but about how long it has been
+ * since anyone looked.
  */
 export function UpdateOverlays() {
+  const overlay = useUpdateOverlay()
   return (
     <>
       <UpdateNag />
-      <UpdateDialog />
-      <UpdateReadyDialog />
+      {overlay === 'offer' && <UpdateDialog />}
+      {overlay === 'ready' && <UpdateReadyDialog />}
     </>
   )
 }
@@ -77,12 +103,12 @@ function UpdateNag() {
  */
 function UpdateReadyDialog() {
   const t = useT()
-  const ready = useStore((s) => s.updateReady)
   const info = useStore((s) => s.updateInfo)
   const applyUpdate = useStore((s) => s.applyUpdate)
   const dismissReady = useStore((s) => s.dismissReady)
 
-  if (!ready || !info) return null
+  // Only here for the version number; which dialog is up is decided above.
+  if (!info) return null
 
   return (
     <Modal title={t('update.readyTitle')} onClose={dismissReady} width={420}>
@@ -106,23 +132,23 @@ function UpdateDialog() {
   const t = useT()
   const info = useStore((s) => s.updateInfo)
   const history = useStore((s) => s.updateHistory)
-  const installing = useStore((s) => s.updateInstalling)
   const error = useStore((s) => s.updateError)
   const installUpdate = useStore((s) => s.installUpdate)
   const closeUpdateDialog = useStore((s) => s.closeUpdateDialog)
   const snoozeUpdate = useStore((s) => s.snoozeUpdate)
 
-  // **Out of the way the moment the download starts.** The install used to run
-  // with this dialog up and every button in it disabled, which meant a slow
-  // download — and GitHub is slow or unreachable from where a lot of this app's
-  // users are — was time spent unable to use the app at all. The work is a
-  // download and then a restart; neither needs the user watching it.
+  // **Out of the way the moment the download starts**, and only back if it
+  // fails: the three conditions that answer that question, in the order they
+  // are asked, are `updateOverlay`'s. What is left here is the narrowing.
   //
-  // Reopened by a failure, and only by one: `installUpdate` clears `installing`
-  // and leaves `updateError` behind, so the dialog the reader was in comes back
-  // with the reason and the button to try again. On success there is nothing to
-  // come back to — the process is replaced.
-  if (!info || installing) return null
+  // The rule it encodes: a slow download — and GitHub is slow or unreachable
+  // from where a lot of this app's users are — used to be time spent unable to
+  // use the app at all, because this dialog stayed up with every button in it
+  // disabled. The work is a download and then a restart; neither needs the user
+  // watching it. On success there is nothing to come back to — the process is
+  // replaced — and once the installer is on disk the way back to it is the
+  // version section, not this.
+  if (!info) return null
 
   return (
     <Modal title={t('update.availableTitle')} onClose={closeUpdateDialog} width={460}

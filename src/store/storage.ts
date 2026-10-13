@@ -1,4 +1,4 @@
-import { Chore, Habit, Note, Project, Stamp, Task, TaskLog, TaskPriority } from '../types'
+import { Chore, Habit, ItemLog, Note, Project, Stamp, Task, TaskLog, TaskPriority } from '../types'
 import { DEFAULT_LANG, isLang, Lang } from '../lib/i18n'
 import { liftTimes, paragraphs } from '../lib/logs'
 import { isArchived } from '../lib/tree'
@@ -35,6 +35,11 @@ export interface PersistedData {
   chores?: Chore[]
   habits?: Habit[]
   notes?: Note[]
+  /**
+   * The entries written about routines and chores — see `ItemLog` in types.ts.
+   * Optional on the same terms as the three above.
+   */
+  itemLogs?: ItemLog[]
   /**
    * What the user calls each to-do folder, by folder id.
    *
@@ -528,6 +533,19 @@ function normalize(data: PersistedData): LoadedData {
       ...stampsOf(l),
       targetProgress: l.targetProgress ?? null,
     })),
+    // Read the same way as a task's log, and through the same call: this is the
+    // same text in the same shape, so which of the three stamp eras it comes
+    // from is the same question with the same answer. `kind` is left as it
+    // stands — an unrecognised one names no item, so the day's record draws no
+    // line for it, which is the same treatment an unreadable `parentId` gets
+    // over in `habits`.
+    itemLogs: (data.itemLogs ?? [])
+      .filter((l) => (l.content ?? '').trim() !== '')
+      .map((l) => ({
+        ...l,
+        date: l.date ?? '',
+        ...stampsOf(l),
+      })),
   }
 }
 
@@ -641,6 +659,7 @@ export function exportJson(data: PersistedData): string {
       chores: data.chores ?? [],
       habits: data.habits ?? [],
       notes: data.notes ?? [],
+      itemLogs: data.itemLogs ?? [],
       todoFolders: data.todoFolders ?? {},
     },
     null,
@@ -660,6 +679,7 @@ export function parseImport(json: string): LoadedData {
     chores: parsed.chores ?? [],
     habits: parsed.habits ?? [],
     notes: parsed.notes ?? [],
+    itemLogs: parsed.itemLogs ?? [],
     todoFolders: parsed.todoFolders ?? {},
   })
 }

@@ -53,6 +53,43 @@ export interface ReleaseNotes {
   notes: string
 }
 
+/** Which update dialog is up, if either. */
+export type UpdateOverlay = 'offer' | 'ready' | null
+
+/**
+ * The update overlay, from the state that decides it.
+ *
+ * One function rather than a guard inside each dialog, because the two dialogs
+ * are alternatives and nothing used to say so: each one decided for itself, and
+ * the download landing satisfied both — the restart question opened in front of
+ * the offer that asked for the download, still on screen behind it.
+ *
+ * `updateReady` is a fact (the installer is on disk) and cannot double as the
+ * dialog's visibility: dismissing the question leaves the fact true, which is
+ * the whole point — the version section offers the same restart afterwards.
+ * `updateReadyOpen` is only ever about the question being on screen.
+ */
+export function updateOverlay(s: {
+  updateInfo: unknown
+  updateInstalling: boolean
+  updateError: string | null
+  updateReady: boolean
+  updateReadyOpen: boolean
+}): UpdateOverlay {
+  // Mid-download there is nothing to decide, and asking anything here is what
+  // this state exists to avoid. The dialog the button was in gets out of the way
+  // and the app carries on.
+  if (!s.updateInfo || s.updateInstalling) return null
+  // A failure is the one thing that reopens the offer, with the reason and the
+  // button to try again — the question was already answered by pressing it.
+  if (s.updateError) return 'offer'
+  if (s.updateReadyOpen) return 'ready'
+  // Fetched and put aside. From here the version section carries it, which is
+  // what "later" has to mean if it is not to mean "never".
+  if (s.updateReady) return null
+  return 'offer'
+}
+
 /**
  * Every published release, with the notes each one was released with.
  *

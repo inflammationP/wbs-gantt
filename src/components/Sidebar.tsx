@@ -41,6 +41,7 @@ export function Sidebar() {
   const chores = useStore((s) => s.chores)
   const habits = useStore((s) => s.habits)
   const notes = useStore((s) => s.notes)
+  const itemLogs = useStore((s) => s.itemLogs)
   // The dot means "there is something to read in Settings", not merely "an
   // update exists" — so it tracks the unreachable-GitHub banner specifically,
   // and stays lit for exactly as long as that banner is up. `unreachableHidden`
@@ -93,7 +94,7 @@ export function Sidebar() {
   }
 
   const handleExport = () => {
-    const blob = new Blob([exportJson({ projects, tasks, logs, chores, habits, notes })], { type: 'application/json' })
+    const blob = new Blob([exportJson({ projects, tasks, logs, chores, habits, notes, itemLogs })], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url

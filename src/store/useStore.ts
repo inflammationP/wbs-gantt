@@ -1,7 +1,8 @@
 import { useMemo } from 'react'
 import { create } from 'zustand'
-import { AppView, Chore, ChoreSlot, Habit, Note, Project, Task, TaskLog, TaskPriority, TaskType, ViewMode } from '../types'
+import { AppView, Chore, ChoreSlot, Habit, ItemLog, Note, Project, Task, TaskLog, TaskPriority, TaskType, ViewMode } from '../types'
 import { ALL_DAYS, habitBranch, runsOn } from '../lib/habits'
+import { todaysChores } from '../lib/chores'
 import { todayISO, addDays, diffDays, pad, toDate, toISO } from '../lib/dates'
 import { timelineRange, DateRange } from '../lib/timeline'
 import {
@@ -166,11 +167,13 @@ interface State {
   projects: Project[]
   tasks: Task[]
   logs: TaskLog[]
-  // Chores, habits and notes live outside the three above on purpose — see
-  // `Chore`, `Habit` and `Note` in types.ts.
+  // Chores, habits, notes and the entries written about the first two live
+  // outside the three above on purpose — see `Chore`, `Habit`, `Note` and
+  // `ItemLog` in types.ts.
   chores: Chore[]
   habits: Habit[]
   notes: Note[]
+  itemLogs: ItemLog[]
   /** What the user calls each to-do folder, by `todoGroupId` — see `storage.ts`. */
   todoFolders: Record<string, string>
   activeView: AppView
@@ -219,6 +222,16 @@ interface State {
    * between fetching the thing and replacing the process with it.
    */
   updateReady: boolean
+  /**
+   * The restart question is on screen.
+   *
+   * Not the same thing as `updateReady`, and it needs to be its own flag
+   * precisely because "later" keeps the installer: answering the question takes
+   * it off the screen without taking back the fact, which is what the version
+   * section's restart button reads. `updateOverlay` is the one place the two are
+   * read together.
+   */
+  updateReadyOpen: boolean
   /** Why the install failed, if it did. */
   updateError: string | null
   /**
@@ -420,6 +433,21 @@ interface State {
   appendNote: (date: string, body: string) => void
 
   /**
+   * Write about a routine or a chore, for today.
+   *
+   * The task log's counterpart with no figure on it, and the same shape of
+   * action: more text joins what is already there as a further paragraph rather
+   * than replacing it or starting a second entry. See `ItemLog` in types.ts for
+   * why it is its own collection rather than a kind of `TaskLog`.
+   *
+   * **No date argument**, which is what makes "today is the only day you can
+   * write on" structural rather than a rule to remember: there is no way to ask
+   * for another day. `addLog` has to check (`isLogDayOpen`); this cannot be
+   * asked the question in the first place.
+   */
+  addItemLog: (kind: ItemLog['kind'], ownerId: string, content: string) => void
+
+  /**
    * `init` carries what the editor can also set; the quick path passes a title
    * and nothing else. Read field by field rather than spread, so a new habit
    * cannot be born paused or pre-ticked by a caller that happened to have a
@@ -488,6 +516,7 @@ if (!loaded) {
     chores: initial.chores,
     habits: initial.habits,
     notes: initial.notes,
+    itemLogs: initial.itemLogs,
     todoFolders: initial.todoFolders,
   })
 }
@@ -707,6 +736,7 @@ export const useStore = create<State>()((set, get) => ({
   chores: initial.chores,
   habits: initial.habits,
   notes: initial.notes,
+  itemLogs: initial.itemLogs,
   todoFolders: initial.todoFolders,
   lastUndo: null,
   history: EMPTY_HISTORY,
@@ -729,6 +759,7 @@ export const useStore = create<State>()((set, get) => ({
   updateHistory: [],
   updateInstalling: false,
   updateReady: false,
+  updateReadyOpen: false,
   updateError: null,
   unreachableHidden: false,
   nagOpen: false,
@@ -1470,7 +1501,14 @@ export const useStore = create<State>()((set, get) => ({
         return { ...c, done, completedDate: done ? todayISO() : null, updatedAt: new Date().toISOString() }
       }),
     })),
-  deleteChore: (id) => set((s) => ({ chores: s.chores.filter((c) => c.id !== id) })),
+  // The chore's entries go with it. Nothing else can reach them: they name an id
+  // that no longer exists, so the day's record would draw no line for them and
+  // no screen lists them — a file that only grows.
+  deleteChore: (id) =>
+    set((s) => ({
+      chores: s.chores.filter((c) => c.id !== id),
+      itemLogs: s.itemLogs.filter((l) => !(l.kind === 'chore' && l.ownerId === id)),
+    })),
 
   // Three ways in, one way out: a blank body removes the note, which is the
   // only "delete" this feature has and needs no confirm — the text is right
@@ -1513,6 +1551,57 @@ export const useStore = create<State>()((set, get) => ({
           : [...s.notes, { date, body: next, stamps, updatedAt }],
       }
     }),
+
+  /**
+   * The task log's counterpart for a routine or a chore — one entry per item per
+   * day, written only today, and only about something that is on today.
+   *
+   * The two guards below are `toggleHabit`'s, asked of the same functions, and
+   * for the same reason: the row that carries the button is drawn from
+   * `routineRows` / `todaysChores`, so nothing in the UI can reach a routine
+   * that is not running today or a chore that is not on the plate — but "the
+   * only thing standing between the two is what the UI happens to draw" is
+   * exactly what these guards refuse to rely on.
+   */
+  addItemLog: (kind, ownerId, content) => {
+    set((s) => {
+      const text = content.trim()
+      // Nothing written is nothing to store, exactly as in `appendNote`. A blank
+      // entry would draw a line in the day's record saying something was written
+      // there, and would put a card on the Logs page for a day with nothing on it.
+      if (!text) return {}
+      const date = s.today
+      if (kind === 'habit') {
+        const habit = s.habits.find((h) => h.id === ownerId)
+        // Not running today — ended, not one of its weekdays, suspended.
+        if (!habit || !runsOn(habit, date)) return {}
+        // A routine with children is a heading, and a heading holds no tick of
+        // its own; a log is the same kind of claim, so it holds none either. A
+        // task with subtasks is refused on the same grounds in `LogDialog`.
+        if (s.habits.some((k) => k.parentId === habit.id)) return {}
+      } else {
+        const chore = s.chores.find((c) => c.id === ownerId)
+        // On today's plate: due and open, or finished today. Asked through
+        // `todaysChores` rather than re-deriving it here, so "may this be
+        // written about" and "is this on today's list" are one answer.
+        if (!chore || todaysChores([chore], date).length === 0) return {}
+      }
+      const existing = s.itemLogs.find(
+        (l) => l.kind === kind && l.ownerId === ownerId && l.date === date,
+      )
+      const now = new Date().toISOString()
+      const next = existing && existing.content.trim() ? `${existing.content}\n\n${text}` : text
+      // Stamped like a task's log and a note, through the same comparison: the
+      // entry is one block of text, so which paragraph this write added is
+      // worked out from the two bodies rather than told.
+      const stamps = restamp(existing?.content ?? '', existing?.stamps ?? [], next, logStamp(new Date()))
+      return {
+        itemLogs: existing
+          ? s.itemLogs.map((l) => (l === existing ? { ...l, content: next, stamps, updatedAt: now } : l))
+          : [...s.itemLogs, { kind, ownerId, date, content: next, stamps, createdAt: now, updatedAt: now }],
+      }
+    })
+  },
 
   addHabit: (title, init) => {
     const now = new Date().toISOString()
@@ -1601,7 +1690,13 @@ export const useStore = create<State>()((set, get) => ({
   deleteHabit: (id) =>
     set((s) => {
       const ids = habitBranch(s.habits, id)
-      return { habits: s.habits.filter((h) => !ids.has(h.id)) }
+      // The whole branch's entries go with it, not only the one asked about —
+      // the children go too, and an entry about a routine that was deleted with
+      // its parent is an entry about nothing.
+      return {
+        habits: s.habits.filter((h) => !ids.has(h.id)),
+        itemLogs: s.itemLogs.filter((l) => !(l.kind === 'habit' && ids.has(l.ownerId))),
+      }
     }),
 
   /**
@@ -1637,6 +1732,7 @@ export const useStore = create<State>()((set, get) => ({
       chores: data.chores ?? [],
       habits: data.habits ?? [],
       notes: data.notes ?? [],
+      itemLogs: data.itemLogs ?? [],
       todoFolders: data.todoFolders ?? {},
       selectedTaskId: null,
       selectedProjectId: null,
@@ -1735,8 +1831,8 @@ export const useStore = create<State>()((set, get) => ({
    *
    * The dialog disappears the moment this is called and the app carries on: a
    * download is a download, and it does not need the user watching it. What
-   * comes back is `updateReady`, which raises the question the download cannot
-   * answer — whether to restart now.
+   * comes back is `updateReadyOpen`, which raises the question the download
+   * cannot answer — whether to restart now.
    */
   installUpdate: async () => {
     const info = useStore.getState().updateInfo
@@ -1747,7 +1843,7 @@ export const useStore = create<State>()((set, get) => ({
     persistPrefs()
     try {
       await info.download()
-      set({ updateInstalling: false, updateReady: true })
+      set({ updateInstalling: false, updateReady: true, updateReadyOpen: true })
     } catch (err) {
       set({
         updateInstalling: false,
@@ -1759,7 +1855,10 @@ export const useStore = create<State>()((set, get) => ({
   applyUpdate: async () => {
     const info = useStore.getState().updateInfo
     if (!info) return
-    set({ updateInstalling: true, updateReady: false, updateError: null })
+    // `updateReady` stays true: the installer does not stop being on disk
+    // because launching it failed, and a failure is answered by the offer
+    // dialog with the reason on it.
+    set({ updateInstalling: true, updateReadyOpen: false, updateError: null })
     try {
       await info.install()
     } catch (err) {
@@ -1773,12 +1872,18 @@ export const useStore = create<State>()((set, get) => ({
   // The handle stays: what was downloaded is still downloaded, and the way back
   // to it is the version section, which shows the same offer. Dropping the
   // handle here would make "later" mean "never", and the whole download would
-  // happen again on the next launch.
-  dismissReady: () => set({ updateReady: false }),
+  // happen again on the next launch. Only the question goes.
+  dismissReady: () => set({ updateReadyOpen: false }),
 
   closeUpdateDialog: () => {
     const info = useStore.getState().updateInfo
-    set({ updateInfo: null, updateInstalling: false, updateReady: false, updateError: null })
+    set({
+      updateInfo: null,
+      updateInstalling: false,
+      updateReady: false,
+      updateReadyOpen: false,
+      updateError: null,
+    })
     // Release the Tauri resource. Nothing is lost: checking again re-fetches it.
     void info?.dismiss()
   },
@@ -1788,6 +1893,11 @@ export const useStore = create<State>()((set, get) => ({
     set({
       updateInfo: null,
       updateInstalling: false,
+      // Snoozing drops the handle, so it drops what the handle held: leaving
+      // `updateReady` set would keep the version section offering a restart
+      // through an installer that has been released.
+      updateReady: false,
+      updateReadyOpen: false,
       updateError: null,
       updateSnoozeUntil: addDays(new Date(), SNOOZE_DAYS).toISOString(),
     })
@@ -1893,6 +2003,7 @@ useStore.subscribe((state, prev) => {
     state.chores !== prev.chores ||
     state.habits !== prev.habits ||
     state.notes !== prev.notes ||
+    state.itemLogs !== prev.itemLogs ||
     state.todoFolders !== prev.todoFolders
   ) {
     saveData({
@@ -1902,6 +2013,7 @@ useStore.subscribe((state, prev) => {
       chores: state.chores,
       habits: state.habits,
       notes: state.notes,
+      itemLogs: state.itemLogs,
       todoFolders: state.todoFolders,
     })
   }
@@ -1960,7 +2072,12 @@ function scheduleReminderSync(delay = REMINDER_SETTLE_MS): void {
     // an archived task is finished work that has been put down. The one place
     // the live-only rule is applied at the source rather than at a screen.
     void syncReminderFile(
-      { tasks: liveTasks(s.tasks), logs: s.logs, chores: s.chores, habits: s.habits },
+      {
+        tasks: liveTasks(s.tasks),
+        logs: s.logs,
+        chores: s.chores,
+        habits: s.habits,
+      },
       s.lang,
       {
         wechat: s.reminderWechat,
