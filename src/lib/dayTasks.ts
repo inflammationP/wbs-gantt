@@ -65,10 +65,7 @@ const STATUS_RANK: Record<TaskStatus, number> = {
   todo: 5,
 }
 
-// Logs are stored as a current value, not a history: `taskProgress` takes a
-// task's latest log and counts every distinct day it has ever been logged. Any
-// question about a specific day therefore has to clip the log list first and
-// hand the clipped array to everything downstream.
+// Clip for consumers that enumerate log rows, rather than calculate progress.
 export function logsUpTo(logs: TaskLog[], day: string): TaskLog[] {
   return logs.filter((l) => l.date <= day)
 }
@@ -194,16 +191,12 @@ export function dayStates(tasks: Task[], logs: TaskLog[], day: string): Map<stri
  * Progress as of the day *before* `day` — i.e. "was this already finished when
  * the day began".
  *
- * The logs are clipped, not merely asked about. `taskProgress` takes the latest
- * log in the array it is handed and pays no attention to `onDate` for a strict
- * task carrying a target, so handing it a list that still contains today's log
- * and asking about yesterday would let a log written *today* decide what was
- * true yesterday — evicting a task from the day the very log that completed it
- * arrived, which is the regression this function exists to prevent.
+ * `taskProgress` owns the date cutoff for both strict and simplified tasks.
+ * Reuse its log index instead of allocating a clipped board for every leaf.
  */
 function progressBefore(task: Task, clipped: TaskLog[], day: string): number {
   const before = addDays(toDate(day), -1)
-  return taskProgress(task, logsUpTo(clipped, toISO(before)), before) ?? 0
+  return taskProgress(task, clipped, before) ?? 0
 }
 
 /** One strict leaf that owed a log on a day, and whether it got one. */

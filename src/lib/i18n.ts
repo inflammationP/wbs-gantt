@@ -61,6 +61,13 @@ export function isLang(value: string): value is Lang {
 }
 
 const en = {
+  'storage.loadFailed': 'Your saved data could not be opened. The original is preserved; automatic saving is paused. You can import a valid backup using the sidebar.',
+  'storage.saveFailed': 'Changes are only in memory because saving failed. Export your work or retry before closing the app.',
+  'storage.details': 'Error details',
+  'storage.original': 'Download original save',
+  'storage.export': 'Export current work',
+  'storage.backupAndSave': 'Back up original and save current work',
+  'storage.retry': 'Retry saving',
   'app.title': 'WBS · Gantt — Project Control',
 
   // --- navigation and shell ---
@@ -742,6 +749,13 @@ const en = {
 export type Dict = typeof en
 
 const zh: Dict = {
+  'storage.loadFailed': '无法打开已有存档。原始数据已保留，自动保存已暂停；可使用侧边栏导入有效备份。',
+  'storage.saveFailed': '保存失败，当前修改仅在内存中。关闭应用前请导出数据或重试保存。',
+  'storage.details': '错误详情',
+  'storage.original': '下载原始存档',
+  'storage.export': '导出当前数据',
+  'storage.backupAndSave': '备份原存档并保存当前数据',
+  'storage.retry': '重试保存',
   'app.title': 'WBS · Gantt —— 项目管控',
 
   'nav.gantt': '甘特图',
@@ -1303,6 +1317,13 @@ const zh: Dict = {
 }
 
 const fr: Dict = {
+  'storage.loadFailed': 'Impossible d’ouvrir les données enregistrées. L’original est conservé ; l’enregistrement automatique est suspendu. Vous pouvez importer une sauvegarde valide depuis la barre latérale.',
+  'storage.saveFailed': 'L’enregistrement a échoué. Les modifications sont seulement en mémoire. Exportez votre travail ou réessayez avant de fermer l’application.',
+  'storage.details': 'Détails de l’erreur',
+  'storage.original': 'Télécharger l’original',
+  'storage.export': 'Exporter le travail actuel',
+  'storage.backupAndSave': 'Sauvegarder l’original et enregistrer le travail actuel',
+  'storage.retry': 'Réessayer',
   'app.title': 'WBS · Gantt — Contrôle de projet',
 
   'nav.gantt': 'Gantt',

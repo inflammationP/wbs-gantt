@@ -15,6 +15,7 @@ import {
   isArchived,
   liveTasks,
   placeTasks,
+  editTask,
   syncParentDates,
   todoCascadeIds,
   todoGroupIds,
@@ -34,37 +35,19 @@ import {
   applyDelta,
   deltaCount,
   diffBoard,
-  mergeDelta,
   pathBetween,
 } from '../lib/history'
-import { loadData, saveData, loadPrefs, savePrefs, PersistedData, Prefs } from './storage'
+import { loadData, saveData, loadPrefs, savePrefs, backupStoredData, workData, exportJson, prepareData, PersistedData, Prefs } from './storage'
 import { PROJECT_COLORS } from '../lib/ui'
 import { isLogDayOpen, logStamp, restamp } from '../lib/logs'
 import { applyLang, Lang, translate } from '../lib/i18n'
 import { applyTheme, ThemeId } from '../lib/theme'
 import { buildSeed } from '../lib/seed'
-import { checkForUpdate, fetchReleaseHistory, isTauri, CheckResult, ReleaseNotes } from '../lib/updater'
-import {
-  CopyKey,
-  CopyOverrides,
-  DigestCategory,
-  ReminderRule,
-  Slot,
-  composeDigest,
-  slotAt,
-  testDigest,
-} from '../lib/reminder'
-import {
-  sendReminder,
-  syncReminderFile,
-  installReminderTask as installTask,
-  removeReminderTask as removeTask,
-  isReminderTaskInstalled,
-  setAutostart as enableAutostart,
-  isAutostartEnabled,
-  showToast,
-  SendResult,
-} from '../lib/notify'
+import { CheckResult, ReleaseNotes } from '../lib/updater'
+import type { CopyKey, CopyOverrides, DigestCategory, ReminderRule } from '../lib/reminder'
+import { createUpdateActions } from './updateSlice'
+import { createReminderActions, startReminderRuntime } from './reminderSlice'
+export { SNOOZE_DAYS } from './updateSlice'
 
 export interface NewTaskInput {
   name: string
@@ -102,8 +85,7 @@ export interface NewTaskInput {
  * the one step that cannot be expressed as a patch on rows that are still there.
  *
  * The derived dates are not in here. Putting the structure back is enough —
- * `syncParentDates` recomputes the same span from the same children on the next
- * frame, which is where it came from.
+ * Parent dates settle in the same store write as the structural operation.
  */
 export interface UndoStep {
   /**
@@ -132,17 +114,6 @@ export interface StartTodoInput {
   priority: TaskPriority
 }
 
-/** How long without reaching GitHub before the nag appears, and its throttle. */
-const NAG_AFTER_DAYS = 30
-
-/**
- * How long the dialog's "ignore for now" button silences the update prompt.
- *
- * Exported so the button can name the span it is offering — a button reading
- * "ignore for a while" would make the user guess how long.
- */
-export const SNOOZE_DAYS = 7
-
 /**
  * Where the update check stands.
  *
@@ -163,7 +134,12 @@ export type AvailableUpdate = Extract<CheckResult, { kind: 'available' }>
  */
 export type ReminderPhase = 'idle' | 'sending' | 'sent' | 'error' | 'unsupported'
 
-interface State {
+export type StoreSet = (update: Partial<State> | ((state: State) => Partial<State>)) => void
+
+export interface State {
+  storageIssue: { kind: 'load' | 'save'; message: string; raw: string | null } | null
+  retrySave: () => void
+  exportData: () => string
   projects: Project[]
   tasks: Task[]
   logs: TaskLog[]
@@ -507,19 +483,9 @@ function uid(): string {
 }
 
 const loaded = loadData()
-const initial = loaded ?? buildSeed()
-if (!loaded) {
-  saveData({
-    projects: initial.projects,
-    tasks: initial.tasks,
-    logs: initial.logs,
-    chores: initial.chores,
-    habits: initial.habits,
-    notes: initial.notes,
-    itemLogs: initial.itemLogs,
-    todoFolders: initial.todoFolders,
-  })
-}
+const initialData = loaded.kind === 'loaded' ? loaded.data : buildSeed()
+const initial = { ...initialData, tasks: syncParentDates(initialData.tasks, initialData.logs) }
+const initialSave = loaded.kind === 'empty' ? saveData(workData(initial)) : { ok: true as const }
 
 const loadedPrefs = loadPrefs()
 // Heal a missing update anchor exactly once, and write it back.
@@ -586,43 +552,6 @@ function persistPrefs(): void {
   })
 }
 
-/** Is a snooze currently running? */
-function isSnoozed(): boolean {
-  const { updateSnoozeUntil } = useStore.getState()
-  return updateSnoozeUntil !== null && Date.parse(updateSnoozeUntil) > Date.now()
-}
-
-/**
- * Show the "it has been a while" nag, if the clock says so.
- *
- * Evaluated at the tail of *every* failed check, whichever button started it.
- * It states a fact about the anchor — "we have not reached GitHub in over a
- * month" — and that fact does not depend on who asked, so making it depend on
- * the caller would be the one way left for an automatic check to behave
- * differently from a manual one. A successful check has just moved the anchor
- * to now, so the condition is false by construction; and a user who cannot
- * reach GitHub keeps their stale anchor, so they are nagged even though the
- * notice on the settings page already explained why.
- *
- * `new Date(iso)`, not `toDate(iso)`: `toDate` splits on '-' and expects
- * 'yyyy-MM-dd', so a full instant would parse as the 1st of the month.
- */
-function maybeNag(): void {
-  if (!isTauri()) return
-  const { updateAnchorAt, nagShownAt } = useStore.getState()
-  if (updateAnchorAt === null) return
-
-  const now = new Date()
-  if (diffDays(new Date(updateAnchorAt), now) < NAG_AFTER_DAYS) return
-  if (nagShownAt !== null && diffDays(new Date(nagShownAt), now) < NAG_AFTER_DAYS) return
-
-  // Stamped on display rather than on dismissal: a user who kills the app with
-  // the modal still open never dismisses it, and would otherwise be nagged on
-  // every single launch.
-  useStore.setState({ nagOpen: true, nagShownAt: now.toISOString() })
-  persistPrefs()
-}
-
 /**
  * Capturing the history.
  *
@@ -643,9 +572,8 @@ function maybeNag(): void {
  *
  * Two things are held back from the record:
  *
- *   - **Derived writes.** `syncParentDates` rewrites a parent's window from its
- *     children, on every tasks change. Recorded, every single step would drag a
- *     noise entry behind it.
+ *   - **Explicit repair.** `syncParentDates` remains available for callers
+ *     repairing a board. Normal operations already settle dates atomically.
  *   - **The history's own writes**, and anything else that only sets state this
  *     module owns — a step must never be recorded about recording a step.
  *
@@ -656,7 +584,21 @@ let suspended = 0
 let inGesture = false
 let gestureLabel: string | null = null
 let gestureKind: StepKind | undefined
-let accumulating: HistoryDelta | null = null
+// A transient starting board; only the final delta is kept in history.
+let gestureStart: Board | null = null
+let persistenceDirty = false
+
+function persistWork(): void {
+  persistenceDirty = false
+  const state = useStore.getState()
+  if (state.storageIssue?.kind === 'load') return
+  const result = saveData(workData(state))
+  if (!result.ok) {
+    useStore.setState({ storageIssue: { kind: 'save', message: result.message, raw: null } })
+  } else if (state.storageIssue) {
+    useStore.setState({ storageIssue: null })
+  }
+}
 
 /** `HH:MM`, local. The tree is read at a glance; a date would be noise. */
 function clockNow(): string {
@@ -690,8 +632,10 @@ function autoLabel(lang: Lang, delta: HistoryDelta): string {
  * step rather than a gap.
  */
 function flushHistory() {
-  const delta = accumulating
-  accumulating = null
+  const before = gestureStart
+  gestureStart = null
+  const delta = before ? diffBoard(before, boardOf(useStore.getState())) : null
+  if (persistenceDirty) persistWork()
   const named = gestureLabel
   const kind = gestureKind
   gestureLabel = null
@@ -729,7 +673,32 @@ const boardOf = (s: {
   todoFolders: s.todoFolders,
 })
 
-export const useStore = create<State>()((set, get) => ({
+export const useStore = create<State>()((rawSet, get) => {
+  // Settle derived dates before the write reaches persistence or history.
+  const set = (update: Partial<State> | ((state: State) => Partial<State>)) =>
+    rawSet((state) => {
+      const patch = typeof update === 'function' ? update(state) : update
+      if ((patch.tasks && patch.tasks !== state.tasks) || (patch.logs && patch.logs !== state.logs)) {
+        return { ...patch, tasks: syncParentDates(patch.tasks ?? state.tasks, patch.logs ?? state.logs) }
+      }
+      return patch
+    })
+  return ({
+  storageIssue: loaded.kind === 'error'
+    ? { kind: 'load', message: loaded.message, raw: loaded.raw }
+    : !initialSave.ok ? { kind: 'save', message: initialSave.message, raw: null } : null,
+  exportData: () => exportJson(workData(get())),
+  retrySave: () => {
+    if (get().storageIssue?.kind === 'load') {
+      const result = backupStoredData()
+      if (!result.ok) {
+        set({ storageIssue: { ...get().storageIssue!, message: result.message } })
+        return
+      }
+      set({ storageIssue: null })
+    }
+    persistWork()
+  },
   projects: initial.projects,
   tasks: initial.tasks,
   logs: initial.logs,
@@ -990,6 +959,11 @@ export const useStore = create<State>()((set, get) => ({
   },
 
   addTask: (input) => {
+    const state = get()
+    const parent = input.parentId ? state.tasks.find((t) => t.id === input.parentId) : undefined
+    const projectId = parent?.projectId ?? input.projectId
+    if (!state.projects.some((p) => p.id === projectId)) throw new Error('Task project does not exist')
+    if (input.parentId && (!parent || parent.isTodo)) throw new Error('Invalid task parent')
     const id = uid()
     const now = new Date().toISOString()
     get().withUndo(translate(get().lang, 'history.newTask', { what: input.name }), () =>
@@ -1053,11 +1027,10 @@ export const useStore = create<State>()((set, get) => ({
   updateTask: (id, patch) => {
     const name = get().tasks.find((t) => t.id === id)?.name ?? ''
     get().withUndo(translate(get().lang, 'history.editTask', { what: name }), () =>
-      set((s) => ({
-        tasks: s.tasks.map((t) =>
-          t.id === id ? { ...t, ...patch, updatedAt: new Date().toISOString() } : t,
-        ),
-      })),
+      set((s) => {
+        const tasks = editTask(s.tasks, s.projects, id, patch)
+        return tasks ? { tasks } : {}
+      }),
     )
   },
   deleteTask: (id) =>
@@ -1082,15 +1055,7 @@ export const useStore = create<State>()((set, get) => ({
     const name = get().tasks.find((t) => t.id === id)?.name ?? ''
     get().withUndo(
       translate(get().lang, parentId === null ? 'history.outdent' : 'history.editTask', { what: name }),
-      () =>
-        set((s) => {
-          if (parentId && (parentId === id || collectDescendants(s.tasks, id).includes(parentId))) return {}
-          return {
-            tasks: s.tasks.map((t) =>
-              t.id === id ? { ...t, parentId, updatedAt: new Date().toISOString() } : t,
-            ),
-          }
-        }),
+      () => get().updateTask(id, { parentId }),
     )
   },
   /**
@@ -1116,6 +1081,7 @@ export const useStore = create<State>()((set, get) => ({
    */
   moveTasks: (ids, parentId, beforeId, projectId) => {
     const s = get()
+    if (!s.projects.some((p) => p.id === projectId)) return
     // `ids` are the roots — the caller removes anything another moving task is
     // already carrying — so its length is the count the strip should say.
     //
@@ -1289,8 +1255,6 @@ export const useStore = create<State>()((set, get) => ({
 
   // Never persisted, and nothing else has to be told: the notice and the
   // sidebar's dot both read this beside the phase, so one write puts both away.
-  hideUnreachable: () => set({ unreachableHidden: true }),
-
   updateLog: (id, targetProgress) =>
     set((s) => {
       const target = s.logs.find((l) => l.id === id)
@@ -1432,7 +1396,7 @@ export const useStore = create<State>()((set, get) => ({
 
   // File a branch away, or bring it back. One `archivedAt` for the whole
   // branch, taken once so that "everything archived together says so", and one
-  // `set` so App's `syncParentDates` pass sees the change once.
+  // `set` so the entire branch and its derived dates settle together.
   //
   // Nothing here checks that the tasks are finished: the callers do that, and
   // this action is also what the invariant repair in `normalize` leans on. What
@@ -1721,19 +1685,18 @@ export const useStore = create<State>()((set, get) => ({
   },
 
   importData: (data) => {
+    const prepared = prepareData(data)
+    if (get().storageIssue?.kind === 'load') {
+      const result = backupStoredData()
+      if (!result.ok) throw new Error(result.message)
+    }
     // Suspended, or the subscriber would record the import itself as a step —
     // one enormous "changed 500" — in the same breath as clearing the tree that
     // step would go on.
     suspended++
-    set({
-      projects: data.projects,
-      tasks: data.tasks,
-      logs: data.logs ?? [],
-      chores: data.chores ?? [],
-      habits: data.habits ?? [],
-      notes: data.notes ?? [],
-      itemLogs: data.itemLogs ?? [],
-      todoFolders: data.todoFolders ?? {},
+    try { set({
+      storageIssue: null,
+      ...prepared,
       selectedTaskId: null,
       selectedProjectId: null,
       projectFilter: 'all',
@@ -1744,8 +1707,7 @@ export const useStore = create<State>()((set, get) => ({
       // of each.
       lastUndo: null,
       history: EMPTY_HISTORY,
-    })
-    suspended--
+    }) } finally { suspended-- }
   },
 
   // One way: the note is an explanation, and a way to ask for it back would be a
@@ -1755,246 +1717,16 @@ export const useStore = create<State>()((set, get) => ({
     persistPrefs()
   },
 
-  // One check, run for two reasons, and the outcome does not depend on which:
-  // the launch check *is* a manual check fired on the app's behalf, so anything
-  // that varied the answer by who asked would be a difference the user could
-  // see — down to the prompt, which is why there is no second entry point.
-  //
-  // `manual` is the single exception, and it is not about the answer. It only
-  // decides whether a failure may *re-show* a notice the reader has already put
-  // away: putting it away says "I have read this", not "never tell me again",
-  // and pressing the button is asking a fresh question, so the answer has to be
-  // visible. A silent automatic retry later that night stays silent, because
-  // that is exactly what was asked for.
-  runUpdateCheck: async (manual = false) => {
-    // Doubles as the double-click guard and as StrictMode's: the launch effect
-    // fires twice in development, and a second check while one is in flight is
-    // never what anyone wanted.
-    if (useStore.getState().updatePhase === 'checking') return
-    // Emptied up front, not when the answer arrives: checking again against a
-    // different version would otherwise leave the previous version's history
-    // sitting under the new release's notes until the fetch came back.
-    set({ updatePhase: 'checking', updateError: null, updateHistory: [] })
+  ...createUpdateActions(set, get, persistPrefs),
 
-    const result = await checkForUpdate()
-
-    if (result.kind === 'unsupported') {
-      set({ updatePhase: 'unsupported' })
-      return
-    }
-
-    if (result.kind === 'error') {
-      set(manual ? { updatePhase: 'unreachable', unreachableHidden: false } : { updatePhase: 'unreachable' })
-      maybeNag()
-      return
-    }
-
-    // Reaching GitHub is the event the 30-day clock measures, whichever answer
-    // it gave. Recorded before anything else can go wrong.
-    const anchorAt = new Date().toISOString()
-
-    if (result.kind === 'current') {
-      set({ updatePhase: 'current', updateAnchorAt: anchorAt, updateInfo: null })
-      persistPrefs()
-      return
-    }
-
-    set({ updatePhase: 'available', updateAnchorAt: anchorAt })
-    persistPrefs()
-
-    // Never install unasked. An app that restarts itself under the user's
-    // cursor is not a courtesy, and the release notes are worth reading *before*
-    // the decision rather than after the restart — which is what the dialog is
-    // for. The cost is a prompt on every launch until the update is taken; that
-    // is the trade being made.
-    //
-    // A running snooze suppresses the dialog only. The phase still becomes
-    // `available`, so the settings page keeps reporting that an update exists —
-    // silencing the prompt must never amount to hiding the update.
-    const snoozed = isSnoozed()
-    if (!snoozed) set({ updateInfo: result })
-
-    // The skipped versions are a second request, fetched after the dialog is
-    // already up rather than before: the version number, the notes and the
-    // install button do not wait behind it, and the folded section appears when
-    // — or never — it arrives. Nothing is fetched for a snoozed update, since
-    // nobody is looking at a dialog.
-    if (!snoozed) {
-      const history = await fetchReleaseHistory(result.current, result.version)
-      // Unless a check that started while this one was in flight has taken over.
-      if (useStore.getState().updateInfo === result) set({ updateHistory: history })
-    }
-  },
-
-  /**
-   * Fetch the installer, in the background.
-   *
-   * The dialog disappears the moment this is called and the app carries on: a
-   * download is a download, and it does not need the user watching it. What
-   * comes back is `updateReadyOpen`, which raises the question the download
-   * cannot answer — whether to restart now.
-   */
-  installUpdate: async () => {
-    const info = useStore.getState().updateInfo
-    if (!info) return
-    // Stamp the anchor before anything is written downstream: on Windows the
-    // installer exits the process, so anything written after that may never land.
-    set({ updateInstalling: true, updateError: null, updateAnchorAt: new Date().toISOString() })
-    persistPrefs()
-    try {
-      await info.download()
-      set({ updateInstalling: false, updateReady: true, updateReadyOpen: true })
-    } catch (err) {
-      set({
-        updateInstalling: false,
-        updateError: err instanceof Error ? err.message : String(err),
-      })
-    }
-  },
-
-  applyUpdate: async () => {
-    const info = useStore.getState().updateInfo
-    if (!info) return
-    // `updateReady` stays true: the installer does not stop being on disk
-    // because launching it failed, and a failure is answered by the offer
-    // dialog with the reason on it.
-    set({ updateInstalling: true, updateReadyOpen: false, updateError: null })
-    try {
-      await info.install()
-    } catch (err) {
-      set({
-        updateInstalling: false,
-        updateError: err instanceof Error ? err.message : String(err),
-      })
-    }
-  },
-
-  // The handle stays: what was downloaded is still downloaded, and the way back
-  // to it is the version section, which shows the same offer. Dropping the
-  // handle here would make "later" mean "never", and the whole download would
-  // happen again on the next launch. Only the question goes.
-  dismissReady: () => set({ updateReadyOpen: false }),
-
-  closeUpdateDialog: () => {
-    const info = useStore.getState().updateInfo
-    set({
-      updateInfo: null,
-      updateInstalling: false,
-      updateReady: false,
-      updateReadyOpen: false,
-      updateError: null,
-    })
-    // Release the Tauri resource. Nothing is lost: checking again re-fetches it.
-    void info?.dismiss()
-  },
-
-  snoozeUpdate: () => {
-    const info = useStore.getState().updateInfo
-    set({
-      updateInfo: null,
-      updateInstalling: false,
-      // Snoozing drops the handle, so it drops what the handle held: leaving
-      // `updateReady` set would keep the version section offering a restart
-      // through an installer that has been released.
-      updateReady: false,
-      updateReadyOpen: false,
-      updateError: null,
-      updateSnoozeUntil: addDays(new Date(), SNOOZE_DAYS).toISOString(),
-    })
-    persistPrefs()
-    void info?.dismiss()
-  },
-
-  closeNag: () => set({ nagOpen: false }),
-
-  setReminderWechat: (on) => {
-    set({ reminderWechat: on })
-    persistPrefs()
-    scheduleReminderSync(0)
-  },
-  setReminderRules: (rules) => {
-    set({ reminderRules: rules })
-    persistPrefs()
-    scheduleReminderSync(0)
-  },
-  setReminderTopic: (category, on) => {
-    const current = get().reminderTopics
-    const next = on ? [...current, category] : current.filter((c) => c !== category)
-    set({ reminderTopics: next })
-    persistPrefs()
-    scheduleReminderSync(0)
-  },
-  setReminderLeadDays: (days) => {
-    set({ reminderLeadDays: days })
-    persistPrefs()
-    scheduleReminderSync(0)
-  },
-  setCopyOverride: (key, text) => {
-    const { reminderCopy, lang } = get()
-    const forLang = { ...(reminderCopy[lang] ?? {}) }
-    // Empty means no opinion, not render nothing — see copy() in reminder.ts.
-    if (text.trim() === '') delete forLang[key]
-    else forLang[key] = text
-    set({ reminderCopy: { ...reminderCopy, [lang]: forLang } })
-    persistPrefs()
-    scheduleReminderSync(0)
-  },
-  markReportSeen: () => {
-    set({ reportSeenDay: todayISO() })
-    persistPrefs()
-  },
-  setReminderToken: (token) => {
-    set({ reminderToken: token })
-    persistPrefs()
-    scheduleReminderSync(0)
-  },
-
-  installReminderTask: async () => {
-    try {
-      await installTask()
-      set({ reminderTaskInstalled: true, reminderError: null })
-    } catch (err) {
-      console.warn('Reminder task install failed:', err)
-      set({ reminderError: err instanceof Error ? err.message : String(err) })
-    }
-  },
-  removeReminderTask: async () => {
-    try {
-      await removeTask()
-      set({ reminderTaskInstalled: false, reminderError: null })
-    } catch (err) {
-      console.warn('Reminder task removal failed:', err)
-      set({ reminderError: err instanceof Error ? err.message : String(err) })
-    }
-  },
-  refreshReminderTask: async () => {
-    set({ reminderTaskInstalled: await isReminderTaskInstalled() })
-  },
-
-  setAutostart: async (on) => {
-    try {
-      const actual = await enableAutostart(on)
-      set({ autostart: actual })
-      persistPrefs()
-    } catch (err) {
-      console.warn('Autostart change failed:', err)
-      set({ reminderError: err instanceof Error ? err.message : String(err) })
-    }
-  },
-
-  setCloseToTray: (on) => {
-    set({ closeToTray: on })
-    persistPrefs()
-  },
-}))
+  ...createReminderActions(set, get, persistPrefs),
+  })
+})
 
 // Persist data (only) to localStorage whenever projects/tasks/logs/chores/habits/
 // notes change.
 //
-// Both halves of this are load-bearing, and neither is checked by the compiler:
-// a collection missing from the condition is a collection whose edits are never
-// written, and one missing from the literal is a collection the next write of
-// anything else silently erases.
+// `workData` is the complete snapshot used by both persistence and export.
 useStore.subscribe((state, prev) => {
   if (
     state.projects !== prev.projects ||
@@ -2006,16 +1738,8 @@ useStore.subscribe((state, prev) => {
     state.itemLogs !== prev.itemLogs ||
     state.todoFolders !== prev.todoFolders
   ) {
-    saveData({
-      projects: state.projects,
-      tasks: state.tasks,
-      logs: state.logs,
-      chores: state.chores,
-      habits: state.habits,
-      notes: state.notes,
-      itemLogs: state.itemLogs,
-      todoFolders: state.todoFolders,
-    })
+    if (inGesture) persistenceDirty = true
+    else persistWork()
   }
 
   // ...and the other half of the same pass: this is where the undo history is
@@ -2030,9 +1754,7 @@ useStore.subscribe((state, prev) => {
   ) {
     return
   }
-  const delta = diffBoard(prev, state)
-  if (!delta) return
-  accumulating = mergeDelta(accumulating, delta)
+  if (!gestureStart) gestureStart = boardOf(prev)
   // No gesture open means nobody announced this one. It is still a step — the
   // whole point — and it gets a name assembled from what it did.
   if (!inGesture) flushHistory()
@@ -2053,109 +1775,7 @@ setInterval(() => {
  * morning. Long enough that renaming and retyping is one write, short enough
  * that the file is never meaningfully behind.
  */
-const REMINDER_SETTLE_MS = 30_000
-
-let reminderTimer: ReturnType<typeof setTimeout> | null = null
-
-/**
- * Rewrite the reminder file from the board as it stands, coalescing bursts.
- *
- * `delay = 0` is for settings the user has just changed by hand: they are about
- * to close the window and have every right to expect it stuck.
- */
-function scheduleReminderSync(delay = REMINDER_SETTLE_MS): void {
-  if (reminderTimer !== null) clearTimeout(reminderTimer)
-  reminderTimer = setTimeout(() => {
-    reminderTimer = null
-    const s = useStore.getState()
-    // Filed-away work is not pushed: the digest is a list of what is coming, and
-    // an archived task is finished work that has been put down. The one place
-    // the live-only rule is applied at the source rather than at a screen.
-    void syncReminderFile(
-      {
-        tasks: liveTasks(s.tasks),
-        logs: s.logs,
-        chores: s.chores,
-        habits: s.habits,
-      },
-      s.lang,
-      {
-        wechat: s.reminderWechat,
-        token: s.reminderToken.trim(),
-        ack: translate(s.lang, 'reminder.ack'),
-        rules: s.reminderRules,
-        topics: s.reminderTopics,
-        leadDays: s.reminderLeadDays,
-        overrides: s.reminderCopy[s.lang],
-      },
-    )
-  }, delay)
-}
-
-// Everything the digest is made of, plus the language it is written in. Keyed on
-// the same identity comparisons as the data subscriber above — a set of new
-// arrays is a change, a re-render is not.
-useStore.subscribe((state, prev) => {
-  if (
-    state.tasks !== prev.tasks ||
-    state.logs !== prev.logs ||
-    state.chores !== prev.chores ||
-    state.habits !== prev.habits ||
-    state.lang !== prev.lang
-  ) {
-    scheduleReminderSync()
-  }
-})
-
-// The first run, and with it the recovery path for every launch after: whatever
-// the file happens to hold, rewrite it from the board that was just loaded.
-scheduleReminderSync(0)
-
-// Two questions only the operating system can answer, asked once at startup.
-// Neither is guessable from our own preferences: the scheduled task can be
-// deleted from Task Scheduler and autostart turned off from Task Manager, and a
-// toggle that keeps saying "on" after that is worse than no toggle at all.
-if (isTauri()) {
-  void (async () => {
-    // The scheduled task is registered here, on the first launch, rather than by
-    // a button someone has to find. The whole point of the feature is that it
-    // works without being attended to, and a reminder that waits for its owner to
-    // finish setting it up is one that has already failed at that.
-    //
-    // Deliberately not in a dev build: the task would be registered against
-    // `target/debug/app.exe`, which the next `cargo clean` deletes, leaving a
-    // scheduled task aimed at a path that no longer exists — and one the user
-    // never asked for and cannot account for.
-    let installed = await isReminderTaskInstalled()
-    if (!installed && !import.meta.env.DEV) {
-      try {
-        await installTask()
-        installed = await isReminderTaskInstalled()
-      } catch (err) {
-        console.warn('Could not register the reminder task:', err)
-      }
-    }
-    useStore.setState({ reminderTaskInstalled: installed })
-
-    // The preference is the source of truth here, not the registry — that is the
-    // opposite of how this read before, and it is what makes the default a
-    // default. Reconciling the other way would let the very first launch flip
-    // "start with Windows" straight back off, since a fresh install is by
-    // definition not yet registered. The cost is that switching it off from Task
-    // Manager is undone on the next launch; switching it off in the app is not.
-    const auto = await isAutostartEnabled()
-    const wants = useStore.getState().autostart
-    // `null` means the question could not be put to Windows at all, which is not
-    // the same answer as "off" and must not be acted on either way.
-    if (auto !== null && auto !== wants) {
-      try {
-        await enableAutostart(wants)
-      } catch (err) {
-        console.warn('Could not apply the autostart preference:', err)
-      }
-    }
-  })()
-}
+startReminderRuntime(useStore)
 
 export function useRows(): Row[] {
   const tasks = useStore((s) => s.tasks)

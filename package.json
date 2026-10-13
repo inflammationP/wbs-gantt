@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "test": "node scripts/check.mjs",
     "preview": "vite preview",
     "deploy": "npm run build && wrangler deploy",
     "tauri": "tauri",

@@ -1,6 +1,24 @@
 import { Task, TaskLog } from '../types'
 import { addDays, diffDays, toDate, toISO } from './dates'
 
+// Store arrays are immutable. Weak keys release an index when its board is no
+// longer referenced, instead of retaining every edit for the app's lifetime.
+const logIndexes = new WeakMap<TaskLog[], Map<string, TaskLog[]>>()
+function logsFor(logs: TaskLog[], id: string): TaskLog[] {
+  let index = logIndexes.get(logs)
+  if (!index) {
+    index = new Map()
+    for (const log of logs) {
+      const group = index.get(log.taskId)
+      if (group) group.push(log)
+      else index.set(log.taskId, [log])
+    }
+    for (const group of index.values()) group.sort((a, b) => a.date.localeCompare(b.date))
+    logIndexes.set(logs, index)
+  }
+  return index.get(id) ?? []
+}
+
 /**
  * What `isPausedOnDay` needs to know: anything that can be suspended.
  *
@@ -83,9 +101,8 @@ export function taskProgress(task: Task, logs: TaskLog[], onDate: Date): number 
   // Not started yet → no progress (renders as "—").
   if (task.startDate != null && diffDays(toDate(task.startDate), onDate) < 0) return null
   if (!task.strictProgress) return tickProgress(task, onDate)
-  const own = logs
-    .filter((l) => l.taskId === task.id)
-    .sort((a, b) => a.date.localeCompare(b.date))
+  const upto = toISO(onDate)
+  const own = logsFor(logs, task.id).filter((l) => l.date <= upto)
   if (own.length === 0) return 0
   // The latest log that *states* a target wins — searched back through the list
   // rather than read off the last row. A log carrying no target states nothing

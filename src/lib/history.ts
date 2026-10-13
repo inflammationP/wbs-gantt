@@ -1,5 +1,12 @@
 import { Project, Task, TaskLog } from '../types'
 
+interface FieldChange<T> {
+  before: Partial<T>
+  after: Partial<T>
+  beforeMissing?: (keyof T)[]
+  afterMissing?: (keyof T)[]
+}
+
 /**
  * The undo history: what one step did, and how to walk back and forth over it.
  *
@@ -56,7 +63,7 @@ export interface HistoryDelta {
    * the row had at that moment, which is the same footing as the step's own
    * label — both are what was true then, not what is true now.
    */
-  changed: { id: string; name: string; before: Partial<Task>; after: Partial<Task> }[]
+  changed: ({ id: string; name: string } & FieldChange<Task>)[]
   /** Rows this step created, whole — so undoing it can take them away again. */
   added: Task[]
   /** Rows this step removed, whole — so undoing it can put them back. */
@@ -71,7 +78,7 @@ export interface HistoryDelta {
   projects: {
     added: Project[]
     removed: Project[]
-    changed: { id: string; name: string; before: Partial<Project>; after: Partial<Project> }[]
+    changed: ({ id: string; name: string } & FieldChange<Project>)[]
   }
 }
 
@@ -177,20 +184,28 @@ export function deltaNames(delta: HistoryDelta): {
 }
 
 /** Fields that differ between two rows of the same id, both ways. */
-function fieldDiff<T extends object>(before: T, after: T): { before: Partial<T>; after: Partial<T> } | null {
+function fieldDiff<T extends object>(before: T, after: T): FieldChange<T> | null {
   const b: Record<string, unknown> = {}
   const a: Record<string, unknown> = {}
+  const beforeMissing: (keyof T)[] = []
+  const afterMissing: (keyof T)[] = []
   // The union, not `Object.keys(before)`: a field the step *added* is not in the
   // before row's keys, and a diff that cannot see it cannot take it away again.
   for (const k of new Set([...Object.keys(before), ...Object.keys(after)])) {
     const x = (before as Record<string, unknown>)[k]
     const y = (after as Record<string, unknown>)[k]
-    if (x !== y) {
+    if (x !== y || Object.prototype.hasOwnProperty.call(before, k) !== Object.prototype.hasOwnProperty.call(after, k)) {
       b[k] = x
       a[k] = y
+      if (!Object.prototype.hasOwnProperty.call(before, k)) beforeMissing.push(k as keyof T)
+      if (!Object.prototype.hasOwnProperty.call(after, k)) afterMissing.push(k as keyof T)
     }
   }
-  return Object.keys(b).length === 0 ? null : { before: b as Partial<T>, after: a as Partial<T> }
+  return Object.keys(b).length === 0 ? null : {
+    before: b as Partial<T>, after: a as Partial<T>,
+    ...(beforeMissing.length ? { beforeMissing } : {}),
+    ...(afterMissing.length ? { afterMissing } : {}),
+  }
 }
 
 /**
@@ -280,23 +295,6 @@ export function diffBoard(prev: Board, next: Board): HistoryDelta | null {
   }
 }
 
-/** Fold one more delta into an accumulating one — one gesture can be many `set`s. */
-export function mergeDelta(a: HistoryDelta | null, b: HistoryDelta): HistoryDelta {
-  if (!a) return b
-  return {
-    changed: [...a.changed, ...b.changed],
-    added: [...a.added, ...b.added],
-    removed: [...a.removed, ...b.removed],
-    removedLogs: [...a.removedLogs, ...b.removedLogs],
-    folders: [...a.folders, ...b.folders],
-    projects: {
-      added: [...a.projects.added, ...b.projects.added],
-      removed: [...a.projects.removed, ...b.projects.removed],
-      changed: [...a.projects.changed, ...b.projects.changed],
-    },
-  }
-}
-
 /**
  * The board one step away, in either direction.
  *
@@ -310,25 +308,30 @@ export function mergeDelta(a: HistoryDelta | null, b: HistoryDelta): HistoryDelt
  * guard, not a feature.
  */
 export function applyDelta(board: Board, delta: HistoryDelta, dir: 'forward' | 'inverse'): Board {
-  const fromKey = dir === 'forward' ? 'before' : 'after'
   const toKey = dir === 'forward' ? 'after' : 'before'
+  const missingKey = dir === 'forward' ? 'afterMissing' : 'beforeMissing'
+  const applyFields = <T extends object>(row: T, change: FieldChange<T>): T => {
+    const next = { ...row, ...change[toKey] }
+    for (const key of change[missingKey] ?? []) delete next[key]
+    return next
+  }
   const appear = dir === 'forward' ? delta.added : delta.removed
   const vanish = dir === 'forward' ? delta.removed : delta.added
   const vanishIds = new Set(vanish.map((r) => r.id))
 
-  const patch = new Map(delta.changed.map((c) => [c.id, c[toKey]]))
+  const patch = new Map(delta.changed.map((c) => [c.id, c]))
   let tasks = board.tasks.map((t) => {
     const p = patch.get(t.id)
-    return p ? { ...t, ...p } : t
+    return p ? applyFields(t, p) : t
   })
   tasks = tasks.filter((t) => !vanishIds.has(t.id))
   const have = new Set(tasks.map((t) => t.id))
   tasks = [...tasks, ...appear.filter((t) => !have.has(t.id))]
 
-  const pPatch = new Map(delta.projects.changed.map((c) => [c.id, c[toKey]]))
+  const pPatch = new Map(delta.projects.changed.map((c) => [c.id, c]))
   let projects = board.projects.map((p) => {
     const q = pPatch.get(p.id)
-    return q ? { ...p, ...q } : p
+    return q ? applyFields(p, q) : p
   })
   const pVanish = new Set(
     (dir === 'forward' ? delta.projects.removed : delta.projects.added).map((p) => p.id),

@@ -1,5 +1,5 @@
 import { Project, Task, TaskLog, TaskStatus } from '../types'
-import { completedOn, taskProgress } from './progress'
+import { completedOn, isPausedOnDay, taskProgress } from './progress'
 import { todayISO } from './dates'
 
 export interface EffState {
@@ -61,7 +61,12 @@ function byOrder(a: Task, b: Task): number {
   return a.order != null && b.order != null && a.order !== b.order ? a.order - b.order : 0
 }
 
+const childrenIndexes = new WeakMap<Task[], Map<string | null, Task[]>>()
+
+/** Cached indexes are read-only to callers; copy a sibling list before editing. */
 export function buildChildrenMap(tasks: Task[]): Map<string | null, Task[]> {
+  const cached = childrenIndexes.get(tasks)
+  if (cached) return cached
   const m = new Map<string | null, Task[]>()
   for (const t of tasks) {
     const k = t.parentId
@@ -69,6 +74,7 @@ export function buildChildrenMap(tasks: Task[]): Map<string | null, Task[]> {
     m.get(k)!.push(t)
   }
   for (const list of m.values()) list.sort(compareSiblings)
+  childrenIndexes.set(tasks, m)
   return m
 }
 
@@ -89,14 +95,41 @@ function assignWbs(t: Task, prefix: string, children: Map<string | null, Task[]>
 export function collectDescendants(tasks: Task[], id: string): string[] {
   const children = buildChildrenMap(tasks)
   const out: string[] = []
-  const walk = (pid: string) => {
-    for (const c of children.get(pid) ?? []) {
-      out.push(c.id)
-      walk(c.id)
-    }
+  const seen = new Set([id])
+  const pending = [...(children.get(id) ?? [])].reverse()
+  while (pending.length) {
+    const child = pending.pop()!
+    if (seen.has(child.id)) continue
+    seen.add(child.id)
+    out.push(child.id)
+    pending.push(...[...(children.get(child.id) ?? [])].reverse())
   }
-  walk(id)
   return out
+}
+
+/** Content edits and structural edits use the same subtree placement rules. */
+export function editTask(tasks: Task[], projects: Project[], id: string, patch: Partial<Task>): Task[] | null {
+  const original = tasks.find((t) => t.id === id)
+  if (!original) return null
+  let next = tasks
+  const projectId = patch.projectId ?? original.projectId
+  const parentId = patch.parentId !== undefined ? patch.parentId
+    : projectId !== original.projectId ? null : original.parentId
+  if (parentId !== original.parentId || projectId !== original.projectId) {
+    const parent = parentId === null ? null : tasks.find((t) => t.id === parentId)
+    const destination = patch.projectId === undefined && parent ? parent.projectId : projectId
+    if (!projects.some((p) => p.id === destination) || (parent && parent.projectId !== destination)) return null
+    const placed = placeTasks(tasks, [id], parentId, null, destination)
+    if (!placed) return null
+    next = placed
+  }
+  const now = new Date().toISOString()
+  // Placement owns these fields; a content patch cannot undo its decision.
+  const { id: _id, createdAt: _created, parentId: _parent, projectId: _project, ...content } = patch
+  return next.map((t, i) => {
+    const edited = t.id === id ? { ...t, ...content } : t
+    return edited !== tasks[i] ? { ...edited, updatedAt: now } : t
+  })
 }
 
 export function hasChildren(tasks: Task[], id: string): boolean {
@@ -157,6 +190,7 @@ export function placeTasks(
   // be a row nothing draws, and the drop is refused rather than made and hidden.
   const parent = parentId ? tasks.find((t) => t.id === parentId) : undefined
   if (parentId && (!parent || parent.isTodo || isArchived(parent))) return null
+  if (parent && parent.projectId !== projectId) return null
   // Landing in front of a filed-away row is the same kind of drop, said the other
   // way round: there is no place there to land in.
   const before = beforeId ? tasks.find((t) => t.id === beforeId) : undefined
@@ -703,7 +737,7 @@ export function deriveStatus(statuses: TaskStatus[]): TaskStatus {
 
 // Derive a leaf task's status from its pause state, progress and dates.
 export function deriveTaskStatus(task: Task, progress: number | null, today: string): TaskStatus {
-  if (task.paused) return 'paused'
+  if (isPausedOnDay(task, today)) return 'paused'
   // Nothing scheduled at all. Reachable for a to-do that was just restored while
   // its schedule is still being filled in — without this it would read as
   // "In progress" despite having no dates.
@@ -719,7 +753,18 @@ export function deriveTaskStatus(task: Task, progress: number | null, today: str
   return 'in-progress'
 }
 
+const stateIndexes = new WeakMap<Task[], WeakMap<TaskLog[], { day: string; states: Map<string, EffState> }>>()
+
 export function effectiveStates(tasks: Task[], logs: TaskLog[]): Map<string, EffState> {
+  const now = new Date()
+  const day = todayISO()
+  let byLogs = stateIndexes.get(tasks)
+  const cached = byLogs?.get(logs)
+  if (cached?.day === day) return cached.states
+  if (!byLogs) {
+    byLogs = new WeakMap()
+    stateIndexes.set(tasks, byLogs)
+  }
   const children = buildChildrenMap(tasks)
   const cache = new Map<string, EffState>()
   const derive = (t: Task): EffState => {
@@ -734,8 +779,8 @@ export function effectiveStates(tasks: Task[], logs: TaskLog[]): Map<string, Eff
       r = { start: null, end: null, progress: null, status: 'todo' }
     } else if (kids.length === 0) {
       // Leaf: long-term goals always have a real start and an unresolved end.
-      const progress = taskProgress(t, logs, new Date())
-      const status = deriveTaskStatus(t, progress, todayISO())
+      const progress = taskProgress(t, logs, now)
+      const status = deriveTaskStatus(t, progress, day)
       // A finished task ends the day it finished, not the day it was meant to.
       // The bar is drawn from this, so a task done on the 8th of a window
       // running to the 20th was carrying twelve days of work it had already
@@ -774,7 +819,7 @@ export function effectiveStates(tasks: Task[], logs: TaskLog[]): Map<string, Eff
         // Long-term goal: anchored to its own start, no resolved end, and no
         // progress. Its status follows its own dates, not its children's, so an
         // unstarted sub-goal can't mark the whole goal "not-started".
-        r = { start: t.startDate, end: null, progress: null, status: deriveTaskStatus(t, null, todayISO()) }
+        r = { start: t.startDate, end: null, progress: null, status: deriveTaskStatus(t, null, day) }
       } else {
         const starts = timed.map((e) => e.start).filter((s): s is string => s != null)
         const start = starts.length ? starts.reduce((min, s) => (s < min ? s : min), starts[0]) : t.startDate
@@ -793,6 +838,7 @@ export function effectiveStates(tasks: Task[], logs: TaskLog[]): Map<string, Eff
     return r
   }
   for (const t of tasks) derive(t)
+  byLogs.set(logs, { day, states: cache })
   return cache
 }
 
@@ -879,11 +925,12 @@ export function archiveCascade(tasks: Task[], ids: string[]): string[] {
  */
 export function syncParentDates(tasks: Task[], logs: TaskLog[]): Task[] {
   const eff = effectiveStates(tasks, logs)
+  const children = buildChildrenMap(tasks)
   let changed = false
   const next = tasks.map((t) => {
     // A to-do holds no dates at all — writing a derived one onto it would make
     // it half-scheduled.
-    if (t.type === 'long-term' || t.isTodo || !hasChildren(tasks, t.id)) return t
+    if (t.type === 'long-term' || t.isTodo || !(children.get(t.id)?.length)) return t
     const e = eff.get(t.id)
     if (!e || (e.start === t.startDate && e.end === t.endDate)) return t
     changed = true

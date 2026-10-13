@@ -66,6 +66,25 @@ export interface PersistedData {
  */
 export type LoadedData = Required<PersistedData>
 
+/** One complete snapshot shared by saving and the UI's export action. */
+export function workData(source: LoadedData): LoadedData {
+  return {
+    projects: source.projects, tasks: source.tasks, logs: source.logs,
+    chores: source.chores, habits: source.habits, notes: source.notes,
+    itemLogs: source.itemLogs, todoFolders: source.todoFolders,
+  }
+}
+
+export type StorageResult = { ok: true } | { ok: false; message: string }
+export type LoadResult =
+  | { kind: 'empty' }
+  | { kind: 'loaded'; data: LoadedData }
+  | { kind: 'error'; message: string; raw: string | null }
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 const KEY = 'wbs-gantt.v2'
 
 /**
@@ -496,6 +515,10 @@ function normalize(data: PersistedData): LoadedData {
       const isTodo = t.isTodo === true
       return {
         ...t,
+        description: t.description ?? '',
+        parentId: t.parentId ?? null,
+        tags: t.tags ?? [],
+        dependencies: t.dependencies ?? [],
         // A to-do keeps no type, and that has to survive a round trip: this
         // line is what the app writes back on every load, so normalising a
         // to-do to 'phase' here would re-answer the question the start dialog
@@ -628,23 +651,39 @@ function readFolderNames(v: unknown): Record<string, string> {
   return out
 }
 
-export function loadData(): LoadedData | null {
+export function loadData(): LoadResult {
+  let raw: string | null = null
   try {
-    const raw = localStorage.getItem(KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as PersistedData
-    if (!Array.isArray(parsed.projects) || !Array.isArray(parsed.tasks)) return null
-    return normalize(parsed)
-  } catch {
-    return null
+    raw = localStorage.getItem(KEY)
+    if (raw === null) return { kind: 'empty' }
+    return { kind: 'loaded', data: parseImport(raw) }
+  } catch (error) {
+    return { kind: 'error', message: errorMessage(error), raw }
   }
 }
 
-export function saveData(data: PersistedData): void {
+export function saveData(data: PersistedData): StorageResult {
   try {
     localStorage.setItem(KEY, JSON.stringify(data))
-  } catch {
-    /* ignore quota / private-mode errors */
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, message: errorMessage(error) }
+  }
+}
+
+/** Never replace an unreadable save until its original bytes have a backup. */
+export function backupStoredData(): StorageResult {
+  try {
+    const raw = localStorage.getItem(KEY)
+    if (raw !== null) {
+      const prefix = `${KEY}.recovery.${Date.now()}`
+      let key = prefix
+      for (let n = 1; localStorage.getItem(key) !== null; n++) key = `${prefix}.${n}`
+      localStorage.setItem(key, raw)
+    }
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, message: errorMessage(error) }
   }
 }
 
@@ -668,10 +707,16 @@ export function exportJson(data: PersistedData): string {
 }
 
 export function parseImport(json: string): LoadedData {
-  const parsed = JSON.parse(json) as PersistedData
-  if (!Array.isArray(parsed.projects) || !Array.isArray(parsed.tasks)) {
+  const parsed = JSON.parse(json)
+  if (parsed?.version != null && parsed.version !== 1) throw new Error('Unsupported data version')
+  return prepareData(parsed)
+}
+
+export function prepareData(parsed: PersistedData): LoadedData {
+  if (!parsed || !Array.isArray(parsed.projects) || !Array.isArray(parsed.tasks)) {
     throw new Error('Invalid file: expected { projects, tasks } arrays')
   }
+  validateData(parsed)
   return normalize({
     projects: parsed.projects,
     tasks: parsed.tasks,
@@ -682,4 +727,103 @@ export function parseImport(json: string): LoadedData {
     itemLogs: parsed.itemLogs ?? [],
     todoFolders: parsed.todoFolders ?? {},
   })
+}
+
+function validateData(data: PersistedData): void {
+  const record = (v: unknown): v is Record<string, unknown> =>
+    typeof v === 'object' && v !== null && !Array.isArray(v)
+  const id = (v: unknown): v is string => typeof v === 'string' && v.trim() !== ''
+  const projects = new Set<string>()
+  for (const p of data.projects) {
+    if (!record(p) || !id(p.id) || typeof p.name !== 'string' || projects.has(p.id)) {
+      throw new Error('Invalid project or duplicate project ID')
+    }
+    projects.add(p.id)
+  }
+  const tasks = new Map<string, Task>()
+  for (const t of data.tasks) {
+    if (!record(t) || !id(t.id) || typeof t.name !== 'string' || tasks.has(t.id)) {
+      throw new Error('Invalid task or duplicate task ID')
+    }
+    if (!projects.has(t.projectId)) throw new Error(`Task ${t.id}: project does not exist`)
+    if (t.parentId != null && !id(t.parentId)) throw new Error(`Task ${t.id}: invalid parent`)
+    for (const key of ['tags', 'dependencies', 'confirmedDays'] as const) {
+      if (t[key] != null && (!Array.isArray(t[key]) || !t[key].every((s) => typeof s === 'string'))) {
+        throw new Error(`Task ${t.id}: invalid ${key}`)
+      }
+    }
+    for (const key of ['startDate', 'endDate', 'pauseDate'] as const) {
+      if (t[key] != null && typeof t[key] !== 'string') throw new Error(`Task ${t.id}: invalid ${key}`)
+    }
+    if (t.pauses != null && (!Array.isArray(t.pauses) || !t.pauses.every((p) =>
+      record(p) && typeof p.pauseDate === 'string' && typeof p.resumeDate === 'string'))) {
+      throw new Error(`Task ${t.id}: invalid pauses`)
+    }
+    tasks.set(t.id, t)
+  }
+  // Iterative so a deeply nested import cannot exhaust the call stack here.
+  const settled = new Set<string>()
+  const depths = new Map<string, number>()
+  for (const t of tasks.values()) {
+    const path = new Set<string>()
+    let at: Task | undefined = t
+    while (at && !settled.has(at.id)) {
+      if (path.has(at.id)) throw new Error(`Task ${at.id}: parent cycle`)
+      path.add(at.id)
+      if (path.size > 256) throw new Error('Task hierarchy exceeds 256 levels')
+      if (at.parentId == null) break
+      const parent: Task | undefined = tasks.get(at.parentId)
+      if (!parent) throw new Error(`Task ${at.id}: parent does not exist`)
+      if (parent.projectId !== at.projectId) throw new Error(`Task ${at.id}: parent belongs to another project`)
+      at = parent
+    }
+    let depth = at && settled.has(at.id) ? depths.get(at.id)! : 0
+    for (const key of [...path].reverse()) {
+      depth++
+      if (depth > 256) throw new Error('Task hierarchy exceeds 256 levels')
+      settled.add(key)
+      depths.set(key, depth)
+    }
+  }
+  for (const key of ['logs', 'chores', 'habits', 'notes', 'itemLogs'] as const) {
+    const list = data[key]
+    if (list != null && (!Array.isArray(list) || !list.every(record))) {
+      throw new Error(`Invalid ${key}: expected an array of objects`)
+    }
+  }
+  // Check values used directly by the UI; TypeScript cannot validate a file.
+  const text = (row: object, keys: string[]) => {
+    const r = row as Record<string, unknown>
+    for (const key of keys) {
+      if (r[key] != null && typeof r[key] !== 'string') throw new Error(`Invalid ${key}: expected text`)
+    }
+  }
+  const strings = (row: object, key: string) => {
+    const v = (row as Record<string, unknown>)[key]
+    if (v != null && (!Array.isArray(v) || !v.every((s) => typeof s === 'string'))) {
+      throw new Error(`Invalid ${key}: expected dates or IDs`)
+    }
+  }
+  for (const p of data.projects) text(p, ['name', 'description', 'color'])
+  for (const t of data.tasks) text(t, ['name', 'description', 'createdAt', 'updatedAt'])
+  for (const l of data.logs ?? []) {
+    text(l, ['id', 'taskId', 'date', 'content', 'createdAt', 'updatedAt'])
+    if (l.targetProgress != null && (typeof l.targetProgress !== 'number' || !Number.isFinite(l.targetProgress))) {
+      throw new Error('Invalid targetProgress: expected a finite number')
+    }
+  }
+  for (const c of data.chores ?? []) text(c, ['id', 'title', 'note', 'date', 'completedDate', 'createdAt', 'updatedAt'])
+  for (const h of data.habits ?? []) {
+    text(h, ['id', 'title', 'note', 'startDate', 'endDate', 'pauseDate', 'createdAt', 'updatedAt'])
+    strings(h, 'doneDays')
+    if (h.pauses != null && (!Array.isArray(h.pauses) || !h.pauses.every((p) =>
+      record(p) && typeof p.pauseDate === 'string' && typeof p.resumeDate === 'string'))) {
+      throw new Error('Invalid habit pauses')
+    }
+  }
+  for (const n of data.notes ?? []) text(n, ['date', 'body', 'updatedAt'])
+  for (const l of data.itemLogs ?? []) {
+    text(l, ['ownerId', 'date', 'content', 'createdAt', 'updatedAt'])
+    if (l.kind !== 'habit' && l.kind !== 'chore') throw new Error('Invalid item log kind')
+  }
 }

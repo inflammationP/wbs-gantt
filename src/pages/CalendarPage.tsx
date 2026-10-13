@@ -20,7 +20,7 @@ export function CalendarPage() {
   const setSelectedDay = useStore((s) => s.setSelectedDay)
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()))
 
-  const eff = useMemo(() => effectiveStates(tasks, logs), [tasks, logs])
+  const eff = useMemo(() => effectiveStates(tasks, logs), [tasks, logs, today])
 
   // Keyed on the month rather than the Date object, so `days` (and the sweep
   // below) keep a stable identity across renders.

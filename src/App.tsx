@@ -10,6 +10,7 @@ import { TaskDetailPanel } from './components/TaskDetailPanel'
 import { ProjectDetailPanel } from './components/ProjectDetailPanel'
 import { DayDetailPanel } from './components/DayDetailPanel'
 import { UpdateOverlays } from './components/UpdateOverlays'
+import { StorageNotice } from './components/StorageNotice'
 import { useStore } from './store/useStore'
 import { useT } from './lib/useT'
 import { setTrayLabels } from './lib/notify'
@@ -27,15 +28,7 @@ export default function App() {
   const setSelectedDay = useStore((s) => s.setSelectedDay)
   const selectedExists = useStore((s) => s.tasks.some((t) => t.id === s.selectedTaskId))
   const selectedProject = useStore((s) => s.projects.find((p) => p.id === s.selectedProjectId))
-  const tasks = useStore((s) => s.tasks)
-  const syncParentDates = useStore((s) => s.syncParentDates)
   const runUpdateCheck = useStore((s) => s.runUpdateCheck)
-
-  // Keep each phase parent's dates on the span of its children. Both ends: a
-  // parent is a container, so its window is where its contents are.
-  useEffect(() => {
-    syncParentDates()
-  }, [tasks, syncParentDates])
 
   // The day panel and the task panel belong to the board — and the Gantt and
   // the Calendar are one zone, not two: a panel opened on either survives a
@@ -100,6 +93,7 @@ export default function App() {
     <div className="flex h-screen w-screen overflow-hidden bg-bg text-fg">
       <Sidebar />
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <StorageNotice />
         {view === 'gantt' && <GanttPage key={ganttKey} />}
         {view === 'today' && <TodayPage />}
         {view === 'logs' && <LogsPage />}
