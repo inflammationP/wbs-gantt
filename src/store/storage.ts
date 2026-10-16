@@ -545,6 +545,11 @@ function normalize(data: PersistedData): LoadedData {
         // also written straight back to disk on the next save, so a value that
         // is not one the app wrote has to be dropped here rather than carried.
         archivedAt: isInstant(t.archivedAt) ? t.archivedAt : undefined,
+        // A put-aside window is two dates or nothing, and it is about to be
+        // written *onto* the task as its own dates — so a shape this module
+        // cannot read is dropped here rather than carried into `syncParentDates`
+        // as a pair of undefineds.
+        ownWindow: readWindow(t.ownWindow),
       }
     })),
     logs: (data.logs ?? []).map((l) => ({
@@ -590,6 +595,21 @@ function normalize(data: PersistedData): LoadedData {
 export function readPriority(v: unknown): TaskPriority {
   if (v === 'urgent') return 'top'
   return PRIORITY_ORDER.includes(v as TaskPriority) ? (v as TaskPriority) : 'medium'
+}
+
+/**
+ * A put-aside window, or nothing — see `Task.ownWindow`.
+ *
+ * Both ends are `string | null` on the task itself (a leaf may have a start and
+ * no end, or neither), so the test is for exactly those two shapes and not for
+ * "a date". Anything else reads as absent, which puts the task back in the state
+ * every task it was never set on is in.
+ */
+function readWindow(v: unknown): { start: string | null; end: string | null } | undefined {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return undefined
+  const { start, end } = v as { start?: unknown; end?: unknown }
+  const dateOrNull = (x: unknown): x is string | null => x === null || typeof x === 'string'
+  return dateOrNull(start) && dateOrNull(end) ? { start, end } : undefined
 }
 
 /**

@@ -14,6 +14,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { Row, RowArchiveGroup, RowProject, RowTask, RowTodoGroup, isArchived } from '../../lib/tree'
+import { routineLeftOn } from '../../lib/habits'
 import { STATUS_META, priorityWash, sig, sigAlpha, sigText } from '../../lib/ui'
 import { useStore } from '../../store/useStore'
 import { useT } from '../../lib/useT'
@@ -75,7 +76,16 @@ interface Props {
    * task, and inside it adds to or replaces the set the next drag will take.
    */
   onRowClick: (e: MouseEvent<HTMLElement>, row: RowTask) => void
-  onAddChild: (row: RowTask) => void
+  /**
+   * A full row's "+", with the corner it was pressed at: it opens the menu that
+   * asks which of the two places the new task goes in. Owned by the page, like
+   * the context menu it is a twin of.
+   */
+  onAddMenu: (row: RowTask, at: { x: number; y: number }) => void
+  /**
+   * A to-do's "+". That one adds on the spot, with no question — a to-do has one
+   * place a task can go, so there is nothing to ask. See the "+" below.
+   */
   onAddSibling: (row: RowTask) => void
   onEdit: (row: RowTask) => void
   onArchive: (row: RowTask) => void
@@ -94,7 +104,7 @@ const stop = (fn: () => void) => (e: MouseEvent) => {
   fn()
 }
 
-export function RowLeft({ row, todo, archived, editing, picked, onRowClick, onAddChild, onAddSibling, onEdit, onArchive, onToggleRow, onContext }: Props) {
+export function RowLeft({ row, todo, archived, editing, picked, onRowClick, onAddMenu, onAddSibling, onEdit, onArchive, onToggleRow, onContext }: Props) {
   const t = useT()
   const { ask, element: dialogs } = useDialogs()
   const setSelected = useStore((s) => s.setSelected)
@@ -288,20 +298,32 @@ export function RowLeft({ row, todo, archived, editing, picked, onRowClick, onAd
           changing one means bringing it back first. */}
       <div className="shrink-0 flex items-center justify-end pr-1 gap-0.5" style={{ width: COLS.actions }}>
         <div className={`flex items-center gap-0.5 transition-opacity ${selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-          {/* The "+" means "another task at this place", and a to-do's place
-              is beside it rather than under it: it can't be a parent, so
-              `onAddChild` would open a dialog showing "top level" while
-              pointing at the to-do. So the same button adds a *sibling* there,
-              which is the one "+" a to-do row has — and exactly what the
-              context menu does with its own pair on the same row. The new task
-              is a to-do for the same reason: a to-do's sibling is another one.
-              A filed-away row has none: a new task inside a branch that is off
-              the board would be a row nothing draws. */}
+          {/* The "+" means "another task at this place", and where "this place"
+              is has two answers: under this row, or beside it. A full task row
+              is asked which — see `AddMenu`, which is the same pair the context
+              menu offers at the same spot.
+              A to-do is not asked, because it has one answer: it cannot be a
+              parent, so `onAddChild` would open a dialog showing "top level"
+              while pointing at the to-do. Its "+" adds a *sibling*, which is the
+              one "+" a to-do row has — and, being its sibling, another to-do.
+              A filed-away row has no "+" at all: a new task inside a branch that
+              is off the board would be a row nothing draws. */}
           {!filed && (
             <button
-              onClick={(e) => { e.stopPropagation(); (isTodo ? onAddSibling : onAddChild)(row) }}
-              title={isTodo ? t('task.addSibling') : t('task.addSubtask')}
-              aria-label={isTodo ? t('task.addSibling') : t('task.addSubtask')}
+              // Named so the menu it opens can tell a press on this button from a
+              // press anywhere else — see `useDismiss`.
+              data-add-toggle
+              onClick={(e) => {
+                e.stopPropagation()
+                if (isTodo) {
+                  onAddSibling(row)
+                  return
+                }
+                const box = e.currentTarget.getBoundingClientRect()
+                onAddMenu(row, { x: box.left, y: box.bottom })
+              }}
+              title={isTodo ? t('task.addSibling') : t('task.add')}
+              aria-label={isTodo ? t('task.addSibling') : t('task.add')}
               className="p-1 text-dim hover:text-fg"
             >
               <Plus size={13} />
@@ -598,12 +620,96 @@ function ProjectRow({
   )
 }
 
-export function LeftHeader() {
+/**
+ * The column header, and the one thing on it that is not a column label: the
+ * daily lane's switch.
+ *
+ * It is here because the lane has no columns to be drawn in. The rows below are
+ * a table — a WBS number, a name, a progress and a status — and today's routines
+ * have none of those four, so a row of the tree is the one place they cannot go:
+ * a name at 13px beside a WBS number claims both. A button on the header claims
+ * neither.
+ *
+ * **In the corner, on the row above the labels.** The labels sit on the header's
+ * bottom edge, each at the left of the column it names, and that row is the
+ * table's own: a button placed in it — beside a label, or in a cell of its own —
+ * would either read as another column or push the labels off the columns they
+ * belong to. The top of the header is empty in every column, and there is
+ * nothing there to disturb. It is on the left because the bubble opens off the
+ * button's right edge: from the corner it has the whole width of the board to
+ * hang in, and the labels stay under it where they were.
+ *
+ * **Tinted with the accent, thinly.** It has to be told apart from the header it
+ * sits on, and the header is the quietest surface in the app — but it is a
+ * thing to press at the top of a table, not a banner, so it wears the accent at
+ * the weight the archive drawer wears it (`bg-accent/[0.07]`): a colour already
+ * in the palette, faint enough to sit still, and not one of the six signals,
+ * which say a status and are spent on the rows below.
+ */
+export function LeftHeader({ dailyOpen, onToggleDaily }: {
+  dailyOpen: boolean
+  /** Given the button's own top-right corner: the bubble opens off it, and the
+   *  vertical of that corner is where its tail points. */
+  onToggleDaily: (at: { x: number; y: number }) => void
+}) {
   const t = useT()
   const expandAll = useStore((s) => s.expandAll)
   const collapseAll = useStore((s) => s.collapseAll)
+  const habits = useStore((s) => s.habits)
+  const today = useStore((s) => s.today)
+  // The day still has routines on it. The same `bg-delayed` mark the sidebar
+  // wears for "there is something waiting", and the only thing it says here:
+  // nothing else on this row is about the daily lane, so a mark in its corner
+  // can only be about the button under it.
+  const left = routineLeftOn(habits, today)
   return (
-    <div className="h-full flex items-stretch text-[10px] uppercase tracking-wider text-dim">
+    <div className="relative h-full flex items-stretch text-[10px] uppercase tracking-wider text-dim">
+      {/* Above the chevron and WBS cells, which are empty for the top half of
+          this row — the labels they hold are on the bottom edge. */}
+      <button
+        // Named so the bubble it opens can tell a press on this button from a
+        // press anywhere else — see `DailyBubble`, which closes itself on the
+        // latter and has to leave the former to this handler.
+        data-daily-toggle
+        onClick={(e) => {
+          const box = e.currentTarget.getBoundingClientRect()
+          onToggleDaily({ x: box.right, y: box.top })
+        }}
+        aria-expanded={dailyOpen}
+        title={t('habit.section')}
+        // Centred on the seam between the WBS column and the names' column. The
+        // two labels on the row below meet there — `WBS` ends against the left
+        // of it, this column's own label starts against the right — and the
+        // button is wider than either, so it straddles both and sits over the
+        // pair rather than over one of them.
+        //
+        // Placed off the two column widths, which are constants, and not off
+        // where the labels end: those are words, and `WBS` and `任务` are not the
+        // same width in any two languages. See `COLS`.
+        //
+        // The seam is a few pixels right of what the pair of labels *looks*
+        // like: `WBS` is short and stops well short of it, while this column's
+        // label starts flush against it, so the weight of the two words sits
+        // left of the line between them. Hence the nudge.
+        style={{ left: COLS.chevron + COLS.wbs - 6 }}
+        className={`absolute top-1.5 -translate-x-1/2 z-10 h-5 px-1.5 inline-flex items-center rounded-[3px] border transition-colors ${
+          dailyOpen
+            ? 'border-accent/60 bg-accent/15 text-fg'
+            : 'border-accent/25 bg-accent/[0.07] text-muted hover:text-fg hover:bg-accent/[0.14]'
+        }`}
+      >
+        {/* No triangle. It is a button on this row and not a branch of the tree,
+            so it has no direction to point in: the bubble comes out of its side,
+            and the tint is what says whether the bubble is up. A triangle here
+            would be the tree's mark borrowed for a thing that is not one. */}
+        {t('habit.section')}
+        {/* Today still has something left on it. Decorative: what it says is
+            said properly by the list it opens, and it carries no words of its
+            own — see the same mark in `Sidebar`. */}
+        {left && (
+          <span aria-hidden className="absolute -top-1 -right-1 w-1.5 h-1.5 rounded-full bg-delayed" />
+        )}
+      </button>
       <div className="shrink-0" style={{ width: COLS.chevron }} />
       <div className="shrink-0 flex items-end justify-end pr-1.5 pb-1.5" style={{ width: COLS.wbs }}>{t('common.wbs')}</div>
       <div className="flex-1 min-w-0 flex items-end pb-1.5 pr-1">{t('common.task')}</div>

@@ -3,7 +3,7 @@ import type { FormEvent, ReactNode } from 'react'
 import { Check, ChevronDown, ChevronRight, NotebookText, Pencil, Plus, ScrollText, TriangleAlert } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { Chore, ChoreSlot, Habit, ItemLog, TaskLog } from '../types'
-import { DayRow, daySummary, parentPath } from '../lib/dayTasks'
+import { DayRow, dayRowStruck, daySummary, parentPath } from '../lib/dayTasks'
 import { CHORE_SLOTS, carriedSince, choreGroups, parseChoreTime, slotOfTime } from '../lib/chores'
 import { RoutineRow, routineRows } from '../lib/habits'
 import { itemLogsOn } from '../lib/itemLogs'
@@ -551,18 +551,9 @@ function DayRowView({
   const toggleTaskDay = useStore((s) => s.toggleTaskDay)
   const meta = STATUS_META[row.status]
   const isOpen = expanded[row.task.id] === true
-  const finished = row.status === 'completed'
-  // Two kinds of row, and the strike means the thing each of them is about.
-  //
-  // A strict task is what the ring above is counting, so its strike tracks the
-  // ring: written today, or not. Striking it on `finished` instead would leave
-  // the list disagreeing with the ring printed over it — a logged task at 35%
-  // would look untouched while the ring credited it, and an auto-completed
-  // plain task would look handled while the ring had never heard of it.
-  //
-  // A plain task has no log to write, so it keeps the older meaning: struck
-  // when the task is actually done.
-  const struck = row.strict ? row.hasLog : finished
+  // Written about today, or over and done with — see `dayRowStruck`, which is
+  // where the two are put together and where the rule is asserted.
+  const struck = dayRowStruck(row)
 
   return (
     <div className="group">
@@ -1075,8 +1066,12 @@ function ChoreDialog({ chore, onClose }: { chore: Chore; onClose: () => void }) 
  * The pencil opens the shared `components/HabitDialog`, the same one the Manage
  * page opens; this row only holds the delete confirmation, because a question
  * has to outlive the dialog it was asked from.
+ *
+ * Exported because the Gantt's daily bubble draws today's routines with it, and
+ * with nothing but the tick live (`editable` false, no log): the same list, the
+ * same day, and no second row component to drift from this one.
  */
-function HabitLine({
+export function HabitLine({
   row,
   editable,
   onToggle,

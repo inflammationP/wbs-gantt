@@ -109,19 +109,23 @@ interface Props {
   sel: ReadonlySet<string>
   onSel: (next: Set<string>) => void
   onContext: (e: MouseEvent<HTMLDivElement>, row: RowTask) => void
-  onAddChild: (row: RowTask) => void
+  /** A row's "+", with the corner it was pressed at: the page opens the menu. */
+  onAddMenu: (row: RowTask, at: { x: number; y: number }) => void
+  /** Whether the daily bubble is up — it is owned by the page, with the menus. */
+  dailyOpen: boolean
+  /** The column header's daily-lane button, with the corner it was pressed at. */
+  onToggleDaily: (at: { x: number; y: number }) => void
   /**
-   * A sibling of the row — same parent, same project, same kind. Separate from
-   * `onAddChild` because a to-do has no children to add: the row's "+" is the
-   * sibling button there, which is what the context menu already does with its
-   * own pair.
+   * A sibling of the row — same parent, same project, same kind. A to-do's "+"
+   * is this one, added on the spot rather than offered: a to-do has no children
+   * to add, so its "+" has one answer and nothing to ask.
    */
   onAddSibling: (row: RowTask) => void
   onEdit: (row: RowTask) => void
   onArchive: (row: RowTask) => void
 }
 
-export function GanttChart({ rows, range, todo, archived, editing, sel, onSel, onContext, onAddChild, onAddSibling, onEdit, onArchive }: Props) {
+export function GanttChart({ rows, range, todo, archived, editing, sel, onSel, onContext, onAddMenu, onAddSibling, onEdit, onArchive, dailyOpen, onToggleDaily }: Props) {
   const t = useT()
   const lang = useLang()
   const viewMode = useStore((s) => s.viewMode)
@@ -677,7 +681,7 @@ export function GanttChart({ rows, range, todo, archived, editing, sel, onSel, o
         <div className="sticky left-0 z-30 backdrop-blur-[6px]" style={{ width: leftWidth }}>
           {/* left header */}
           <div className="sticky top-0 z-20 bg-panel/30 backdrop-blur-[6px] border-b border-border" style={{ height: HEADER_H }}>
-            <LeftHeader />
+            <LeftHeader dailyOpen={dailyOpen} onToggleDaily={onToggleDaily} />
           </div>
           {/* left rows */}
           {shownRows.map((row, i) => (
@@ -698,7 +702,7 @@ export function GanttChart({ rows, range, todo, archived, editing, sel, onSel, o
                 editing={editing}
                 picked={picking(row.id)}
                 onRowClick={onRowClick}
-                onAddChild={onAddChild}
+                onAddMenu={onAddMenu}
                 onAddSibling={onAddSibling}
                 onEdit={onEdit}
                 onArchive={onArchive}

@@ -56,7 +56,7 @@ const server = await createServer({
   logLevel: 'error',
   optimizeDeps: { entries: [] },
 })
-const { habitsOn, habitBranch, routineRows, runsOn, tickedOn, pausePatch, ALL_DAYS } =
+const { habitsOn, habitBranch, routineRows, routineLeftOn, runsOn, tickedOn, pausePatch, ALL_DAYS } =
   await server.ssrLoadModule('/src/lib/habits.ts')
 const { weekdayIndex } = await server.ssrLoadModule('/src/lib/dates.ts')
 const { useStore } = await server.ssrLoadModule('/src/store/useStore.ts')
@@ -436,6 +436,46 @@ assert.deepEqual(useStore.getState().habits, [], 'deleting a heading takes its c
 useStore.setState({ habits: DEEP })
 useStore.getState().deleteHabit('mid')
 assert.deepEqual(useStore.getState().habits.map((h) => h.id), ['top', 'other'], 'and only its own branch')
+
+// --- the mark on the Gantt's daily-lane button -------------------------------
+
+// "Today still has a routine left to tick" — the red dot in the corner of the
+// column header's 日常安排 button. The ways it goes wrong are all silent: a day
+// with nothing on it reading as "something left" puts a mark over an empty list,
+// and a day whose routines are all ticked keeping the mark leaves it up after
+// the work is done.
+//
+// The rule itself is about leaves, and this is where the flat list would differ:
+// see the Monday case at the end.
+
+// Nothing on the day at all.
+assert.equal(routineLeftOn([], TODAY), false)
+assert.equal(
+  routineLeftOn([habit('mwf', { weekdays: [0, 2, 4] })], TODAY),
+  false,
+  'a routine that does not run today cannot leave anything on it',
+)
+
+// One routine: unticked, then ticked. The mark goes when the routines are
+// ticked, which is the only thing that changes the answer — no "seen" flag.
+const oneLeft = [habit('one')]
+assert.equal(routineLeftOn(oneLeft, TODAY), true)
+assert.equal(routineLeftOn(oneLeft.map(tickedFixture), TODAY), false)
+
+// A heading with every child ticked is done, so nothing is left — even though
+// the heading's own `doneDays` is empty.
+assert.equal(routineLeftOn(allTick, TODAY), false)
+// ...and one unticked child is enough, with the heading itself ticked or not.
+assert.equal(routineLeftOn([tickedFixture(GROUP[0]), GROUP[1], tickedFixture(GROUP[2])], TODAY), true)
+
+// The Monday of that same fixture, where `group` is on the day itself. Its own
+// `doneDays` is empty, so a rule that asked the *flat* list (`habitsOn`) would
+// light the mark with both children ticked. The heading's answer is its
+// children's, and that is what makes the tree the thing to ask.
+const MONDAY = '2026-09-21'
+const mondayTicked = GROUP.map((h) => (h.id === 'group' ? h : { ...h, doneDays: [MONDAY] }))
+assert.equal(habitsOn(mondayTicked, MONDAY).length, 3, 'the flat list does hold the heading on its own day')
+assert.equal(routineLeftOn(mondayTicked, MONDAY), false, 'and it is still not a routine left undone')
 
 await server.close()
 console.log('habits: ok')

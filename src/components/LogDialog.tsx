@@ -73,6 +73,13 @@ interface Props {
  * of the same wrong thing. A task that gains a child is a folder from that
  * moment, and a folder has no progress of its own for a log to move.
  *
+ * The other kind of entry is the one with **no figure on it**: a comment. It is
+ * what a task that is not running takes — finished, or filed away — because
+ * there is no number left for a write to move, and demanding one turns "the
+ * adapter never arrived" into a claim about a percentage. The text was always
+ * allowed to say more than the figure did; this is the case where it is the
+ * whole of the entry, and it reads in the task's history and on the Logs page
+ * exactly like any other day's.
  */
 export function LogDialog({ taskId, existing, onClose }: Props) {
   const t = useT()
@@ -94,13 +101,31 @@ export function LogDialog({ taskId, existing, onClose }: Props) {
   // button — and this is the line that makes the rule true rather than merely
   // well hidden. Without it the rule lives in each of those places, and the
   // fifth one added later will not remember.
-  if (tasks.some((x) => x.parentId === task.id) || isArchived(task)) return null
+  //
+  // Filing a task away is not the same refusal, and used to be one. A folder's
+  // log would be a figure nothing reads; a filed-away task's is a *comment* on
+  // work that is over — see `running` below — and the only thing that made it
+  // impossible was this line. What is closed about a filed-away task is its
+  // schedule, not what may be written about it.
+  if (tasks.some((x) => x.parentId === task.id)) return null
 
   const task_ = task
   // A figure is only ever read back on a strict *leaf* (`isStrictLeaf`), so a
   // parent would collect a number nothing reads — the same lie the detail panel
   // used to tell about a parent's progress mode.
   const strict = isStrictLeaf(task_, buildChildrenMap(tasks))
+  // Whether the task is still running, which decides whether this log is a
+  // *figure* or a comment.
+  //
+  // Not running covers the two ways work stops: it is finished — 100% is the
+  // only figure a further entry could state, and stating it says nothing — or it
+  // has been filed away, where nothing reads the number at all. In both cases
+  // the boxes would be a demand for a number nobody needs, which is what "you
+  // cannot write about a finished task without claiming a percentage" was.
+  //
+  // `taskProgress` rather than the status, because this is exactly the question
+  // the boxes pose: whether there is a number left that a write here could move.
+  const running = !isArchived(task_) && (taskProgress(task_, logs, toDate(today)) ?? 0) < 100
 
   // The day is today's throughout — the dialog cannot be about another day at
   // all — so the date is not something the form carries and not something this
@@ -132,6 +157,7 @@ export function LogDialog({ taskId, existing, onClose }: Props) {
           today={today}
           logs={logs}
           strict={strict}
+          running={running}
           onSave={save}
           onCancel={onClose}
         />
@@ -146,6 +172,7 @@ function LogForm({
   today,
   logs,
   strict,
+  running,
   onSave,
   onCancel,
 }: {
@@ -155,6 +182,8 @@ function LogForm({
   today: string
   logs: TaskLog[]
   strict: boolean
+  /** Whether the task can still move — see the same name in `LogDialog`. */
+  running: boolean
   onSave: (content: string, targetProgress: number | null) => void
   onCancel: () => void
 }) {
@@ -173,7 +202,12 @@ function LogForm({
   // the day's first one. A *second* write into a day that already has a figure
   // is more of the day's paragraphs and asks nothing — the figure is corrected
   // from the entry it belongs to, which is what `existing` is.
-  const asksProgress = strict && (existing != null || opensLogDay(logs, task.id, today))
+  //
+  // A task that is not running is the third case, and it is the one this opening
+  // exists for: nothing is asked, so what is written is a comment on work that
+  // is over. `existing` still opens the boxes on such a task, because a figure
+  // the day already carries is a figure that can still be corrected.
+  const asksProgress = strict && (existing != null || (running && opensLogDay(logs, task.id, today)))
 
   // The number the two boxes are measured from.
   //

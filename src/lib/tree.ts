@@ -906,7 +906,8 @@ export function archiveCascade(tasks: Task[], ids: string[]): string[] {
 
 
 /**
- * Auto-set each phase parent's dates to the span of its children.
+ * Keep each phase parent's dates in step with the span of its children — both
+ * ways round.
  *
  * **Both ends, and the start is the half that was missing.** A phase parent is a
  * container: it has no window of its own, and `effectiveStates` has always
@@ -917,11 +918,20 @@ export function archiveCascade(tasks: Task[], ids: string[]): string[] {
  * stayed put. That is the whole of the "a parent seems to have a minimum length"
  * report: not a clamp anywhere, just a stored date nobody was updating.
  *
- * No special case is needed for a parent whose children are all to-dos. Such a
- * parent is outside the roll-up (`effectiveStates` counts only the timed
- * children), so `eff.start` and `eff.end` fall back to the task's own dates and
- * this writes back exactly what it read — which is why `TaskDialog` leaves those
- * two fields editable in that one case.
+ * **And the writing back is a cache, so it has to give back what it took.** The
+ * stored pair is overwritten with the children's span while there is a span to
+ * derive; the task's own pair is moved to `ownWindow` the first time it becomes
+ * a container, and put back on the write where it stops being one. Without that
+ * second half, a task's own window was gone the moment it gained a child: with a
+ * single child, deleting it again left the parent reading the deleted child's
+ * dates, and an add followed by a delete did not cancel out. See `Task.ownWindow`.
+ *
+ * No special case is needed for a parent whose children are all to-dos, in
+ * either direction. Such a parent is outside the roll-up (`effectiveStates`
+ * counts only the timed children), so `eff.start` and `eff.end` fall back to the
+ * task's own dates and this writes back exactly what it read — which is why
+ * `TaskDialog` leaves those two fields editable in that one case, and why
+ * nothing is put aside for it: the fields being editable is the whole point.
  */
 export function syncParentDates(tasks: Task[], logs: TaskLog[]): Task[] {
   const eff = effectiveStates(tasks, logs)
@@ -930,11 +940,31 @@ export function syncParentDates(tasks: Task[], logs: TaskLog[]): Task[] {
   const next = tasks.map((t) => {
     // A to-do holds no dates at all — writing a derived one onto it would make
     // it half-scheduled.
-    if (t.type === 'long-term' || t.isTodo || !(children.get(t.id)?.length)) return t
+    if (t.type === 'long-term' || t.isTodo) return t
+    // Whether anything under this task takes part in the roll-up at all. Asked
+    // of the children's statuses rather than of their number, because that is
+    // the question `effectiveStates` asks above: a to-do child is unscheduled
+    // and contributes nothing to the span, so a parent of nothing but to-dos is
+    // not a container with a derived window in any sense.
+    const derives = (children.get(t.id) ?? []).some((c) => eff.get(c.id)?.status !== 'todo')
+
+    if (!derives) {
+      // Not a container any more — its own window comes back, once.
+      if (!t.ownWindow) return t
+      changed = true
+      return { ...t, startDate: t.ownWindow.start, endDate: t.ownWindow.end, ownWindow: undefined }
+    }
+
     const e = eff.get(t.id)
-    if (!e || (e.start === t.startDate && e.end === t.endDate)) return t
+    if (!e) return t
+    // The other direction, and the `??` is the whole of it: the pair is put
+    // aside once, on the write that first gives this task something to derive
+    // from. Re-stashing on a later write would put the *derived* dates in there
+    // and throw away the ones being kept.
+    const ownWindow = t.ownWindow ?? { start: t.startDate, end: t.endDate }
+    if (t.ownWindow && e.start === t.startDate && e.end === t.endDate) return t
     changed = true
-    return { ...t, startDate: e.start, endDate: e.end }
+    return { ...t, ownWindow, startDate: e.start, endDate: e.end }
   })
   return changed ? next : tasks
 }

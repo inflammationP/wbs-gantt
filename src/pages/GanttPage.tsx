@@ -17,7 +17,8 @@ import { HistoryDialog } from '../components/HistoryDialog'
 import { NewDialog, NoProjectDialog } from '../components/NewDialog'
 import { LogDialog } from '../components/LogDialog'
 import { StartTodoDialog } from '../components/StartTodoDialog'
-import { ContextMenu, MenuState } from '../components/gantt/ContextMenu'
+import { AddMenu, ContextMenu, MenuState } from '../components/gantt/ContextMenu'
+import { DailyBubble } from '../components/gantt/DailyBubble'
 import { useDialogs } from '../components/dialogs'
 
 // Fixed left sidebar width (Sidebar.tsx renders w-[190px]). The timeline is
@@ -78,6 +79,18 @@ export function GanttPage() {
   // through `openCreate` to the task form directly.
   const [newOpen, setNewOpen] = useState(false)
   const [menu, setMenu] = useState<MenuState | null>(null)
+  // The daily bubble, held here with the menus rather than down in the chart:
+  // it is a floating thing over the board, and the Escape chain below has to
+  // know it is up for the same reason it has to know about the context menu —
+  // see `overlayOpen`. Not a `MenuState`: it has no row behind it. What it
+  // carries is where the button that opened it was, so the bubble can hang off
+  // that corner.
+  const [daily, setDaily] = useState<{ x: number; y: number } | null>(null)
+  // A row's "+", which asks where the new task goes before opening the dialog on
+  // it. Held with the menus because that is what it is — a short one, at the
+  // button rather than at the pointer, and the only one of them with a trigger
+  // to be pressed again.
+  const [add, setAdd] = useState<{ row: RowTask; x: number; y: number } | null>(null)
   const [logDialog, setLogDialog] = useState<string | null>(null)
   const [startTodo, setStartTodo] = useState<string[] | null>(null)
   // Shown in place of the task dialog while the board has no project — see
@@ -140,7 +153,7 @@ export function GanttPage() {
   // dialogs close, and one keypress cannot mean two things at the same level.
   const overlayOpen =
     menu !== null || dialog !== null || logDialog !== null || startTodo !== null || noProject ||
-    mergeOpen || historyOpen || newOpen
+    mergeOpen || historyOpen || newOpen || daily !== null || add !== null
   const hasSelection = sel.size > 0
   useEffect(() => {
     if (!editing || overlayOpen) return
@@ -475,10 +488,19 @@ export function GanttPage() {
         sel={sel}
         onSel={setSel}
         onContext={handleContext}
-        onAddChild={(r) => openCreate(r.id)}
+        // Pressed twice, the same "+" puts the menu away — `useDismiss` leaves
+        // that press to the button, so this is where it is answered. A press on
+        // a *different* row's "+" is not a second press on this one: it moves
+        // the menu to that row, which is what pressing it plainly means.
+        onAddMenu={(row, at) => setAdd((open) => (open?.row.id === row.id ? null : { row, ...at }))}
         onAddSibling={(r) => openCreate(r.task.parentId, r.task.projectId, r.task.isTodo)}
         onEdit={openEdit}
         onArchive={handleArchive}
+        dailyOpen={daily !== null}
+        // One press opens it, the next puts it away, the way a button that shows
+        // something does. The corner is only read on the way in: closing does
+        // not need to know where it was.
+        onToggleDaily={(at) => setDaily((open) => (open ? null : at))}
       />
 
       {menu && (
@@ -511,6 +533,22 @@ export function GanttPage() {
         />
       )}
 
+
+      {daily && <DailyBubble at={daily} onClose={() => setDaily(null)} />}
+
+      {/* A row's "+", answered. Both items close the menu first and then open the
+          task dialog, and the dialog is what the new task's parent, project and
+          kind come from — the same two calls the context menu makes, on the same
+          row, so the two ways in cannot come to mean different things. */}
+      {add && (
+        <AddMenu
+          row={add.row}
+          at={add}
+          onClose={() => setAdd(null)}
+          onAddChild={(r) => openCreate(r.id)}
+          onAddSibling={(r) => openCreate(r.task.parentId, r.task.projectId, r.task.isTodo)}
+        />
+      )}
 
       {startTodo && <StartTodoDialog taskIds={startTodo} onClose={() => setStartTodo(null)} />}
 

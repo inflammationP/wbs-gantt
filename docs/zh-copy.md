@@ -247,368 +247,369 @@
 
 | # | key | English | 中文 |
 |---|-----|---------|------|
-| 178 | `task.addSubtask` | Add subtask | 添加子任务 |
-| 179 | `task.addSibling` | Add sibling task | 添加同级任务 |
-| 180 | `task.new` | New task | 新建任务 |
-| 181 | `task.edit` | Edit task | 编辑任务 |
-| 182 | `task.namePlaceholder` | Task name | 任务名称 |
-| 183 | `task.parent` | Parent | 父任务 |
-| 184 | `task.topLevel` | — Top level — | 最顶层任务 |
-| 185 | `task.createAsTodo` | Create as to-do | 创建为待办 |
-| 186 | `task.todoNote` | This is a to-do: unscheduled work. It sits last among its siblings inside a {toDos} folder until you give it a schedule with {startTask} in the detail panel. | 这是一项待办：尚未排期的工作。它会排在同级任务末尾的 {toDos} 文件夹中，直到你在详情面板里用 {startTask} 为它安排时间。 |
-| 187 | `task.endDateLocked` | The end date is decided by the subtask that ends last — change that subtask’s end date instead. | 结束日期由最晚结束的子任务决定，请改为修改那个子任务的结束日期。 |
-| 188 | `task.startDateLocked` | The start date is decided by the subtask that starts first — change that subtask’s start date instead. | 开始日期由最早开始的子任务决定，请改为修改那个子任务的开始日期。 |
-| 189 | `task.strictProgress` | Turn off daily logs (not recommended) | 取消日志限制（不推荐） |
-| 190 | `task.overdueMark` | This task is already overdue — mark as | 该任务已逾期 —— 标记为 |
-| 191 | `task.tagsPlaceholder` | study, health | 学习, 健康 |
-| 192 | `task.tagsLabel` | Tags (comma separated) | 标签（用逗号分隔） |
-| 193 | `task.subtaskCount` | one: {count} subtask / other: {count} subtasks | {count} 项子任务 |
-| 194 | `task.hide` | Hide | 收起 |
-| 195 | `task.hidden` | Hidden. | 已收起 |
-| 196 | `task.tree` | Task tree | 所在任务树 |
-| 197 | `task.treeFocus` | Show one branch | 只展示一支 |
-| 198 | `task.pendingLogs` | Still to log | 今日待填 |
-| 199 | `task.progressMode` | Progress mode | 进度模式 |
-| 200 | `task.modeStrict` | Log-based | 严格模式 |
-| 201 | `task.modeAuto` | Simplified (ticked per day) | 简化模式 |
-| 202 | `task.modeRolledUp` | From subtasks | 由子任务汇总 |
-| 203 | `optOut.title` | Go without log supervision? | 确定采取简化模式(脱离日志系统)吗？ |
-| 204 | `optOut.p1` | Without the log system this task will *keep no history at all*, and the Logs page will not manage it. | 脱离日志系统则该任务将*不会拥有历史日志*，且不会在 log 页面里被统一管理。 |
-| 205 | `optOut.p2` | It will use a *deliberately crude* way of counting progress: each day you only have to *click a button by hand* to confirm you did it, and the system then accumulates progress as elapsed days ÷ total days. No click, no accumulation. If you miss a day, later daily reports will remind you, and you can leave it for now or put the confirmation in — which is one more click. | 本任务将采用一种*极度简化*的进度计算方式，即每日只需要*手动点击按钮*来确认完成，然后系统自动按已过日期 ÷ 总日期进行进度累计，否则不予累计进度。如果你有某日忘了点按钮，则会在以后的日报里对你进行提醒，你可以按实际需求暂时忽略／将确认补上，也就是再点一下按钮的事。 |
-| 206 | `optOut.p3` | This also means the task */may not reflect its real progress*/, and the supervision over whether you did a given day’s work is */close to zero*/. **//Please make sure you have enough self-discipline to go without the log system’s supervision**//. | 这也就意味着，本任务可能将*/无法精确反应任务实际进度*/，且确认某日本任务完成的*/监督力度几乎为 0 */。**//请确保你有足够的自律能力脱离日志系统监督**//。 |
-| 207 | `optOut.back` | Back | 返回 |
-| 208 | `optOut.confirm` | Turn logs off anyway | 仍要取消 |
-| 209 | `day.tick` | Mark this day as done | 把这一天标记为完成 |
-| 210 | `task.pausedNote` | one: Paused. Started {start} · paused on {paused} · {count} day elapsed. / other: Paused. Started {start} · paused on {paused} · {count} days elapsed. | 已暂停。开始于 {start} · 暂停于 {paused} · 已过去 {count} 天。 |
-| 211 | `task.resume` | Resume | 恢复 |
-| 212 | `task.endPostponed` | End (postponed) | 结束（已顺延） |
-| 213 | `task.setAsTodo` | Set as to-do | 设为待办 |
-| 214 | `task.pauseConfirm` | Pause "{name}"? | 确定暂停“{name}”？ |
-| 215 | `task.resumeConfirm` | Resume "{name}"? | 确定恢复“{name}”？ |
-| 216 | `task.archive` | Archive | 归档 |
-| 217 | `task.unarchive` | Unarchive | 取消归档 |
-| 218 | `task.archiveConfirm` | Archive "{name}"? | 确定归档“{name}”？ |
-| 219 | `task.archiveWithSubtasks` | Archive "{name}"? Its subtasks are filed away with it. | 确定归档“{name}”？属于它的子任务也会连带归档。 |
-| 220 | `task.pause` | Pause task | 暂停任务 |
-| 221 | `task.pauseHistory` | Pause history ({count}) | 暂停记录（{count}） |
-| 222 | `task.pauseEntry` | Paused {from} → resumed {to} | 暂停于 {from} → 恢复于 {to} |
-| 223 | `task.heat.title` | Completion | 完成情况 |
-| 224 | `task.heat.done` | Done | 已完成 |
-| 225 | `task.heat.pending` | Not done | 未完成 |
-| 226 | `task.heat.none` | Not scheduled | 无排期 |
-| 227 | `task.heat.count` | one: {count} task done / other: {count} tasks done | 完成 {count} 项任务 |
-| 228 | `task.heat.less` | Less | 少 |
-| 229 | `task.heat.more` | More | 多 |
-| 230 | `task.setAsTodoConfirm` | Mark "{name}" as to-do?\n\nIts dates, priority and progress are cleared. | 确定将“{name}”设为待办？\n\n它的日期、优先级和进度将被清除。 |
-| 231 | `task.setAsTodoConfirmMany` | one: Mark "{name}" and its {count} unfinished subtask as to-do?\n\n / other: Mark "{name}" and its {count} unfinished subtasks as to-do?\n\n | 确定将“{name}”及其 {count} 项未完成的子任务设为待办？\n\n它们的日期、优先级和进度将被清除；已完成的子任务不受影响。 |
-| 232 | `task.markedCompleted` | Marked as completed | 已标记为完成 |
+| 178 | `task.add` | Add | 添加 |
+| 179 | `task.addSubtask` | Add subtask | 添加子任务 |
+| 180 | `task.addSibling` | Add sibling task | 添加同级任务 |
+| 181 | `task.new` | New task | 新建任务 |
+| 182 | `task.edit` | Edit task | 编辑任务 |
+| 183 | `task.namePlaceholder` | Task name | 任务名称 |
+| 184 | `task.parent` | Parent | 父任务 |
+| 185 | `task.topLevel` | — Top level — | 最顶层任务 |
+| 186 | `task.createAsTodo` | Create as to-do | 创建为待办 |
+| 187 | `task.todoNote` | This is a to-do: unscheduled work. It sits last among its siblings inside a {toDos} folder until you give it a schedule with {startTask} in the detail panel. | 这是一项待办：尚未排期的工作。它会排在同级任务末尾的 {toDos} 文件夹中，直到你在详情面板里用 {startTask} 为它安排时间。 |
+| 188 | `task.endDateLocked` | The end date is decided by the subtask that ends last — change that subtask’s end date instead. | 结束日期由最晚结束的子任务决定，请改为修改那个子任务的结束日期。 |
+| 189 | `task.startDateLocked` | The start date is decided by the subtask that starts first — change that subtask’s start date instead. | 开始日期由最早开始的子任务决定，请改为修改那个子任务的开始日期。 |
+| 190 | `task.strictProgress` | Turn off daily logs (not recommended) | 取消日志限制（不推荐） |
+| 191 | `task.overdueMark` | This task is already overdue — mark as | 该任务已逾期 —— 标记为 |
+| 192 | `task.tagsPlaceholder` | study, health | 学习, 健康 |
+| 193 | `task.tagsLabel` | Tags (comma separated) | 标签（用逗号分隔） |
+| 194 | `task.subtaskCount` | one: {count} subtask / other: {count} subtasks | {count} 项子任务 |
+| 195 | `task.hide` | Hide | 收起 |
+| 196 | `task.hidden` | Hidden. | 已收起 |
+| 197 | `task.tree` | Task tree | 所在任务树 |
+| 198 | `task.treeFocus` | Show one branch | 只展示一支 |
+| 199 | `task.pendingLogs` | Still to log | 今日待填 |
+| 200 | `task.progressMode` | Progress mode | 进度模式 |
+| 201 | `task.modeStrict` | Log-based | 严格模式 |
+| 202 | `task.modeAuto` | Simplified (ticked per day) | 简化模式 |
+| 203 | `task.modeRolledUp` | From subtasks | 由子任务汇总 |
+| 204 | `optOut.title` | Go without log supervision? | 确定采取简化模式(脱离日志系统)吗？ |
+| 205 | `optOut.p1` | Without the log system this task will *keep no history at all*, and the Logs page will not manage it. | 脱离日志系统则该任务将*不会拥有历史日志*，且不会在 log 页面里被统一管理。 |
+| 206 | `optOut.p2` | It will use a *deliberately crude* way of counting progress: each day you only have to *click a button by hand* to confirm you did it, and the system then accumulates progress as elapsed days ÷ total days. No click, no accumulation. If you miss a day, later daily reports will remind you, and you can leave it for now or put the confirmation in — which is one more click. | 本任务将采用一种*极度简化*的进度计算方式，即每日只需要*手动点击按钮*来确认完成，然后系统自动按已过日期 ÷ 总日期进行进度累计，否则不予累计进度。如果你有某日忘了点按钮，则会在以后的日报里对你进行提醒，你可以按实际需求暂时忽略／将确认补上，也就是再点一下按钮的事。 |
+| 207 | `optOut.p3` | This also means the task */may not reflect its real progress*/, and the supervision over whether you did a given day’s work is */close to zero*/. **//Please make sure you have enough self-discipline to go without the log system’s supervision**//. | 这也就意味着，本任务可能将*/无法精确反应任务实际进度*/，且确认某日本任务完成的*/监督力度几乎为 0 */。**//请确保你有足够的自律能力脱离日志系统监督**//。 |
+| 208 | `optOut.back` | Back | 返回 |
+| 209 | `optOut.confirm` | Turn logs off anyway | 仍要取消 |
+| 210 | `day.tick` | Mark this day as done | 把这一天标记为完成 |
+| 211 | `task.pausedNote` | one: Paused. Started {start} · paused on {paused} · {count} day elapsed. / other: Paused. Started {start} · paused on {paused} · {count} days elapsed. | 已暂停。开始于 {start} · 暂停于 {paused} · 已过去 {count} 天。 |
+| 212 | `task.resume` | Resume | 恢复 |
+| 213 | `task.endPostponed` | End (postponed) | 结束（已顺延） |
+| 214 | `task.setAsTodo` | Set as to-do | 设为待办 |
+| 215 | `task.pauseConfirm` | Pause "{name}"? | 确定暂停“{name}”？ |
+| 216 | `task.resumeConfirm` | Resume "{name}"? | 确定恢复“{name}”？ |
+| 217 | `task.archive` | Archive | 归档 |
+| 218 | `task.unarchive` | Unarchive | 取消归档 |
+| 219 | `task.archiveConfirm` | Archive "{name}"? | 确定归档“{name}”？ |
+| 220 | `task.archiveWithSubtasks` | Archive "{name}"? Its subtasks are filed away with it. | 确定归档“{name}”？属于它的子任务也会连带归档。 |
+| 221 | `task.pause` | Pause task | 暂停任务 |
+| 222 | `task.pauseHistory` | Pause history ({count}) | 暂停记录（{count}） |
+| 223 | `task.pauseEntry` | Paused {from} → resumed {to} | 暂停于 {from} → 恢复于 {to} |
+| 224 | `task.heat.title` | Completion | 完成情况 |
+| 225 | `task.heat.done` | Done | 已完成 |
+| 226 | `task.heat.pending` | Not done | 未完成 |
+| 227 | `task.heat.none` | Not scheduled | 无排期 |
+| 228 | `task.heat.count` | one: {count} task done / other: {count} tasks done | 完成 {count} 项任务 |
+| 229 | `task.heat.less` | Less | 少 |
+| 230 | `task.heat.more` | More | 多 |
+| 231 | `task.setAsTodoConfirm` | Mark "{name}" as to-do?\n\nIts dates, priority and progress are cleared. | 确定将“{name}”设为待办？\n\n它的日期、优先级和进度将被清除。 |
+| 232 | `task.setAsTodoConfirmMany` | one: Mark "{name}" and its {count} unfinished subtask as to-do?\n\n / other: Mark "{name}" and its {count} unfinished subtasks as to-do?\n\n | 确定将“{name}”及其 {count} 项未完成的子任务设为待办？\n\n它们的日期、优先级和进度将被清除；已完成的子任务不受影响。 |
+| 233 | `task.markedCompleted` | Marked as completed | 已标记为完成 |
 
 ## logs
 
 | # | key | English | 中文 |
 |---|-----|---------|------|
-| 233 | `log.write` | Write log | 写日志 |
-| 234 | `log.editProgress` | Correct progress | 修改进度 |
-| 235 | `log.label` | Log | 日志 |
-| 236 | `log.contentPlaceholder` | What did you work on? | 今天做了什么？ |
-| 237 | `log.editedAt` | edited {time} | 编辑于 {time} |
-| 238 | `log.hint` | Each line is an item; Tab indents a sub-item, Shift+Tab outdents. | 每行是一个条目；Tab 键缩进为子条目，Shift+Tab 反向缩进。 |
-| 239 | `log.progressAdd` | Progress added (%) | 进度增加（%） |
-| 240 | `log.progressAfterDay` | Progress becomes (%) | 进度累积至（%） |
-| 241 | `log.currentProgress` | Currently at {percent}% | 目前进度 {percent}% |
-| 242 | `log.byDays` | Advance one day | 自动推进一日 |
-| 243 | `log.byDaysHint` | Advance one day = add (1 ÷ total days) × 100% of the progress. If less than a fifth of a day’s share is left after that, the task is taken as complete. | 自动推进一日＝增加（1 ÷ 总日数）× 100% 的进度。如果自动推进一日后剩余进度小于一日进度的 1/5，则会默认任务完成。 |
-| 244 | `log.progressRequired` | Fill in at least one of the two — put 0 under “{add}” if nothing moved. | 两个格子至少填一个 —— 没进展就在「{add}」里填 0。 |
-| 245 | `log.progressBackward` | Progress cannot go backwards — that lands below the figure it started the day at. | 进度不能往回填 |
-| 246 | `log.task` | Task | 任务 |
-| 247 | `logs.all` | All logs | 全部日志 |
-| 248 | `logs.empty` | No logs yet. | 暂无日志。 |
-| 249 | `logs.moreTasks` | one: +{count} more task / other: +{count} more tasks | 以及 {count} 项任务 |
-| 250 | `logs.tabLogs` | Logs | 日志 |
+| 234 | `log.write` | Write log | 写日志 |
+| 235 | `log.editProgress` | Correct progress | 修改进度 |
+| 236 | `log.label` | Log | 日志 |
+| 237 | `log.contentPlaceholder` | What did you work on? | 今天做了什么？ |
+| 238 | `log.editedAt` | edited {time} | 编辑于 {time} |
+| 239 | `log.hint` | Each line is an item; Tab indents a sub-item, Shift+Tab outdents. | 每行是一个条目；Tab 键缩进为子条目，Shift+Tab 反向缩进。 |
+| 240 | `log.progressAdd` | Progress added (%) | 进度增加（%） |
+| 241 | `log.progressAfterDay` | Progress becomes (%) | 进度累积至（%） |
+| 242 | `log.currentProgress` | Currently at {percent}% | 目前进度 {percent}% |
+| 243 | `log.byDays` | Advance one day | 自动推进一日 |
+| 244 | `log.byDaysHint` | Advance one day = add (1 ÷ total days) × 100% of the progress. If less than a fifth of a day’s share is left after that, the task is taken as complete. | 自动推进一日＝增加（1 ÷ 总日数）× 100% 的进度。如果自动推进一日后剩余进度小于一日进度的 1/5，则会默认任务完成。 |
+| 245 | `log.progressRequired` | Fill in at least one of the two — put 0 under “{add}” if nothing moved. | 两个格子至少填一个 —— 没进展就在「{add}」里填 0。 |
+| 246 | `log.progressBackward` | Progress cannot go backwards — that lands below the figure it started the day at. | 进度不能往回填 |
+| 247 | `log.task` | Task | 任务 |
+| 248 | `logs.all` | All logs | 全部日志 |
+| 249 | `logs.empty` | No logs yet. | 暂无日志。 |
+| 250 | `logs.moreTasks` | one: +{count} more task / other: +{count} more tasks | 以及 {count} 项任务 |
+| 251 | `logs.tabLogs` | Logs | 日志 |
 
 ## notes
 
 | # | key | English | 中文 |
 |---|-----|---------|------|
-| 251 | `notes.title` | Notes | 记事本 |
-| 252 | `notes.empty` | Nothing written yet. | 空空如也 |
-| 253 | `notes.add` | Write something | 写点什么 |
-| 254 | `notes.placeholder` | Whatever you want to keep. | 写点随想 |
-| 255 | `notes.none` | None yet. | 暂无 |
+| 252 | `notes.title` | Notes | 记事本 |
+| 253 | `notes.empty` | Nothing written yet. | 空空如也 |
+| 254 | `notes.add` | Write something | 写点什么 |
+| 255 | `notes.placeholder` | Whatever you want to keep. | 写点随想 |
+| 256 | `notes.none` | None yet. | 暂无 |
 
 ## calendar
 
 | # | key | English | 中文 |
 |---|-----|---------|------|
-| 256 | `calendar.prevMonth` | Previous month | 上个月 |
-| 257 | `calendar.nextMonth` | Next month | 下个月 |
-| 258 | `calendar.cellLabel` | {date}: {due}, {starting}; {coverage} | {date}：{due}，{starting}；{coverage} |
-| 259 | `calendar.dueCount` | {count} due | {count} 项到期 |
-| 260 | `calendar.startingCount` | {count} starting | {count} 项开始 |
-| 261 | `calendar.coverage.future` | not yet due | 尚未到期 |
-| 262 | `calendar.coverage.clear` | no logs due | 无日志义务 |
-| 263 | `calendar.coverage.partial` | {count} of {total} logs written | 已记录 {count}/{total} 项日志 |
-| 264 | `calendar.coverage.full` | all {count} logs written | {count} 项日志已全部记录 |
-| 265 | `calendar.more` | +{count} more | 还有 {count} 项 |
-| 266 | `calendar.milestoneTitle` | {kind}{strict} — {name}{logged} | {kind}{strict} —— {name}{logged} |
-| 267 | `calendar.milestone.due` | Due | 到期 |
-| 268 | `calendar.milestone.starts` | Starts | 开始 |
-| 269 | `calendar.milestone.strict` |  * |  * |
-| 270 | `calendar.milestone.logged` |  · logged this day |  · 当天已记录 |
+| 257 | `calendar.prevMonth` | Previous month | 上个月 |
+| 258 | `calendar.nextMonth` | Next month | 下个月 |
+| 259 | `calendar.cellLabel` | {date}: {due}, {starting}; {coverage} | {date}：{due}，{starting}；{coverage} |
+| 260 | `calendar.dueCount` | {count} due | {count} 项到期 |
+| 261 | `calendar.startingCount` | {count} starting | {count} 项开始 |
+| 262 | `calendar.coverage.future` | not yet due | 尚未到期 |
+| 263 | `calendar.coverage.clear` | no logs due | 无日志义务 |
+| 264 | `calendar.coverage.partial` | {count} of {total} logs written | 已记录 {count}/{total} 项日志 |
+| 265 | `calendar.coverage.full` | all {count} logs written | {count} 项日志已全部记录 |
+| 266 | `calendar.more` | +{count} more | 还有 {count} 项 |
+| 267 | `calendar.milestoneTitle` | {kind}{strict} — {name}{logged} | {kind}{strict} —— {name}{logged} |
+| 268 | `calendar.milestone.due` | Due | 到期 |
+| 269 | `calendar.milestone.starts` | Starts | 开始 |
+| 270 | `calendar.milestone.strict` |  * |  * |
+| 271 | `calendar.milestone.logged` |  · logged this day |  · 当天已记录 |
 
 ## day detail
 
 | # | key | English | 中文 |
 |---|-----|---------|------|
-| 271 | `day.strictLogs` | Logs | 日志 |
-| 272 | `day.notYetDue` | Not yet due | 尚未到期 |
-| 273 | `day.noStrictScheduled` | No logs due | 当天无日志义务 |
-| 274 | `day.allLogged` | Everything logged | 已完成所有日志填写 |
-| 275 | `day.nothingLogged` | Nothing logged yet | 尚未记录任何日志 |
-| 276 | `day.stillMissing` | {count} still missing | 还差 {count} 项 |
-| 277 | `day.noStrictTasksScheduled` | No logs due | 当天没有日志义务 |
-| 278 | `day.ringPartial` | {count} of {total} logs written | 已记录 {count}/{total} 项日志 |
-| 279 | `day.taskCount` | one: {count} task on this day / other: {count} tasks on this day | 当天有 {count} 项任务 |
-| 280 | `day.tasksBreakdown` | {strict} with logs · {other} other | {strict} 有日志 · {other} 其他 |
-| 281 | `day.taskList` | Tasks | 任务清单 |
-| 282 | `day.nothingScheduled` | Nothing scheduled on this day. | 当天没有排期。 |
-| 283 | `day.logMark` | A * marks a task that owes a daily log. | 带 * 的任务有日志义务。 |
-| 284 | `day.readLogs` | Read this day’s logs | 查看当天的日志 |
-| 285 | `day.readLogsCount` | Read this day’s logs ({count}) | 查看当天的日志（{count}） |
-| 286 | `day.noProgress` | No progress | 无进度 |
-| 287 | `day.viewTask` | View task → | 查看任务 → |
+| 272 | `day.strictLogs` | Logs | 日志 |
+| 273 | `day.notYetDue` | Not yet due | 尚未到期 |
+| 274 | `day.noStrictScheduled` | No logs due | 当天无日志义务 |
+| 275 | `day.allLogged` | Everything logged | 已完成所有日志填写 |
+| 276 | `day.nothingLogged` | Nothing logged yet | 尚未记录任何日志 |
+| 277 | `day.stillMissing` | {count} still missing | 还差 {count} 项 |
+| 278 | `day.noStrictTasksScheduled` | No logs due | 当天没有日志义务 |
+| 279 | `day.ringPartial` | {count} of {total} logs written | 已记录 {count}/{total} 项日志 |
+| 280 | `day.taskCount` | one: {count} task on this day / other: {count} tasks on this day | 当天有 {count} 项任务 |
+| 281 | `day.tasksBreakdown` | {strict} with logs · {other} other | {strict} 有日志 · {other} 其他 |
+| 282 | `day.taskList` | Tasks | 任务清单 |
+| 283 | `day.nothingScheduled` | Nothing scheduled on this day. | 当天没有排期。 |
+| 284 | `day.logMark` | A * marks a task that owes a daily log. | 带 * 的任务有日志义务。 |
+| 285 | `day.readLogs` | Read this day’s logs | 查看当天的日志 |
+| 286 | `day.readLogsCount` | Read this day’s logs ({count}) | 查看当天的日志（{count}） |
+| 287 | `day.noProgress` | No progress | 无进度 |
+| 288 | `day.viewTask` | View task → | 查看任务 → |
 
 ## chores (the Today page)
 
 | # | key | English | 中文 |
 |---|-----|---------|------|
-| 288 | `chore.section` | Chores | 临时事务 |
-| 289 | `chore.placeholder` | Add a chore… | 添加临时事务… |
-| 290 | `chore.enterHint` | Type the name in the box and press Enter to create it. | 请在文本框内直接输入事项名称，按回车确认创建。 |
-| 291 | `chore.emptyToday` | Nothing on hand today. | 今天没有临时事务。 |
-| 292 | `chore.emptyTomorrow` | Nothing lined up for tomorrow. | 明天还没有安排。 |
-| 293 | `chore.noneOnDay` | No chores on this day. | 当天没有临时事务。 |
-| 294 | `chore.stillOpen` | {count} still open | 还有 {count} 项 |
-| 295 | `chore.allDone` | All done | 全部完成 |
-| 296 | `chore.edit` | Edit chore | 编辑临时事务 |
-| 297 | `chore.title` | Chore | 内容 |
-| 298 | `chore.note` | Note | 备注 |
-| 299 | `chore.notePlaceholder` | Optional | 可不填 |
-| 300 | `chore.day` | Day | 日期 |
-| 301 | `chore.slot` | Part of day | 时段 |
-| 302 | `chore.slot.none` | Anytime | 不限 |
-| 303 | `chore.slot.dawn` | Early morning | 凌晨 |
-| 304 | `chore.slot.am` | Morning | 上午 |
-| 305 | `chore.slot.pm` | Afternoon | 下午 |
-| 306 | `chore.slot.eve` | Evening | 晚上 |
-| 307 | `chore.time` | Exact time | 时间点 |
-| 308 | `chore.timePlaceholder` | e.g. 9:30 / 9:30pm / 21:30 | 如 9:30 / 9:30pm / 21:30 |
-| 309 | `chore.timeHint` | 12-hour with am/pm, or 24-hour | 12 小时制带 am/pm，或直接写 24 小时制 |
-| 310 | `chore.timeUnreadable` | Not a time we can read | 看不懂这个时间 |
-| 311 | `chore.timeMismatch` | {time} is in {timeSlot}, not the {slot} picked above. Which should it use? | {time} 属于「{timeSlot}」，和上面选的「{slot}」不一致。以哪个为准？ |
-| 312 | `chore.preferTime` | Switch to {slot} | 改为{slot} |
-| 313 | `chore.preferSlot` | Keep {slot} | 保持{slot} |
-| 314 | `chore.carriedTitle` | Meant for {date} | 原本定于 {date} |
-| 315 | `habit.section` | Routine | 日常安排 |
-| 316 | `habit.none` | Nothing daily yet. | 还没有每日项。 |
-| 317 | `habit.edit` | Edit daily item | 编辑每日项 |
-| 318 | `habit.title` | Item | 内容 |
-| 319 | `habit.deleteAsk` | Delete "{name}"? Every day you ticked it goes with it. | 确定删除“{name}”？它的历史完成等记录也会一并删除 |
-| 320 | `habit.new` | New routine | 新建日常安排 |
-| 321 | `habit.note` | Note | 备注 |
-| 322 | `habit.notePlaceholder` | Optional | 可不填 |
-| 323 | `habit.weekdays` | Days | 星期几 |
-| 324 | `habit.everyDay` | Every day | 每天 |
-| 325 | `habit.endDate` | Ends | 结束日期 |
-| 326 | `habit.noEndDate` | Leave empty to keep going. | 选填。 |
-| 327 | `habit.paused` | Suspended | 停用 |
-| 328 | `habit.parent` | Parent | 上级日常安排 |
-| 329 | `habit.topLevel` | — Top level — | 最顶层日常安排 |
-| 330 | `habit.addSubtask` | Add sub-routine | 添加子日常安排 |
+| 289 | `chore.section` | Chores | 临时事务 |
+| 290 | `chore.placeholder` | Add a chore… | 添加临时事务… |
+| 291 | `chore.enterHint` | Type the name in the box and press Enter to create it. | 请在文本框内直接输入事项名称，按回车确认创建。 |
+| 292 | `chore.emptyToday` | Nothing on hand today. | 今天没有临时事务。 |
+| 293 | `chore.emptyTomorrow` | Nothing lined up for tomorrow. | 明天还没有安排。 |
+| 294 | `chore.noneOnDay` | No chores on this day. | 当天没有临时事务。 |
+| 295 | `chore.stillOpen` | {count} still open | 还有 {count} 项 |
+| 296 | `chore.allDone` | All done | 全部完成 |
+| 297 | `chore.edit` | Edit chore | 编辑临时事务 |
+| 298 | `chore.title` | Chore | 内容 |
+| 299 | `chore.note` | Note | 备注 |
+| 300 | `chore.notePlaceholder` | Optional | 可不填 |
+| 301 | `chore.day` | Day | 日期 |
+| 302 | `chore.slot` | Part of day | 时段 |
+| 303 | `chore.slot.none` | Anytime | 不限 |
+| 304 | `chore.slot.dawn` | Early morning | 凌晨 |
+| 305 | `chore.slot.am` | Morning | 上午 |
+| 306 | `chore.slot.pm` | Afternoon | 下午 |
+| 307 | `chore.slot.eve` | Evening | 晚上 |
+| 308 | `chore.time` | Exact time | 时间点 |
+| 309 | `chore.timePlaceholder` | e.g. 9:30 / 9:30pm / 21:30 | 如 9:30 / 9:30pm / 21:30 |
+| 310 | `chore.timeHint` | 12-hour with am/pm, or 24-hour | 12 小时制带 am/pm，或直接写 24 小时制 |
+| 311 | `chore.timeUnreadable` | Not a time we can read | 看不懂这个时间 |
+| 312 | `chore.timeMismatch` | {time} is in {timeSlot}, not the {slot} picked above. Which should it use? | {time} 属于「{timeSlot}」，和上面选的「{slot}」不一致。以哪个为准？ |
+| 313 | `chore.preferTime` | Switch to {slot} | 改为{slot} |
+| 314 | `chore.preferSlot` | Keep {slot} | 保持{slot} |
+| 315 | `chore.carriedTitle` | Meant for {date} | 原本定于 {date} |
+| 316 | `habit.section` | Routine | 日常安排 |
+| 317 | `habit.none` | Nothing daily yet. | 还没有每日项。 |
+| 318 | `habit.edit` | Edit daily item | 编辑每日项 |
+| 319 | `habit.title` | Item | 内容 |
+| 320 | `habit.deleteAsk` | Delete "{name}"? Every day you ticked it goes with it. | 确定删除“{name}”？它的历史完成等记录也会一并删除 |
+| 321 | `habit.new` | New routine | 新建日常安排 |
+| 322 | `habit.note` | Note | 备注 |
+| 323 | `habit.notePlaceholder` | Optional | 可不填 |
+| 324 | `habit.weekdays` | Days | 星期几 |
+| 325 | `habit.everyDay` | Every day | 每天 |
+| 326 | `habit.endDate` | Ends | 结束日期 |
+| 327 | `habit.noEndDate` | Leave empty to keep going. | 选填。 |
+| 328 | `habit.paused` | Suspended | 停用 |
+| 329 | `habit.parent` | Parent | 上级日常安排 |
+| 330 | `habit.topLevel` | — Top level — | 最顶层日常安排 |
+| 331 | `habit.addSubtask` | Add sub-routine | 添加子日常安排 |
 
 ## manage
 
 | # | key | English | 中文 |
 |---|-----|---------|------|
-| 331 | `manage.overall` | Overall | 总览 |
-| 332 | `manage.heat` | Completion heatmap | 完成热力图 |
-| 333 | `manage.subtasks` | Subtasks | 子任务 |
-| 334 | `manage.parentTasks` | one: {count} parent task / other: {count} parent tasks | {count} 项父任务 |
-| 335 | `manage.upcoming` | Upcoming (7 days) | 未来 7 天 |
-| 336 | `manage.overdue` | Overdue | 已逾期 |
-| 337 | `manage.deleteProject` | Delete project "{name}" and all its tasks? | 确定删除项目“{name}”及其全部任务？ |
-| 338 | `manage.openInGantt` | Open in Gantt → | 在甘特图中打开 → |
-| 339 | `manage.comingSoon` | Coming soon | 即将开始 |
-| 340 | `manage.allStatuses` | All statuses | 全部状态 |
-| 341 | `manage.filteredCount` | one: {filtered} of {count} task / other: {filtered} of {count} tasks | 共 {count} 项任务，显示 {filtered} 项 |
-| 342 | `manage.empty` | Nothing here. | 暂无内容。 |
-| 343 | `manage.sub.active` | active | 进行中 |
-| 344 | `manage.sub.tracked` | in total | 全部项目 |
-| 345 | `manage.sub.done` | done | 已完成 |
-| 346 | `manage.sub.paused` | paused | 已暂停 |
-| 347 | `manage.sub.startsIn7` | starts in 7 days | 将在 7 天内开始 |
-| 348 | `manage.sub.pastDue` | past due | 已过期 |
-| 349 | `manage.sub.pastDueDueSoon` | past due · {count} due soon | 已过期 · {count} 项即将到期 |
-| 350 | `manage.sub.unscheduled` | unscheduled | 未排期 |
-| 351 | `manage.countCompleted` | {count} completed | {count} 项已完成 |
-| 352 | `manage.countOpen` | {count} open | {count} 项未完成 |
+| 332 | `manage.overall` | Overall | 总览 |
+| 333 | `manage.heat` | Completion heatmap | 完成热力图 |
+| 334 | `manage.subtasks` | Subtasks | 子任务 |
+| 335 | `manage.parentTasks` | one: {count} parent task / other: {count} parent tasks | {count} 项父任务 |
+| 336 | `manage.upcoming` | Upcoming (7 days) | 未来 7 天 |
+| 337 | `manage.overdue` | Overdue | 已逾期 |
+| 338 | `manage.deleteProject` | Delete project "{name}" and all its tasks? | 确定删除项目“{name}”及其全部任务？ |
+| 339 | `manage.openInGantt` | Open in Gantt → | 在甘特图中打开 → |
+| 340 | `manage.comingSoon` | Coming soon | 即将开始 |
+| 341 | `manage.allStatuses` | All statuses | 全部状态 |
+| 342 | `manage.filteredCount` | one: {filtered} of {count} task / other: {filtered} of {count} tasks | 共 {count} 项任务，显示 {filtered} 项 |
+| 343 | `manage.empty` | Nothing here. | 暂无内容。 |
+| 344 | `manage.sub.active` | active | 进行中 |
+| 345 | `manage.sub.tracked` | in total | 全部项目 |
+| 346 | `manage.sub.done` | done | 已完成 |
+| 347 | `manage.sub.paused` | paused | 已暂停 |
+| 348 | `manage.sub.startsIn7` | starts in 7 days | 将在 7 天内开始 |
+| 349 | `manage.sub.pastDue` | past due | 已过期 |
+| 350 | `manage.sub.pastDueDueSoon` | past due · {count} due soon | 已过期 · {count} 项即将到期 |
+| 351 | `manage.sub.unscheduled` | unscheduled | 未排期 |
+| 352 | `manage.countCompleted` | {count} completed | {count} 项已完成 |
+| 353 | `manage.countOpen` | {count} open | {count} 项未完成 |
 
 ## projects
 
 | # | key | English | 中文 |
 |---|-----|---------|------|
-| 353 | `project.heading` | Project | 项目 |
-| 354 | `project.color` | Color | 颜色 |
-| 355 | `project.done` | Done | 已完成 |
-| 356 | `project.open` | Open | 未完成 |
+| 354 | `project.heading` | Project | 项目 |
+| 355 | `project.color` | Color | 颜色 |
+| 356 | `project.done` | Done | 已完成 |
+| 357 | `project.open` | Open | 未完成 |
 
 ## merging projects
 
 | # | key | English | 中文 |
 |---|-----|---------|------|
-| 357 | `project.manage` | Hierarchy | 层级管理器 |
-| 358 | `project.moveMode` | Project move mode (if any) | 项目移动方式（如涉及） |
-| 359 | `project.moveModeFolder` | A parent task | 变成父任务 |
-| 360 | `project.moveModeFlat` | At the top level | 直接铺平 |
+| 358 | `project.manage` | Hierarchy | 层级管理器 |
+| 359 | `project.moveMode` | Project move mode (if any) | 项目移动方式（如涉及） |
+| 360 | `project.moveModeFolder` | A parent task | 变成父任务 |
+| 361 | `project.moveModeFlat` | At the top level | 直接铺平 |
 
 ## the move dialog
 
 | # | key | English | 中文 |
 |---|-----|---------|------|
-| 361 | `move.sources` | Move | 将 |
-| 362 | `move.target` | Into | 放到 |
-| 363 | `move.newProject` | New project | 创建为新项目 |
-| 364 | `move.newProjectOr` | or | 或 |
-| 365 | `move.newProjectName` | New project | 新项目 |
-| 366 | `move.confirm` | Move | 移动 |
+| 362 | `move.sources` | Move | 将 |
+| 363 | `move.target` | Into | 放到 |
+| 364 | `move.newProject` | New project | 创建为新项目 |
+| 365 | `move.newProjectOr` | or | 或 |
+| 366 | `move.newProjectName` | New project | 新项目 |
+| 367 | `move.confirm` | Move | 移动 |
 
 ## settings
 
 | # | key | English | 中文 |
 |---|-----|---------|------|
-| 367 | `settings.language` | Language | 语言 |
-| 368 | `settings.languageHint` | The language of the interface. | 界面显示所用的语言。 |
-| 369 | `settings.theme` | Theme | 主题 |
-| 370 | `settings.themeHint` | A whole colour scheme — surfaces, text and the colours that carry meaning. | 一整套配色方案 —— 包括底面、文字，以及承载含义的状态色。 |
-| 371 | `settings.themeNote` | Green means done and red means late in every theme; the palettes differ in their surfaces and accent, so a status keeps its meaning whichever one you pick. | 在每一套主题里，绿都代表完成、红都代表逾期。各套之间变化的是底面与强调色，所以无论选哪套，状态的含义都不变。 |
-| 372 | `settings.active` | Current | 当前 |
-| 373 | `settings.version` | Version | 版本 |
-| 374 | `settings.versionHint` | The desktop app checks for updates on every launch. | 桌面版每次启动会自动检查更新。 |
-| 375 | `settings.releaseHistory` | Release history | 历史版本 |
+| 368 | `settings.language` | Language | 语言 |
+| 369 | `settings.languageHint` | The language of the interface. | 界面显示所用的语言。 |
+| 370 | `settings.theme` | Theme | 主题 |
+| 371 | `settings.themeHint` | A whole colour scheme — surfaces, text and the colours that carry meaning. | 一整套配色方案 —— 包括底面、文字，以及承载含义的状态色。 |
+| 372 | `settings.themeNote` | Green means done and red means late in every theme; the palettes differ in their surfaces and accent, so a status keeps its meaning whichever one you pick. | 在每一套主题里，绿都代表完成、红都代表逾期。各套之间变化的是底面与强调色，所以无论选哪套，状态的含义都不变。 |
+| 373 | `settings.active` | Current | 当前 |
+| 374 | `settings.version` | Version | 版本 |
+| 375 | `settings.versionHint` | The desktop app checks for updates on every launch. | 桌面版每次启动会自动检查更新。 |
+| 376 | `settings.releaseHistory` | Release history | 历史版本 |
 
 ## reminders
 
 | # | key | English | 中文 |
 |---|-----|---------|------|
-| 376 | `settings.reminder` | Reminders | 提醒 |
-| 377 | `settings.reminderWebNote` | Reminders are sent by the desktop app — it is the only build that can post to PushPlus. In a browser there is nothing here to set up. | 提醒由桌面版发出 —— 只有桌面版能把消息送到 PushPlus。浏览器版这里没有可设置的东西。 |
-| 378 | `settings.reminderOn` | Desktop notifications are on by default. Keep WBS Gantt running in the background. | 桌面弹窗通知默认开启，请保持 WBS-gantt 在电脑后台运行。 |
-| 379 | `settings.reminderWechat` | Sync notifications to personal WeChat | 将通知/提醒同步到个人微信 |
-| 380 | `settings.reminderTime` | Send at | 发送时间 |
-| 381 | `settings.reminderToken` | PushPlus token | PushPlus 令牌 |
-| 382 | `settings.reminderPushplusNote` | WBS Gantt relies on PushPlus to sync notifications to WeChat.\nActivating that route means paying PushPlus ¥3.50 for real-name verification, so skipping it is entirely reasonable. | WBS-gantt 依赖 pushplus 在微信同步通知。\n不过，激活该途径需要向 pushplus 支付 3.5 元以完成实名认证。因而放弃配置该途径也是完全可行的。 |
-| 383 | `settings.reminderTokenHint` | Sign in at pushplus.plus and paste the token from the top of the page here. | 在 pushplus.plus 扫码登录，并把页面顶部的令牌(token)复制在这里 |
-| 384 | `settings.reminderOpen` | Open pushplus.plus | 打开 pushplus.plus |
-| 385 | `settings.reminderTest` | Send a test | 发一条试试 |
-| 386 | `settings.reminderPreview` | Preview noon’s | 预览中午的 |
-| 387 | `settings.reminderSending` | Sending… | 发送中… |
-| 388 | `settings.reminderSent` | Sent. | 已发出。 |
-| 389 | `settings.backgroundAppOnly` | Without it, reminders only go out while this window happens to be open. | 不装的话，只有这个窗口开着的时候才会发。 |
-| 390 | `settings.autostart` | Start with Windows | 开机自启动 |
-| 391 | `settings.closeToTray` | Minimize to tray on close | 关闭时最小化到托盘 |
-| 392 | `tray.open` | Open WBS Gantt | 打开看板 |
-| 393 | `tray.quit` | Quit | 退出 |
-| 394 | `reminder.greeting.dawn` | Still up | 强啊传奇耐熬王 |
-| 395 | `reminder.greeting.early` | Good morning | 早上好 |
-| 396 | `reminder.greeting.morning` | Good morning | 上午好 |
-| 397 | `reminder.greeting.noon` | Midday | 中午好 |
-| 398 | `reminder.greeting.afternoon` | Good afternoon | 下午好 |
-| 399 | `reminder.greeting.dusk` | End of the day | 傍晚了 |
-| 400 | `reminder.greeting.evening` | Good evening | 晚上好 |
-| 401 | `reminder.greeting.night` | Late night | 夜深了 |
-| 402 | `reminder.closing.dawn` |  | ⟨空⟩ |
-| 403 | `reminder.closing.early` |  | ⟨空⟩ |
-| 404 | `reminder.closing.morning` |  | ⟨空⟩ |
-| 405 | `reminder.closing.noon` |  | ⟨空⟩ |
-| 406 | `reminder.closing.afternoon` |  | ⟨空⟩ |
-| 407 | `reminder.closing.dusk` |  | ⟨空⟩ |
-| 408 | `reminder.closing.evening` |  | ⟨空⟩ |
-| 409 | `reminder.closing.night` |  | ⟨空⟩ |
-| 410 | `reminder.starting` | Starting today | 今天该开始 |
-| 411 | `reminder.dueSoon` | Coming up | 即将到期 |
-| 412 | `reminder.reportTitle` | Daily report | 日报 |
-| 413 | `reminder.reportEmpty` | Nothing outstanding today. | 今日无事 |
-| 414 | `reminder.reportYesterday` | Yesterday | 昨日 |
-| 415 | `reminder.reportToday` | Today | 今天 |
-| 416 | `reminder.reportRate` | Completion | 完成率 |
-| 417 | `reminder.groupTasks` | Tasks | 任务清单 |
-| 418 | `reminder.groupDeadlines` | Due & overdue | 到期与逾期 |
-| 419 | `reminder.testTitle` | WBS Gantt — test message | 看板 —— 测试消息 |
-| 420 | `reminder.testBody` | If you are reading this in WeChat, reminders are working. | 你能在微信里看到这条，就说明提醒已经配好了。 |
-| 421 | `reminder.nudgeLogs` | Remember to write logs for the tasks you have finished. | 记得为已经完成的任务填写日志。 |
-| 422 | `reminder.nudgeDebt` | {count} waiting on you — | 还有 {count} 项事项待处理，其中： |
-| 423 | `reminder.nudgeDebtLine` | - {count} {label} | - {count} 项{label} |
-| 424 | `reminder.nudgeTasks` | tasks | 任务 |
-| 425 | `reminder.ack` | Got it | 我知道了 |
-| 426 | `slot.early` | Morning | 早上 |
-| 427 | `slot.noon` | Noon | 中午 |
-| 428 | `slot.dusk` | Evening | 傍晚 |
-| 429 | `reminder.overdue` | Overdue | 已逾期 |
-| 430 | `reminder.dueToday` | Due today | 今天到期 |
-| 431 | `reminder.logsOwed` | Logs owed | 日志缺少 |
-| 432 | `reminder.chores` | Chores | 临时事务 |
-| 433 | `reminder.habits` | Routine | 日常安排 |
-| 434 | `update.check` | Check for updates | 检查更新 |
-| 435 | `update.checking` | Checking… | 检查中… |
-| 436 | `update.upToDate` | You are on the latest version. | 已是最新版本。 |
-| 437 | `update.availableShort` | An update is available. | 有可用更新。 |
-| 438 | `update.unreachable` | Automatic updates are unavailable because GitHub cannot be reached. | 由于无法连接到 GitHub，自动更新不可用。 |
-| 439 | `update.unreachableHide` | Hide for this run | 本次运行不显示 |
-| 440 | `update.webNote` | Automatic updates apply to the desktop app. In a browser you always load the latest build. | 自动更新只适用于桌面版；在浏览器里打开的始终是最新版本。 |
-| 441 | `update.availableTitle` | Update available | 发现新版本 |
-| 442 | `update.availableBody` | Version {version} has been released. You are on {current}. | 新版本 {version} 已发布，当前版本为 {current}。 |
-| 443 | `update.notes` | Release notes | 更新说明 |
-| 444 | `update.history` | Older releases this update brings along ({count}) | 本次将连带更新的历史版本内容（{count} 个版本） |
-| 445 | `update.historyTitle` | Release history | 历史版本更新说明 |
-| 446 | `update.historyLoading` | Loading… | 读取中… |
-| 447 | `update.historyFailed` | Could not read the release list from GitHub. | 没能从 GitHub 读到版本列表。 |
-| 448 | `update.noNotes` | This release came with no release notes. | 本次发布未填写更新说明。 |
-| 449 | `update.downloadAndInstall` | Update in background | 后台更新 |
-| 450 | `update.readyTitle` | Update downloaded | 更新已下载 |
-| 451 | `update.readyBody` | Version {version} has been downloaded. Restart now? | 新版本 {version} 已下载完成。立刻重启？ |
-| 452 | `update.now` | Restart now | 立刻重启 |
-| 453 | `update.installing` | Downloading… | 正在下载… |
-| 454 | `update.installFailed` | The update could not be installed: {message} | 更新安装失败：{message} |
-| 455 | `update.later` | Later | 以后再说 |
-| 456 | `update.snooze` | Ignore for {days} days | {days} 天内不再提醒 |
-| 457 | `update.nagTitle` | It has been a while | 已经很久没有更新了 |
-| 458 | `update.nagBody` | It has been over a month since this app last reached GitHub. Take a look for bug fixes and new features? | 要不要连上 GitHub 看一眼有没有 bug 修复和新功能呢？ |
-| 459 | `update.nagGo` | Go to Settings | 去设置看看 |
-| 460 | `update.connectTitle` | Want a stable GitHub connection? | 想稳定连接 GitHub？ |
-| 461 | `update.connectBody` | Watt Toolkit (formerly Steam++) is a free, open-source network accelerator. It speeds up both the GitHub website and Release downloads. | Watt Toolkit（原 Steam++）是免费开源的多平台网络加速工具，可以加速 GitHub 网页和 Release 下载。 |
-| 462 | `update.connectLink` | Download from steampp.net | 前往官网下载（steampp.net） |
-| 463 | `update.opensource` | GitHub is the largest home of open-source software — operating systems, frameworks, ready-made tools, most of it free to use, study and build on. This project’s source and releases live there too. | GitHub 是全球最大的开源社区，托管着数以亿计的开源项目 —— 从操作系统、开发框架到各类现成工具，绝大多数都可以免费使用、学习和二次开发。本项目的源码和版本更新也发布在这里。 |
-| 464 | `update.openRepo` | View on GitHub | 在 GitHub 上查看 |
-| 465 | `theme.graphite.name` | Graphite | 石墨 |
-| 466 | `theme.graphite.hint` | Near-black, neutral | 近黑 · 中性 |
-| 467 | `theme.slate.name` | Slate | 板岩 |
-| 468 | `theme.slate.hint` | Mid grey-blue, cool | 中灰蓝 · 偏冷 |
-| 469 | `theme.ember.name` | Ember | 余烬 |
-| 470 | `theme.ember.hint` | Hazel-black, warm | 榛黑 · 偏暖 |
-| 471 | `theme.paper.name` | Paper | 纸张 |
-| 472 | `theme.paper.hint` | Light, crisp | 浅色 · 清爽 |
-| 473 | `swatch.groupChrome` | Interface | 界面 |
-| 474 | `swatch.groupSignals` | Meaning | 语义 |
-| 475 | `swatch.bg` | Background | 底色 |
-| 476 | `swatch.panel` | Panel | 面板 |
-| 477 | `swatch.panel2` | Field | 输入框 |
-| 478 | `swatch.stripe` | Alt. row | 斑马行 |
-| 479 | `swatch.border` | Border | 边框 |
-| 480 | `swatch.line` | Divider | 分隔线 |
-| 481 | `swatch.fg` | Text | 正文 |
-| 482 | `swatch.muted` | Secondary text | 次要文字 |
-| 483 | `swatch.dim` | Faint text | 弱化文字 |
-| 484 | `swatch.accent` | Accent | 强调色 |
+| 377 | `settings.reminder` | Reminders | 提醒 |
+| 378 | `settings.reminderWebNote` | Reminders are sent by the desktop app — it is the only build that can post to PushPlus. In a browser there is nothing here to set up. | 提醒由桌面版发出 —— 只有桌面版能把消息送到 PushPlus。浏览器版这里没有可设置的东西。 |
+| 379 | `settings.reminderOn` | Desktop notifications are on by default. Keep WBS Gantt running in the background. | 桌面弹窗通知默认开启，请保持 WBS-gantt 在电脑后台运行。 |
+| 380 | `settings.reminderWechat` | Sync notifications to personal WeChat | 将通知/提醒同步到个人微信 |
+| 381 | `settings.reminderTime` | Send at | 发送时间 |
+| 382 | `settings.reminderToken` | PushPlus token | PushPlus 令牌 |
+| 383 | `settings.reminderPushplusNote` | WBS Gantt relies on PushPlus to sync notifications to WeChat.\nActivating that route means paying PushPlus ¥3.50 for real-name verification, so skipping it is entirely reasonable. | WBS-gantt 依赖 pushplus 在微信同步通知。\n不过，激活该途径需要向 pushplus 支付 3.5 元以完成实名认证。因而放弃配置该途径也是完全可行的。 |
+| 384 | `settings.reminderTokenHint` | Sign in at pushplus.plus and paste the token from the top of the page here. | 在 pushplus.plus 扫码登录，并把页面顶部的令牌(token)复制在这里 |
+| 385 | `settings.reminderOpen` | Open pushplus.plus | 打开 pushplus.plus |
+| 386 | `settings.reminderTest` | Send a test | 发一条试试 |
+| 387 | `settings.reminderPreview` | Preview noon’s | 预览中午的 |
+| 388 | `settings.reminderSending` | Sending… | 发送中… |
+| 389 | `settings.reminderSent` | Sent. | 已发出。 |
+| 390 | `settings.backgroundAppOnly` | Without it, reminders only go out while this window happens to be open. | 不装的话，只有这个窗口开着的时候才会发。 |
+| 391 | `settings.autostart` | Start with Windows | 开机自启动 |
+| 392 | `settings.closeToTray` | Minimize to tray on close | 关闭时最小化到托盘 |
+| 393 | `tray.open` | Open WBS Gantt | 打开看板 |
+| 394 | `tray.quit` | Quit | 退出 |
+| 395 | `reminder.greeting.dawn` | Still up | 强啊传奇耐熬王 |
+| 396 | `reminder.greeting.early` | Good morning | 早上好 |
+| 397 | `reminder.greeting.morning` | Good morning | 上午好 |
+| 398 | `reminder.greeting.noon` | Midday | 中午好 |
+| 399 | `reminder.greeting.afternoon` | Good afternoon | 下午好 |
+| 400 | `reminder.greeting.dusk` | End of the day | 傍晚了 |
+| 401 | `reminder.greeting.evening` | Good evening | 晚上好 |
+| 402 | `reminder.greeting.night` | Late night | 夜深了 |
+| 403 | `reminder.closing.dawn` |  | ⟨空⟩ |
+| 404 | `reminder.closing.early` |  | ⟨空⟩ |
+| 405 | `reminder.closing.morning` |  | ⟨空⟩ |
+| 406 | `reminder.closing.noon` |  | ⟨空⟩ |
+| 407 | `reminder.closing.afternoon` |  | ⟨空⟩ |
+| 408 | `reminder.closing.dusk` |  | ⟨空⟩ |
+| 409 | `reminder.closing.evening` |  | ⟨空⟩ |
+| 410 | `reminder.closing.night` |  | ⟨空⟩ |
+| 411 | `reminder.starting` | Starting today | 今天该开始 |
+| 412 | `reminder.dueSoon` | Coming up | 即将到期 |
+| 413 | `reminder.reportTitle` | Daily report | 日报 |
+| 414 | `reminder.reportEmpty` | Nothing outstanding today. | 今日无事 |
+| 415 | `reminder.reportYesterday` | Yesterday | 昨日 |
+| 416 | `reminder.reportToday` | Today | 今天 |
+| 417 | `reminder.reportRate` | Completion | 完成率 |
+| 418 | `reminder.groupTasks` | Tasks | 任务清单 |
+| 419 | `reminder.groupDeadlines` | Due & overdue | 到期与逾期 |
+| 420 | `reminder.testTitle` | WBS Gantt — test message | 看板 —— 测试消息 |
+| 421 | `reminder.testBody` | If you are reading this in WeChat, reminders are working. | 你能在微信里看到这条，就说明提醒已经配好了。 |
+| 422 | `reminder.nudgeLogs` | Remember to write logs for the tasks you have finished. | 记得为已经完成的任务填写日志。 |
+| 423 | `reminder.nudgeDebt` | {count} waiting on you — | 还有 {count} 项事项待处理，其中： |
+| 424 | `reminder.nudgeDebtLine` | - {count} {label} | - {count} 项{label} |
+| 425 | `reminder.nudgeTasks` | tasks | 任务 |
+| 426 | `reminder.ack` | Got it | 我知道了 |
+| 427 | `slot.early` | Morning | 早上 |
+| 428 | `slot.noon` | Noon | 中午 |
+| 429 | `slot.dusk` | Evening | 傍晚 |
+| 430 | `reminder.overdue` | Overdue | 已逾期 |
+| 431 | `reminder.dueToday` | Due today | 今天到期 |
+| 432 | `reminder.logsOwed` | Logs owed | 日志缺少 |
+| 433 | `reminder.chores` | Chores | 临时事务 |
+| 434 | `reminder.habits` | Routine | 日常安排 |
+| 435 | `update.check` | Check for updates | 检查更新 |
+| 436 | `update.checking` | Checking… | 检查中… |
+| 437 | `update.upToDate` | You are on the latest version. | 已是最新版本。 |
+| 438 | `update.availableShort` | An update is available. | 有可用更新。 |
+| 439 | `update.unreachable` | Automatic updates are unavailable because GitHub cannot be reached. | 由于无法连接到 GitHub，自动更新不可用。 |
+| 440 | `update.unreachableHide` | Hide for this run | 本次运行不显示 |
+| 441 | `update.webNote` | Automatic updates apply to the desktop app. In a browser you always load the latest build. | 自动更新只适用于桌面版；在浏览器里打开的始终是最新版本。 |
+| 442 | `update.availableTitle` | Update available | 发现新版本 |
+| 443 | `update.availableBody` | Version {version} has been released. You are on {current}. | 新版本 {version} 已发布，当前版本为 {current}。 |
+| 444 | `update.notes` | Release notes | 更新说明 |
+| 445 | `update.history` | Older releases this update brings along ({count}) | 本次将连带更新的历史版本内容（{count} 个版本） |
+| 446 | `update.historyTitle` | Release history | 历史版本更新说明 |
+| 447 | `update.historyLoading` | Loading… | 读取中… |
+| 448 | `update.historyFailed` | Could not read the release list from GitHub. | 没能从 GitHub 读到版本列表。 |
+| 449 | `update.noNotes` | This release came with no release notes. | 本次发布未填写更新说明。 |
+| 450 | `update.downloadAndInstall` | Update in background | 后台更新 |
+| 451 | `update.readyTitle` | Update downloaded | 更新已下载 |
+| 452 | `update.readyBody` | Version {version} has been downloaded. Restart now? | 新版本 {version} 已下载完成。立刻重启？ |
+| 453 | `update.now` | Restart now | 立刻重启 |
+| 454 | `update.installing` | Downloading… | 正在下载… |
+| 455 | `update.installFailed` | The update could not be installed: {message} | 更新安装失败：{message} |
+| 456 | `update.later` | Later | 以后再说 |
+| 457 | `update.snooze` | Ignore for {days} days | {days} 天内不再提醒 |
+| 458 | `update.nagTitle` | It has been a while | 已经很久没有更新了 |
+| 459 | `update.nagBody` | It has been over a month since this app last reached GitHub. Take a look for bug fixes and new features? | 要不要连上 GitHub 看一眼有没有 bug 修复和新功能呢？ |
+| 460 | `update.nagGo` | Go to Settings | 去设置看看 |
+| 461 | `update.connectTitle` | Want a stable GitHub connection? | 想稳定连接 GitHub？ |
+| 462 | `update.connectBody` | Watt Toolkit (formerly Steam++) is a free, open-source network accelerator. It speeds up both the GitHub website and Release downloads. | Watt Toolkit（原 Steam++）是免费开源的多平台网络加速工具，可以加速 GitHub 网页和 Release 下载。 |
+| 463 | `update.connectLink` | Download from steampp.net | 前往官网下载（steampp.net） |
+| 464 | `update.opensource` | GitHub is the largest home of open-source software — operating systems, frameworks, ready-made tools, most of it free to use, study and build on. This project’s source and releases live there too. | GitHub 是全球最大的开源社区，托管着数以亿计的开源项目 —— 从操作系统、开发框架到各类现成工具，绝大多数都可以免费使用、学习和二次开发。本项目的源码和版本更新也发布在这里。 |
+| 465 | `update.openRepo` | View on GitHub | 在 GitHub 上查看 |
+| 466 | `theme.graphite.name` | Graphite | 石墨 |
+| 467 | `theme.graphite.hint` | Near-black, neutral | 近黑 · 中性 |
+| 468 | `theme.slate.name` | Slate | 板岩 |
+| 469 | `theme.slate.hint` | Mid grey-blue, cool | 中灰蓝 · 偏冷 |
+| 470 | `theme.ember.name` | Ember | 余烬 |
+| 471 | `theme.ember.hint` | Hazel-black, warm | 榛黑 · 偏暖 |
+| 472 | `theme.paper.name` | Paper | 纸张 |
+| 473 | `theme.paper.hint` | Light, crisp | 浅色 · 清爽 |
+| 474 | `swatch.groupChrome` | Interface | 界面 |
+| 475 | `swatch.groupSignals` | Meaning | 语义 |
+| 476 | `swatch.bg` | Background | 底色 |
+| 477 | `swatch.panel` | Panel | 面板 |
+| 478 | `swatch.panel2` | Field | 输入框 |
+| 479 | `swatch.stripe` | Alt. row | 斑马行 |
+| 480 | `swatch.border` | Border | 边框 |
+| 481 | `swatch.line` | Divider | 分隔线 |
+| 482 | `swatch.fg` | Text | 正文 |
+| 483 | `swatch.muted` | Secondary text | 次要文字 |
+| 484 | `swatch.dim` | Faint text | 弱化文字 |
+| 485 | `swatch.accent` | Accent | 强调色 |
 
 ---
 

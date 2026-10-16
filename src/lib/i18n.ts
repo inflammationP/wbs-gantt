@@ -330,6 +330,7 @@ const en = {
   'archive.empty': 'Nothing archived yet.',
 
   // --- tasks ---
+  'task.add': 'Add',
   'task.addSubtask': 'Add subtask',
   'task.addSibling': 'Add sibling task',
   'task.new': 'New task',
@@ -970,6 +971,7 @@ const zh: Dict = {
   'archive.restoreAll': '全部取消归档（{count} 项）',
   'archive.empty': '还没有归档的任务',
 
+  'task.add': '添加',
   'task.addSubtask': '添加子任务',
   'task.addSibling': '添加同级任务',
   'task.new': '新建任务',
@@ -1549,6 +1551,7 @@ const fr: Dict = {
   'archive.restoreAll': 'Tout désarchiver ({count})',
   'archive.empty': 'Rien d’archivé pour l’instant.',
 
+  'task.add': 'Ajouter',
   'task.addSubtask': 'Ajouter une sous-tâche',
   'task.addSibling': 'Ajouter une tâche au même niveau',
   'task.new': 'Nouvelle tâche',

@@ -95,12 +95,20 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
   const taskStatus = eff?.status ?? 'not-started'
   const meta = STATUS_META[taskStatus]
   const prio = priorityMeta(task.priority)
-  // Filed away is read-only: every button below is either about the schedule it
-  // no longer has or about writing something new into it, and the row is not on
+  // Filed away is read-only about the *task*: every button below is either about
+  // the schedule it no longer has or about changing it, and the row is not on
   // the board for either. The way back is the one thing this panel offers, and
   // it is offered at the top.
   const filed = isArchived(task)
-  const isLoggable = !filed && (taskStatus === 'in-progress' || taskStatus === 'delayed')
+  // The log is the exception, and the reason is that it does not change the
+  // task: it says what happened, and what happened to finished work is still
+  // worth a line — which is the comment a completed or filed-away task takes,
+  // with no figure on it. See `LogDialog`, which is where being finished or
+  // filed is asked about. So the button is offered wherever the work has
+  // anything left to say, and only a to-do (no schedule, so nothing to write
+  // about) and a folder (its children's work, recorded on them) are without one.
+  const isLoggable = filed
+    || taskStatus === 'in-progress' || taskStatus === 'delayed' || taskStatus === 'completed'
   const pausedDays = task.paused && task.pauseDate ? Math.max(0, diffDays(toDate(task.pauseDate), new Date())) : 0
 
   // Parking wipes the schedule of the whole unfinished branch, so the count goes

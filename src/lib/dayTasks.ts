@@ -38,6 +38,31 @@ export interface DayRow {
   overdue: boolean
 }
 
+/**
+ * Whether a row on the day's list is struck through: this one is done with.
+ *
+ * Two ways to be done with, and only one of them was being read. A log written
+ * **today** strikes the row it is about, even at 35%: the ring printed over the
+ * list counts exactly those logs, and a row it credited that read as untouched
+ * would put the list at odds with the number above it.
+ *
+ * Being **finished** strikes the row whatever today's log says. A completed task
+ * inside its own window stays on the day's list — the list holds what the day is
+ * scheduled to do, and `strictLogObligations` has already stopped counting it,
+ * because that asks `progressBefore` — so striking it on today's log alone left
+ * the plainest kind of finished work reading as untouched: finished, listed, and
+ * owing nothing. See `DayRow.status`, which is the day's own reading of the task
+ * and reads `completed` for exactly these rows.
+ *
+ * Here rather than in the row that draws it, so the rule can be asserted
+ * (`check-day-obligations.mjs`) instead of inspected: the two halves agree by
+ * construction on every row this is asked about, and a row that is wrong is one
+ * line of text that looks like all the others.
+ */
+export function dayRowStruck(row: DayRow): boolean {
+  return row.status === 'completed' || row.hasLog
+}
+
 export interface DaySummary {
   /**
    * Every row, in one order — the list the day actually renders.

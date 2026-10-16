@@ -31,6 +31,25 @@ export interface Task {
   isTodo: boolean
   startDate: string | null // yyyy-MM-dd (null for long-term goals and to-dos)
   endDate: string | null // yyyy-MM-dd inclusive (null for long-term goals and to-dos)
+  /**
+   * The window this task had of its own, put aside for as long as it is a
+   * container.
+   *
+   * A phase parent has no window of its own — its dates *are* its children's
+   * span, and `syncParentDates` keeps the stored pair in step with that span
+   * because the bar and the axis read the stored pair rather than the derived
+   * one. Which makes the pair a cache; and a cache written over the thing it
+   * caches loses it for good. That is what happened: with a single child, the
+   * parent's own dates were replaced by that child's on the day it was added,
+   * and deleting the child again left the parent wearing them — an add and a
+   * delete that did not cancel out.
+   *
+   * So the pair the user set moves here on the write that first makes the task a
+   * container, and goes back onto the task on the write where it stops being
+   * one. While the task is a leaf — the only time those two fields are editable
+   * — this is always absent.
+   */
+  ownWindow?: { start: string | null; end: string | null }
   strictProgress: boolean // strict: progress accumulates only via daily logs
   // The days a simplified task (`strictProgress: false`) was ticked off, which
   // is the whole of its progress. Dates and nothing else: the point of the

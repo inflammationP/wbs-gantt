@@ -220,6 +220,38 @@ assert.equal(p2.endDate, '2026-09-25', 'and ends when its latest one does')
 // what stops the App effect that calls this from looping.
 assert.equal(syncParentDates(synced, []), synced, 'a settled board is returned unchanged, identity and all')
 
+// The other direction, and the half that was missing until this pair of
+// assertions: a task that gains a child and then loses it again has to end up
+// where it started.
+//
+// The stored pair on a container is a *cache* of its children's span — the bar
+// and the axis read it rather than the derived one — and it was being written
+// without the task's own pair being kept anywhere. So a task's own window was
+// gone the day it gained a child: with a single child, deleting it again left
+// the parent reading the dates of the child that had just been removed, and an
+// add followed by a delete did not cancel out. One child is the case that shows
+// it — with two, the survivor's span is a plausible answer either way.
+//
+// Driven through the store rather than through `syncParentDates` alone, because
+// the write is where the pair is put aside: asserting the function by hand would
+// cover the restore and skip the half that loses it.
+const solo = addTask({ name: 'solo', projectId: 'p', startDate: '2026-09-10', endDate: '2026-09-12' })
+const soloKid = addTask({ name: 'solo kid', parentId: solo, projectId: 'p', startDate: '2026-10-01', endDate: '2026-10-05' })
+const worn = board().find((t) => t.id === solo)
+assert.equal(worn.startDate, '2026-10-01', 'a parent wears its child’s span while it holds one')
+assert.deepEqual(
+  worn.ownWindow,
+  { start: '2026-09-10', end: '2026-09-12' },
+  'and its own window is put aside rather than overwritten',
+)
+useStore.getState().deleteTask(soloKid)
+const restored = board().find((t) => t.id === solo)
+assert.equal(restored.startDate, '2026-09-10', 'deleting the only child hands the parent back its own start')
+assert.equal(restored.endDate, '2026-09-12', 'and its own end')
+assert.equal(restored.ownWindow, undefined, 'and the put-aside window is spent, not left to be replayed')
+// Settled again after the round trip: the next write finds nothing to do.
+assert.equal(syncParentDates(board(), []), board(), 'the restore converges like everything else')
+
 // A parent whose children are all to-dos keeps its own dates — it is outside
 // the roll-up, so there is nothing to derive them from. This is the case that
 // decides whether the dialog may lock those two fields, and locking them here

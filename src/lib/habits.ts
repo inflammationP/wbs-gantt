@@ -92,6 +92,28 @@ export function tickedOn(habit: Habit, day: string): boolean {
 }
 
 /**
+ * Whether `day` still has a routine left to tick — the mark on the Gantt's
+ * daily-lane button.
+ *
+ * **Leaves only.** A heading is not something that can be ticked, so it is not
+ * asked. The answer would come out the same either way — a heading's `done` is
+ * its children's, so an unticked one implies an unticked child — but what is
+ * being asked is "is anything on today's list still unticked", not "is this
+ * group overdue", and the day's own fraction counts leaves for the same reason.
+ *
+ * Asked of the tree rather than of the flat list (`habitsOn`), and that *is* the
+ * difference in one case: a heading whose own days include today is on
+ * `habitsOn` with an empty `doneDays`, so the flat reading would call the day
+ * unfinished with every child under it ticked.
+ *
+ * A fact about the day, not about whether anyone has looked: the mark goes when
+ * the routines are ticked, which is the only thing that changes the answer.
+ */
+export function routineLeftOn(habits: Habit[], day: string): boolean {
+  return routineRows(habits, day).some((r) => !r.hasKids && !r.done)
+}
+
+/**
  * Every routine under `id`, itself included.
  *
  * What deleting one takes with it, and what the editor's parent picker has to

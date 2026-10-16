@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { Archive, CircleDashed, CornerUpLeft, NotebookText, Pause, Pencil, Play, Plus, RotateCcw, Trash2 } from 'lucide-react'
 import { RowTask, isArchived } from '../../lib/tree'
 import { useT } from '../../lib/useT'
+import { useDismiss } from '../../lib/useDismiss'
 
 export interface MenuState {
   x: number
@@ -38,6 +39,54 @@ function Item({ icon, label, onClick, danger }: { icon: ReactNode; label: string
       {icon}
       {label}
     </button>
+  )
+}
+
+/**
+ * The two places a new task can go, for the "+" on a row's own toolbar.
+ *
+ * The same two items the context menu carries, in the same order and the same
+ * words, because it is the same question — the row's "+" used to answer it
+ * without asking, and it answered "under this one" every time. A "+" on a row
+ * says *something goes here*; "here" has two readings, they are different
+ * dialogs, and the one that is chosen by default is the one that is wrong for
+ * every reader who meant the other. So it asks.
+ *
+ * Drawn like the context menu, one row of icons deep, because it is one: same
+ * panel, same shadow, same width, and the same two labels in the same order. Two
+ * menus that open from the same table should not look like two different things.
+ *
+ * The press on the "+" itself is left to the "+" — see `useDismiss` — so the
+ * button puts the menu away as readily as it brings it up.
+ */
+export function AddMenu({ row, at, onClose, onAddChild, onAddSibling }: {
+  row: RowTask
+  /** The trigger's bottom-left corner, in viewport coordinates. */
+  at: { x: number; y: number }
+  onClose: () => void
+  onAddChild: (row: RowTask) => void
+  onAddSibling: (row: RowTask) => void
+}) {
+  const t = useT()
+  useDismiss('[data-add-menu], [data-add-toggle]', onClose)
+
+  // The context menu's own width and clamping: the two are the same panel with
+  // different lengths, and a menu that ran off the window would be one the
+  // reader has to scroll the board to read.
+  const w = 190
+  const left = Math.min(at.x, window.innerWidth - w - 8)
+  const top = Math.min(at.y + 2, window.innerHeight - 72)
+
+  return createPortal(
+    <div
+      data-add-menu
+      className="fixed z-[70] bg-panel border border-border rounded-[3px] shadow-2xl py-1"
+      style={{ left, top, width: w }}
+    >
+      <Item icon={<Plus size={13} />} label={t('task.addSubtask')} onClick={() => { onAddChild(row); onClose() }} />
+      <Item icon={<Plus size={13} />} label={t('task.addSibling')} onClick={() => { onAddSibling(row); onClose() }} />
+    </div>,
+    document.body,
   )
 }
 
@@ -95,8 +144,14 @@ export function ContextMenu({ menu, onClose, onAddChild, onAddSibling, onEdit, o
             open a dialog that refuses to render, so the item would do nothing
             at all — and a menu entry that does nothing is worse than one that
             was never there. The panel is where the reason is legible: it says
-            the progress is rolled up from the children. */}
-        {!menu.row.hasKids && (menu.row.eff.status === 'in-progress' || menu.row.eff.status === 'delayed') ? (
+            the progress is rolled up from the children.
+
+            Finished work is on the list, and it is the same item: the dialog
+            asks a task that is not running for no figure, so what it writes is
+            a comment — see `running` in `LogDialog`. A to-do is not on it: it
+            has no schedule, so there is no window for a day of it to be part
+            of, and `taskProgress` reads nothing back for one. */}
+        {!menu.row.hasKids && (menu.row.eff.status === 'in-progress' || menu.row.eff.status === 'delayed' || menu.row.eff.status === 'completed') ? (
           <Item icon={<NotebookText size={13} />} label={t('log.write')} onClick={() => { onWriteLog(menu.row); onClose() }} />
         ) : null}
         <Item icon={<CornerUpLeft size={13} />} label={t('gantt.moveToTopLevel')} onClick={() => { onOutdent(menu.row); onClose() }} />

@@ -19,7 +19,7 @@ import assert from 'node:assert/strict'
 import { createServer } from 'vite'
 
 const server = await createServer({ server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' })
-const { strictLogObligations, daySummary } = await server.ssrLoadModule('/src/lib/dayTasks.ts')
+const { strictLogObligations, daySummary, dayRowStruck } = await server.ssrLoadModule('/src/lib/dayTasks.ts')
 const { taskProgress } = await server.ssrLoadModule('/src/lib/progress.ts')
 
 const TODAY = '2026-09-15'
@@ -196,6 +196,43 @@ assert.deepEqual(
   parentPath(['上一级', '中间', '更中间', '最高级']),
   ['最高级', '(...)', '上一级'],
 )
+
+// --- what the day's list strikes through -------------------------------------
+
+// The strike says "done with", and there are two ways a row on this list is: it
+// was written about today, or it is finished. Only the first was drawn, and the
+// second is the one that shows — a task completed inside its own window stays on
+// the day's list (the list is what the day is scheduled to do, and the ring has
+// already stopped counting it), so it sat there reading as untouched work.
+//
+// Rows with their own logs, rather than `rowsFor` above: what a row looks like
+// depends on which of them were written today.
+const rowsWith = (tasks, logs, day = TODAY) => daySummary(tasks, logs, PROJECTS, day, day).all
+const rowOf = (tasks, logs, id, day = TODAY) => rowsWith(tasks, logs, day).find((r) => r.task.id === id)
+
+// Finished nine days ago and still inside its window: listed, owing nothing, and
+// struck because it is done.
+const doneLong = task({ id: 'doneLong', endDate: '2026-09-20' })
+const doneRow = rowOf([doneLong], [log('doneLong', '2026-09-06', 100)], 'doneLong')
+assert.equal(doneRow.status, 'completed', 'the row reads completed')
+assert.equal(doneRow.hasLog, false, 'and today is not a day it was written about')
+assert.deepEqual(owes([doneLong], [log('doneLong', '2026-09-06', 100)]), [], 'and nothing is owed on it')
+assert.equal(dayRowStruck(doneRow), true, 'so the strike has to come from being finished')
+
+// A strict task logged today at 35%: struck too, and that is the half that
+// already worked — the ring over the list counts exactly these rows, and one it
+// credited must not read as untouched.
+const partial = task({ id: 'partial' })
+const partialRow = rowOf([partial], [log('partial', TODAY, 35)], 'partial')
+assert.equal(partialRow.hasLog, true)
+assert.equal(dayRowStruck(partialRow), true, 'a log written today strikes the row it is about')
+
+// A plain task is struck by the day's ticks and not before, so the rule is not
+// simply "true on this list".
+const plain = task({ id: 'plain', strictProgress: false, startDate: '2026-09-15', endDate: '2026-09-15' })
+assert.equal(dayRowStruck(rowOf([plain], [], 'plain')), false, 'unfinished work is not struck')
+const ticked = task({ id: 'ticked', strictProgress: false, startDate: '2026-09-15', endDate: '2026-09-15', confirmedDays: ['2026-09-15'] })
+assert.equal(dayRowStruck(rowOf([ticked], [], 'ticked')), true, 'and a day that finishes it does')
 
 await server.close()
 console.log('day obligations: ok')
