@@ -197,27 +197,29 @@ assert.deepEqual(
   ['最高级', '(...)', '上一级'],
 )
 
-// --- what the day's list strikes through -------------------------------------
+// --- what the day's list holds and strikes through ---------------------------
 
 // The strike says "done with", and there are two ways a row on this list is: it
 // was written about today, or it is finished. Only the first was drawn, and the
-// second is the one that shows — a task completed inside its own window stays on
-// the day's list (the list is what the day is scheduled to do, and the ring has
-// already stopped counting it), so it sat there reading as untouched work.
+// second is the one that shows.
 //
 // Rows with their own logs, rather than `rowsFor` above: what a row looks like
 // depends on which of them were written today.
 const rowsWith = (tasks, logs, day = TODAY) => daySummary(tasks, logs, PROJECTS, day, day).all
 const rowOf = (tasks, logs, id, day = TODAY) => rowsWith(tasks, logs, day).find((r) => r.task.id === id)
 
-// Finished nine days ago and still inside its window: listed, owing nothing, and
-// struck because it is done.
-const doneLong = task({ id: 'doneLong', endDate: '2026-09-20' })
-const doneRow = rowOf([doneLong], [log('doneLong', '2026-09-06', 100)], 'doneLong')
-assert.equal(doneRow.status, 'completed', 'the row reads completed')
-assert.equal(doneRow.hasLog, false, 'and today is not a day it was written about')
-assert.deepEqual(owes([doneLong], [log('doneLong', '2026-09-06', 100)]), [], 'and nothing is owed on it')
-assert.equal(dayRowStruck(doneRow), true, 'so the strike has to come from being finished')
+// Finished early, still inside its window: listed on the day it was finished —
+// that is the day its number reached 100 — and gone the day after. Completing
+// early does not shorten `endDate`, so the task stays in its own window for
+// another fortnight; the list follows the work, not the plan's upper bound.
+const early = task({ id: 'early', endDate: '2026-09-20' })
+const earlyLogs = [log('early', '2026-09-06', 100)]
+const earlyRow = rowOf([early], earlyLogs, 'early', '2026-09-06')
+assert.equal(earlyRow.status, 'completed', 'the row reads completed on the day it finished')
+assert.equal(earlyRow.hasLog, true, 'and that is the day it was written about')
+assert.deepEqual(ids(owes([early], earlyLogs, '2026-09-06')), ['early'], 'the day it finished still owed its log')
+assert.equal(dayRowStruck(earlyRow), true, 'so the strike has to come from being finished')
+assert.equal(rowOf([early], earlyLogs, 'early', '2026-09-07'), undefined, 'and the next day the row is gone')
 
 // A strict task logged today at 35%: struck too, and that is the half that
 // already worked — the ring over the list counts exactly these rows, and one it

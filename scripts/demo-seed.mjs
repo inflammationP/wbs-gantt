@@ -239,6 +239,13 @@ assert.ok(drawer, 'nothing is filed away, so the demo board shows no archive at 
 assert.equal(drawer.count, 3, 'the drawer counts the branch, not the lines it draws')
 assert.deepEqual(drawer.taskIds, ['co-found'], 'one branch → one row, and only the root has the way back')
 
+// ...and something deep enough to show what the left column does with depth:
+// every level steps right and the rails carry the hierarchy. A board that never
+// goes past three levels would import perfectly and demonstrate none of it,
+// which is the failure this file is for.
+const deepest = Math.max(...rows.filter((r) => r.kind === 'task').map((r) => r.depth))
+assert.ok(deepest > 5, `the deepest row is only ${deepest} deep, so the indent cap never draws`)
+
 // Ready to be filed away: complete, still on the board, and carrying one
 // unfinished to-do — which is what the confirmation has to own up to.
 const eff = effectiveStates(loaded.tasks, loaded.logs)

@@ -749,13 +749,20 @@ function ChoreComposer({ day, onAdd }: { day: string; onAdd: (title: string, slo
   )
 }
 
-function ChoreRow({
+export function ChoreRow({
   chore,
   today,
+  editable = true,
   onWriteLog,
 }: {
   chore: Chore
   today: string
+  /**
+   * Whether the pencil is offered. The Gantt's bubble leaves it off, exactly as
+   * it does for `HabitLine`: a chore is written where it is written, and a
+   * second editor would be a second place for one chore to be described.
+   */
+  editable?: boolean
   /** Today's entry about this chore. Absent on a board that may not write. */
   onWriteLog?: () => void
 }) {
@@ -817,14 +824,16 @@ function ChoreRow({
         </button>
       )}
 
-      <button
-        onClick={() => setEditing(true)}
-        title={t('chore.edit')}
-        aria-label={t('chore.edit')}
-        className="shrink-0 mt-[1px] p-0.5 rounded-[3px] text-dim hover:text-fg opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
-      >
-        <Pencil size={12} />
-      </button>
+      {editable && (
+        <button
+          onClick={() => setEditing(true)}
+          title={t('chore.edit')}
+          aria-label={t('chore.edit')}
+          className="shrink-0 mt-[1px] p-0.5 rounded-[3px] text-dim hover:text-fg opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+        >
+          <Pencil size={12} />
+        </button>
+      )}
 
       {editing && <ChoreDialog chore={chore} onClose={() => setEditing(false)} />}
     </div>

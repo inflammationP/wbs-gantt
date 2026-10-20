@@ -125,6 +125,20 @@ const SPECS: Spec[] = [
   { id: 'stm-aim', name: 'Auto-aim algorithm', parent: 'stm-fw', project: 'stm32', start: 28, end: 72, priority: 'top', dependencies: ['team-vision'], desc: 'Top priority, and depends on a task in **another** project — a dependency is an id, so nothing stops it crossing projects, and the panel resolves it wherever it lives.' },
   { id: 'stm-test', name: 'Integration testing', project: 'stm32', start: 56, end: 76, order: 2 },
   { id: 'stm-field', name: 'Field test', parent: 'stm-test', project: 'stm32', start: 56, end: 76 },
+
+  // --- Deliberately eight levels deep. ---
+  // The left column keeps indenting at every level, so this branch is what shows
+  // how a deep tree reads: the rails carry the depth, and the name is what gives
+  // way once the indentation has spent the column. Nothing else in this dataset
+  // reaches that depth. A pure chain, because depth is the point.
+  { id: 'stm-bench', name: 'Test bench', project: 'stm32', start: 0, end: 6, order: 3, desc: 'The deep branch: expand it to see the indent keep stepping right, or focus a parent to re-base its children at the top level.' },
+  { id: 'stm-bench-frame', name: 'Rig frame', parent: 'stm-bench', project: 'stm32', start: 0, end: 6 },
+  { id: 'stm-bench-frame-fixture', name: 'Fixture', parent: 'stm-bench-frame', project: 'stm32', start: 0, end: 6 },
+  { id: 'stm-bench-frame-fixture-mount', name: 'Motor mount', parent: 'stm-bench-frame-fixture', project: 'stm32', start: 0, end: 6 },
+  { id: 'stm-bench-frame-fixture-mount-screw', name: 'Screw pattern', parent: 'stm-bench-frame-fixture-mount', project: 'stm32', start: 0, end: 6 },
+  { id: 'stm-bench-frame-fixture-mount-screw-m3', name: 'M3 clearance', parent: 'stm-bench-frame-fixture-mount-screw', project: 'stm32', start: 0, end: 6 },
+  { id: 'stm-bench-frame-fixture-mount-screw-m3-check', name: 'Datasheet check', parent: 'stm-bench-frame-fixture-mount-screw-m3', project: 'stm32', start: 0, end: 6 },
+  { id: 'stm-bench-frame-fixture-mount-screw-m3-check-rev', name: 'Revise the drawing', parent: 'stm-bench-frame-fixture-mount-screw-m3-check', project: 'stm32', start: 0, end: 6, confirmed: [0] },
   { id: 'stm-todo-mosfet', name: 'Pick a MOSFET', parent: 'stm-chassis', project: 'stm32', isTodo: true, desc: 'Unscheduled to-do parked under a scheduled parent.' },
   { id: 'stm-todo-encoder', name: 'Pick an encoder', parent: 'stm-chassis', project: 'stm32', isTodo: true, desc: 'The second one under the same parent — which is what makes the two of them a folder rather than two loose rows. It is named below, in `TODO_FOLDERS`.' },
 

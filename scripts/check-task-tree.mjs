@@ -43,7 +43,7 @@ const server = await createServer({
   // ever generated and buries the one line this prints.
   optimizeDeps: { entries: [] },
 })
-const { compareSiblings, effectiveStates, nameQualifiers, placeTasks, syncParentDates } = await server.ssrLoadModule('/src/lib/tree.ts')
+const { buildRows, compareSiblings, effectiveStates, nameQualifiers, placeTasks, syncParentDates } = await server.ssrLoadModule('/src/lib/tree.ts')
 const { useStore } = await server.ssrLoadModule('/src/store/useStore.ts')
 const { readPriority } = await server.ssrLoadModule('/src/store/storage.ts')
 
@@ -504,6 +504,22 @@ const cyclic = [N('c1', 'one', 'c2'), N('c2', 'one', 'c1')]
 const cyc = nameQualifiers(cyclic, cyclic)
 assert.deepEqual(cyc.get('c1'), ['one'], 'a cycle is walked once, not forever')
 assert.deepEqual(cyc.get('c2'), ['one'])
+
+// --- the path each row carries ----------------------------------------------
+
+// Once the Gantt's indent stops growing, the nearest parent's name in front of
+// a row is what says where it sits, and the hover prints the whole chain. The
+// order is the day list's: nearest parent first.
+const chained = buildRows(
+  [N('root', 'root'), N('mid', 'mid', 'root'), N('leaf', 'leaf', 'mid')],
+  {},
+  [],
+  [],
+)
+const ancestorsOf = (id) => chained.find((r) => r.id === id).ancestors
+assert.deepEqual(ancestorsOf('leaf'), ['mid', 'root'])
+assert.deepEqual(ancestorsOf('mid'), ['root'])
+assert.deepEqual(ancestorsOf('root'), [], 'a top-level row has no chain to print')
 
 // The priority a saved file carries, read at the trust boundary. It lives in
 // this file because nothing else loads the loader, and it is here at all because

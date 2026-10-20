@@ -209,6 +209,9 @@ const en = {
   'gantt.pickDate': 'Click any date to open its day detail',
   'gantt.writeLogForDay': 'Write a log for this day',
   'gantt.moveToTopLevel': 'Move to top level',
+  'gantt.taskTree': 'Task tree',
+  'taskTree.taskCount': { one: '{count} task', other: '{count} tasks' },
+  'taskTree.subtasks': { one: '{count} subtask', other: '{count} subtasks' },
   // The idle label of the mode toggle. It used to say "Organize", and it was
   // changed because the mode now holds the project-level move as well — a button
   // naming one of the two jobs in it would be a button that lies about the
@@ -879,6 +882,9 @@ const zh: Dict = {
   'gantt.pickDate': '点击任意日期查看当天详情',
   'gantt.writeLogForDay': '为这一天写日志',
   'gantt.moveToTopLevel': '移到顶层',
+  'gantt.taskTree': '任务树',
+  'taskTree.taskCount': { one: '{count} 个任务', other: '{count} 个任务' },
+  'taskTree.subtasks': { one: '{count} 个子任务', other: '{count} 个子任务' },
   'gantt.editDone': '完成',
   'gantt.editMode': '编辑模式',
   'gantt.selected': { one: '已选 {count} 项', other: '已选 {count} 项' },
@@ -1451,6 +1457,9 @@ const fr: Dict = {
   'gantt.pickDate': 'Cliquez sur une date pour ouvrir le détail du jour',
   'gantt.writeLogForDay': 'Écrire un journal pour ce jour',
   'gantt.moveToTopLevel': 'Déplacer au niveau supérieur',
+  'gantt.taskTree': 'Arbre des tâches',
+  'taskTree.taskCount': { one: '{count} tâche', other: '{count} tâches' },
+  'taskTree.subtasks': { one: '{count} sous-tâche', other: '{count} sous-tâches' },
   'gantt.editDone': 'Terminé',
   'gantt.editMode': 'Mode édition',
   'gantt.selected': { one: '{count} sélectionnée', other: '{count} sélectionnées' },

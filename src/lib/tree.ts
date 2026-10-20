@@ -975,6 +975,12 @@ export interface RowTask {
   task: Task
   depth: number
   wbs: string
+  /**
+   * Names above this row, nearest parent first — the same list `daySummary`
+   * builds. The row prints the whole chain on hover, and the focused view keeps
+   * the way back in its breadcrumb.
+   */
+  ancestors: string[]
   eff: EffState
   hasKids: boolean
   isLeaf: boolean
@@ -1156,6 +1162,10 @@ export function buildRows(tasks: Task[], expanded: Record<string, boolean>, proj
   // split in `daySummary`.
   const live = liveTasks(tasks)
   const children = buildChildrenMap(live)
+  const byId = new Map(live.map((t) => [t.id, t]))
+  // The archive drawer walks every task, filed-away parents included, so its
+  // rows read their chain from the whole board rather than from what is live.
+  const allById = new Map(tasks.map((t) => [t.id, t]))
   const eff = effectiveStates(tasks, logs)
 
   // WBS is computed per-project so numbering restarts cleanly in multi-project
@@ -1194,6 +1204,7 @@ export function buildRows(tasks: Task[], expanded: Record<string, boolean>, proj
       task: t,
       depth,
       wbs: wbs.get(t.id) ?? '',
+      ancestors: ancestorNames(t, byId),
       eff: eff.get(t.id)!,
       hasKids: kids.length > 0,
       isLeaf: kids.length === 0,
@@ -1354,6 +1365,7 @@ export function buildRows(tasks: Task[], expanded: Record<string, boolean>, proj
           id: t.id,
           task: t,
           depth,
+          ancestors: ancestorNames(t, allById),
           // No number to print: an archived task has left the numbering, and
           // inventing one here would disagree with the WBS the day the branch
           // comes back. The cell stays empty rather than carrying a placeholder,

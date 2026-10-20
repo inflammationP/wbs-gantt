@@ -34,7 +34,6 @@ export interface DayRow {
   /** Whether the day can still be ticked — it happened, and the task was on. */
   tickable: boolean
   pausedToday: boolean
-  completedBefore: boolean
   overdue: boolean
 }
 
@@ -46,10 +45,9 @@ export interface DayRow {
  * list counts exactly those logs, and a row it credited that read as untouched
  * would put the list at odds with the number above it.
  *
- * Being **finished** strikes the row whatever today's log says. A completed task
- * inside its own window stays on the day's list — the list holds what the day is
- * scheduled to do, and `strictLogObligations` has already stopped counting it,
- * because that asks `progressBefore` — so striking it on today's log alone left
+ * Being **finished** strikes the row whatever today's log says. The list keeps a
+ * finished task only on the day it was finished, and a simplified task's day can
+ * be ticked through with no log at all — so striking on today's log alone left
  * the plainest kind of finished work reading as untouched: finished, listed, and
  * owing nothing. See `DayRow.status`, which is the day's own reading of the task
  * and reads `completed` for exactly these rows.
@@ -472,6 +470,12 @@ export function daySummary(
     // parent roll-up the rows are annotated with — still runs over every task,
     // so archiving a finished branch moves no number on any card.
     if (t.isTodo || isArchived(t) || t.startDate == null) continue
+    // Already finished when the day began: it belongs to the day it was
+    // finished and to no later one. The test is `progressBefore`, so that day
+    // still lists it (the number reaches 100 on it) while the rest of the
+    // original window — which completing early does not shorten — stops
+    // carrying a row for work that is over.
+    if (progressBefore(t, clipped, day) >= 100) continue
     const st = states.get(t.id)
     if (!st) continue
     const active = activeOnDay(t, day)
@@ -506,7 +510,6 @@ export function daySummary(
       // never on a day the task was off.
       tickable: plain && active && !pausedToday && day <= today,
       pausedToday,
-      completedBefore: progressBefore(t, clipped, day) >= 100,
       overdue,
     })
   }

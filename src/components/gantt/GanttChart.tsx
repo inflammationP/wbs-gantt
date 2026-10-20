@@ -111,10 +111,13 @@ interface Props {
   onContext: (e: MouseEvent<HTMLDivElement>, row: RowTask) => void
   /** A row's "+", with the corner it was pressed at: the page opens the menu. */
   onAddMenu: (row: RowTask, at: { x: number; y: number }) => void
-  /** Whether the daily bubble is up — it is owned by the page, with the menus. */
+  /** Whether the routine bubble is up — it is owned by the page, with the menus. */
   dailyOpen: boolean
-  /** The column header's daily-lane button, with the corner it was pressed at. */
+  /** Whether the chore bubble is up, on the same terms. */
+  choresOpen: boolean
+  /** The column header's two buttons, each with the corner it was pressed at. */
   onToggleDaily: (at: { x: number; y: number }) => void
+  onToggleChores: (at: { x: number; y: number }) => void
   /**
    * A sibling of the row — same parent, same project, same kind. A to-do's "+"
    * is this one, added on the spot rather than offered: a to-do has no children
@@ -125,7 +128,7 @@ interface Props {
   onArchive: (row: RowTask) => void
 }
 
-export function GanttChart({ rows, range, todo, archived, editing, sel, onSel, onContext, onAddMenu, onAddSibling, onEdit, onArchive, dailyOpen, onToggleDaily }: Props) {
+export function GanttChart({ rows, range, todo, archived, editing, sel, onSel, onContext, onAddMenu, onAddSibling, onEdit, onArchive, dailyOpen, choresOpen, onToggleDaily, onToggleChores }: Props) {
   const t = useT()
   const lang = useLang()
   const viewMode = useStore((s) => s.viewMode)
@@ -681,7 +684,12 @@ export function GanttChart({ rows, range, todo, archived, editing, sel, onSel, o
         <div className="sticky left-0 z-30 backdrop-blur-[6px]" style={{ width: leftWidth }}>
           {/* left header */}
           <div className="sticky top-0 z-20 bg-panel/30 backdrop-blur-[6px] border-b border-border" style={{ height: HEADER_H }}>
-            <LeftHeader dailyOpen={dailyOpen} onToggleDaily={onToggleDaily} />
+            <LeftHeader
+              dailyOpen={dailyOpen}
+              choresOpen={choresOpen}
+              onToggleDaily={onToggleDaily}
+              onToggleChores={onToggleChores}
+            />
           </div>
           {/* left rows */}
           {shownRows.map((row, i) => (

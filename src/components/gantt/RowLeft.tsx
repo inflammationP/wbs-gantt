@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { Row, RowArchiveGroup, RowProject, RowTask, RowTodoGroup, isArchived } from '../../lib/tree'
 import { routineLeftOn } from '../../lib/habits'
+import { todaysChores } from '../../lib/chores'
 import { STATUS_META, priorityWash, sig, sigAlpha, sigText } from '../../lib/ui'
 import { useStore } from '../../store/useStore'
 import { useT } from '../../lib/useT'
@@ -28,19 +29,58 @@ export const LEFT_WIDTH = 560
 const COLS = { chevron: 20, wbs: 44, progress: 48, status: 96, actions: 108 }
 
 // Per-level indentation applied to the whole tree area (chevron + WBS + name).
-const INDENT = 16
+// It keeps going however deep the tree goes: depth is the one thing a row must
+// never lie about, even at the cost of a deep row's name running out of room.
+const INDENT = 12
 
 // Width of the glyph slot in front of every name, so the names themselves all
 // start at the same x whatever marks them.
 const GLYPH_W = 16
 
-// Name font size/weight by hierarchy level: 0 = top ("1"), 1 = child ("1.1"),
-// 2 = grandchild and deeper ("1.1.1"+). Differences shrink with depth.
-const NAME_CLASS = [
-  'text-[17px] font-bold text-fg',
-  'text-[13px] font-medium text-fg',
-  'text-[12px] text-fg/90',
-]
+// Name font size/weight by hierarchy level: 0 is a root and reads as a heading,
+// everything below it is one size. It used to step down again at the second
+// level; depth is the indent's and the rails' job, and shrinking the text only
+// made the deepest work harder to read.
+const NAME_CLASS = ['text-[17px] font-bold text-fg', 'text-[12px] text-fg/90']
+
+/**
+ * The hierarchy indent, with a hairline under each ancestor's chevron column
+ * and a join into this row.
+ *
+ * The rails keep a deep row's place legible when its name has been pushed far
+ * to the right: the vertical line under each ancestor's chevron says which
+ * branch the row is in, down to any depth. Each row draws only its own
+ * segments, but the rows are adjacent and full-height, so they stack into a
+ * continuous rail down a branch.
+ */
+function Indent({ depth }: { depth: number }) {
+  return (
+    <div className="relative shrink-0" style={{ width: depth * INDENT }}>
+      {Array.from({ length: depth }, (_, i) => (
+        <span
+          key={i}
+          aria-hidden
+          className="absolute inset-y-0 w-px bg-dim/70"
+          style={{ left: i * INDENT + COLS.chevron / 2 }}
+        />
+      ))}
+      {/* The join into this row, from the last rail towards its chevron — the
+          horizontal half of `├` / `└`. It stops where the glyph slot starts
+          (the cell's 4px padding), so it never runs under the arrow. */}
+      {depth > 0 && (
+        <span
+          aria-hidden
+          className="absolute h-px bg-dim/70"
+          style={{
+            left: (depth - 1) * INDENT + COLS.chevron / 2,
+            top: '50%',
+            width: INDENT / 2,
+          }}
+        />
+      )}
+    </div>
+  )
+}
 
 // The to-do folder's own two actions, owned by GanttPage. There is no selection
 // to pass: a folder is a handful of rows and both act on all of them.
@@ -168,6 +208,8 @@ export function RowLeft({ row, todo, archived, editing, picked, onRowClick, onAd
   // Filed away: off the board and read-only. The only two things such a row
   // keeps are the way back and the bin.
   const filed = isArchived(row.task)
+  // The full chain, for the hover — the same shape the day list prints.
+  const path = [...row.ancestors].reverse().concat(row.task.name).join(t('common.pathSeparator'))
 
   const handleDelete = (e: MouseEvent) => {
     e.stopPropagation()
@@ -221,7 +263,7 @@ export function RowLeft({ row, todo, archived, editing, picked, onRowClick, onAd
         </button>
       )}
       {/* hierarchy indent — shifts chevron + WBS + name as a unit */}
-      <div className="shrink-0" style={{ width: row.depth * INDENT }} />
+      <Indent depth={row.depth} />
       {/* chevron */}
       <div className="shrink-0 flex items-center justify-center" style={{ width: COLS.chevron }}>
         {row.hasKids ? (
@@ -230,8 +272,14 @@ export function RowLeft({ row, todo, archived, editing, picked, onRowClick, onAd
           </button>
         ) : null}
       </div>
-      {/* WBS */}
-      <div className="shrink-0 flex items-center justify-end pr-1.5 font-mono text-[11px] text-dim" style={{ width: COLS.wbs }}>
+      {/* WBS — clipped from the left once it outgrows the cell, so the tail
+          (the row's own number) is what stays readable. The full number is in
+          the hover. */}
+      <div
+        className="shrink-0 flex items-center justify-end overflow-hidden pr-1.5 font-mono text-[11px] text-dim"
+        style={{ width: COLS.wbs }}
+        title={row.wbs || undefined}
+      >
         {row.wbs}
       </div>
       {/* The pick circle, and in editing mode the only way to pick a row.
@@ -252,7 +300,7 @@ export function RowLeft({ row, todo, archived, editing, picked, onRowClick, onAd
         </button>
       )}
       {/* name — to-dos get a dashed chip so unscheduled work is unmistakable */}
-      <div className="flex-1 min-w-0 flex items-center gap-1.5 pr-1">
+      <div className="flex-1 min-w-0 flex items-center gap-1.5 pr-1" title={path}>
         {/* Fixed-width glyph slot: the project dot, the to-do ring and the
             folder icon are different widths, and without this the names below
             them start at different x positions. */}
@@ -274,7 +322,7 @@ export function RowLeft({ row, todo, archived, editing, picked, onRowClick, onAd
           )}
         </span>
         <span
-          className={`truncate ${NAME_CLASS[Math.min(row.depth, 2)]} ${
+          className={`min-w-0 truncate ${NAME_CLASS[row.depth === 0 ? 0 : 1]} ${
             // Outline, not border: a border plus its padding would push the
             // to-do's text ~6px right of every other name in the column.
             isTodo ? 'rounded-[3px] outline outline-1 outline-dashed outline-offset-2' : ''
@@ -297,7 +345,7 @@ export function RowLeft({ row, todo, archived, editing, picked, onRowClick, onAd
           offers two: the things it could be asked to do have all been said, and
           changing one means bringing it back first. */}
       <div className="shrink-0 flex items-center justify-end pr-1 gap-0.5" style={{ width: COLS.actions }}>
-        <div className={`flex items-center gap-0.5 transition-opacity ${selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+        <div className={`flex items-center gap-0.5 transition-opacity has-[:focus-visible]:opacity-100 ${selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
           {/* The "+" means "another task at this place", and where "this place"
               is has two answers: under this row, or beside it. A full task row
               is asked which — see `AddMenu`, which is the same pair the context
@@ -398,7 +446,7 @@ function TodoGroupRow({
       onClick={() => onToggleExpanded(row.id)}
       title={isExpanded ? t('common.collapse') : t('common.expand')}
     >
-      <div className="shrink-0" style={{ width: row.depth * INDENT }} />
+      <Indent depth={row.depth} />
       <div className="shrink-0 flex items-center justify-center" style={{ width: COLS.chevron }}>
         <span className="text-dim">{isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>
       </div>
@@ -621,95 +669,73 @@ function ProjectRow({
 }
 
 /**
- * The column header, and the one thing on it that is not a column label: the
- * daily lane's switch.
+ * The column header, and the two things on it that are not column labels: the
+ * switches for today's routines and today's chores.
  *
- * It is here because the lane has no columns to be drawn in. The rows below are
- * a table — a WBS number, a name, a progress and a status — and today's routines
- * have none of those four, so a row of the tree is the one place they cannot go:
- * a name at 13px beside a WBS number claims both. A button on the header claims
- * neither.
+ * They are here because neither list has columns to be drawn in. The rows below
+ * are a table — a WBS number, a name, a progress and a status — and routines and
+ * chores have none of those four, so a row of the tree is the one place they
+ * cannot go: a name at 13px beside a WBS number claims both. A button on the
+ * header claims neither.
  *
  * **In the corner, on the row above the labels.** The labels sit on the header's
  * bottom edge, each at the left of the column it names, and that row is the
  * table's own: a button placed in it — beside a label, or in a cell of its own —
  * would either read as another column or push the labels off the columns they
  * belong to. The top of the header is empty in every column, and there is
- * nothing there to disturb. It is on the left because the bubble opens off the
+ * nothing there to disturb. It is on the left because each bubble opens off its
  * button's right edge: from the corner it has the whole width of the board to
  * hang in, and the labels stay under it where they were.
  *
- * **Tinted with the accent, thinly.** It has to be told apart from the header it
- * sits on, and the header is the quietest surface in the app — but it is a
- * thing to press at the top of a table, not a banner, so it wears the accent at
- * the weight the archive drawer wears it (`bg-accent/[0.07]`): a colour already
- * in the palette, faint enough to sit still, and not one of the six signals,
- * which say a status and are spent on the rows below.
+ * **Tinted with the accent, thinly.** They have to be told apart from the header
+ * they sit on, and the header is the quietest surface in the app — but they are
+ * things to press at the top of a table, not a banner, so they wear the accent
+ * at the weight the archive drawer wears it (`bg-accent/[0.07]`): a colour
+ * already in the palette, faint enough to sit still, and not one of the six
+ * signals, which say a status and are spent on the rows below.
  */
-export function LeftHeader({ dailyOpen, onToggleDaily }: {
+export function LeftHeader({ dailyOpen, choresOpen, onToggleDaily, onToggleChores }: {
   dailyOpen: boolean
+  choresOpen: boolean
   /** Given the button's own top-right corner: the bubble opens off it, and the
    *  vertical of that corner is where its tail points. */
   onToggleDaily: (at: { x: number; y: number }) => void
+  onToggleChores: (at: { x: number; y: number }) => void
 }) {
   const t = useT()
   const expandAll = useStore((s) => s.expandAll)
   const collapseAll = useStore((s) => s.collapseAll)
   const habits = useStore((s) => s.habits)
+  const chores = useStore((s) => s.chores)
   const today = useStore((s) => s.today)
-  // The day still has routines on it. The same `bg-delayed` mark the sidebar
+  // The day still has something on it. The same `bg-delayed` mark the sidebar
   // wears for "there is something waiting", and the only thing it says here:
-  // nothing else on this row is about the daily lane, so a mark in its corner
-  // can only be about the button under it.
-  const left = routineLeftOn(habits, today)
+  // nothing else on this row is about these two lists, so a mark in a button's
+  // corner can only be about that button.
+  const routinesLeft = routineLeftOn(habits, today)
+  const choresLeft = todaysChores(chores, today).some((c) => !c.done)
   return (
     <div className="relative h-full flex items-stretch text-[10px] uppercase tracking-wider text-dim">
       {/* Above the chevron and WBS cells, which are empty for the top half of
-          this row — the labels they hold are on the bottom edge. */}
-      <button
-        // Named so the bubble it opens can tell a press on this button from a
-        // press anywhere else — see `DailyBubble`, which closes itself on the
-        // latter and has to leave the former to this handler.
-        data-daily-toggle
-        onClick={(e) => {
-          const box = e.currentTarget.getBoundingClientRect()
-          onToggleDaily({ x: box.right, y: box.top })
-        }}
-        aria-expanded={dailyOpen}
-        title={t('habit.section')}
-        // Centred on the seam between the WBS column and the names' column. The
-        // two labels on the row below meet there — `WBS` ends against the left
-        // of it, this column's own label starts against the right — and the
-        // button is wider than either, so it straddles both and sits over the
-        // pair rather than over one of them.
-        //
-        // Placed off the two column widths, which are constants, and not off
-        // where the labels end: those are words, and `WBS` and `任务` are not the
-        // same width in any two languages. See `COLS`.
-        //
-        // The seam is a few pixels right of what the pair of labels *looks*
-        // like: `WBS` is short and stops well short of it, while this column's
-        // label starts flush against it, so the weight of the two words sits
-        // left of the line between them. Hence the nudge.
-        style={{ left: COLS.chevron + COLS.wbs - 6 }}
-        className={`absolute top-1.5 -translate-x-1/2 z-10 h-5 px-1.5 inline-flex items-center rounded-[3px] border transition-colors ${
-          dailyOpen
-            ? 'border-accent/60 bg-accent/15 text-fg'
-            : 'border-accent/25 bg-accent/[0.07] text-muted hover:text-fg hover:bg-accent/[0.14]'
-        }`}
-      >
-        {/* No triangle. It is a button on this row and not a branch of the tree,
-            so it has no direction to point in: the bubble comes out of its side,
-            and the tint is what says whether the bubble is up. A triangle here
-            would be the tree's mark borrowed for a thing that is not one. */}
-        {t('habit.section')}
-        {/* Today still has something left on it. Decorative: what it says is
-            said properly by the list it opens, and it carries no words of its
-            own — see the same mark in `Sidebar`. */}
-        {left && (
-          <span aria-hidden className="absolute -top-1 -right-1 w-1.5 h-1.5 rounded-full bg-delayed" />
-        )}
-      </button>
+          this row — the labels they hold are on the bottom edge.
+
+          The first button is centred on the seam between the WBS column and the
+          names' column, where the two labels below meet. Placed off the two
+          column widths, which are constants, and not off where the labels end:
+          those are words, and `WBS` and `任务` are not the same width in any two
+          languages. `WBS` stops well short of the seam and this column's label
+          starts flush against it, so the weight of the two words sits left of
+          the line; the nudge follows it.
+
+          The second hangs off the first's right edge instead of sitting in the
+          same flex row: in the row it would widen the wrapper and the `-50%`
+          centring would pull the first button left by half of the pair. */}
+      <div className="absolute top-1.5 z-10 -translate-x-1/2" style={{ left: COLS.chevron + COLS.wbs - 6 }}>
+        <HeaderToggle open={dailyOpen} onPress={onToggleDaily} dot={routinesLeft} label={t('habit.section')} />
+        <div className="absolute left-full top-0 ml-2">
+          <HeaderToggle open={choresOpen} onPress={onToggleChores} dot={choresLeft} label={t('chore.section')} />
+        </div>
+      </div>
       <div className="shrink-0" style={{ width: COLS.chevron }} />
       <div className="shrink-0 flex items-end justify-end pr-1.5 pb-1.5" style={{ width: COLS.wbs }}>{t('common.wbs')}</div>
       <div className="flex-1 min-w-0 flex items-end pb-1.5 pr-1">{t('common.task')}</div>
@@ -720,5 +746,49 @@ export function LeftHeader({ dailyOpen, onToggleDaily }: {
         <button onClick={collapseAll} title={t('sidebar.collapseAll')} className="hover:text-fg">−</button>
       </div>
     </div>
+  )
+}
+
+/**
+ * One of the header's two list switches: a label that opens a bubble, and the
+ * same `bg-delayed` dot the sidebar wears while that list still has something
+ * waiting on it.
+ *
+ * Two of them rather than a menu: each opens a different list, and a menu would
+ * add a press to reach either. They share the marking `data-daily-toggle` so
+ * `DailyBubble`'s outside-press check leaves presses on *either* button to the
+ * button — a press on the other one swaps the bubble rather than closing it.
+ *
+ * No triangle. These are buttons on this row and not branches of the tree, so
+ * they have no direction to point in: the bubble comes out of the side, and the
+ * tint is what says whether the bubble is up. A triangle here would be the
+ * tree's mark borrowed for a thing that is not one.
+ */
+function HeaderToggle({ open, onPress, dot, label }: {
+  open: boolean
+  onPress: (at: { x: number; y: number }) => void
+  dot: boolean
+  label: string
+}) {
+  return (
+    <button
+      data-daily-toggle
+      onClick={(e) => {
+        const box = e.currentTarget.getBoundingClientRect()
+        onPress({ x: box.right, y: box.top })
+      }}
+      aria-expanded={open}
+      title={label}
+      className={`relative h-5 px-1.5 inline-flex items-center whitespace-nowrap rounded-[3px] border transition-colors ${
+        open
+          ? 'border-accent/60 bg-accent/15 text-fg'
+          : 'border-accent/25 bg-accent/[0.07] text-muted hover:text-fg hover:bg-accent/[0.14]'
+      }`}
+    >
+      {label}
+      {/* Decorative: what it says is said properly by the list it opens, and it
+          carries no words of its own — see the same mark in `Sidebar`. */}
+      {dot && <span aria-hidden className="absolute -top-1 -right-1 w-1.5 h-1.5 rounded-full bg-delayed" />}
+    </button>
   )
 }

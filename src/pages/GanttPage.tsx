@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { MouseEvent, ReactNode } from 'react'
-import { Check, FolderInput, FolderTree, History, Plus, X } from 'lucide-react'
+import { Check, FolderInput, FolderTree, History, Network, Plus, X } from 'lucide-react'
 import { UndoStep, useStore, useRows, useTimelineRange } from '../store/useStore'
 import { Task, TaskLog, ViewMode } from '../types'
 import { addDays } from '../lib/dates'
@@ -19,6 +19,7 @@ import { LogDialog } from '../components/LogDialog'
 import { StartTodoDialog } from '../components/StartTodoDialog'
 import { AddMenu, ContextMenu, MenuState } from '../components/gantt/ContextMenu'
 import { DailyBubble } from '../components/gantt/DailyBubble'
+import { BoardTreeDialog } from '../components/gantt/BoardTreeDialog'
 import { useDialogs } from '../components/dialogs'
 
 // Fixed left sidebar width (Sidebar.tsx renders w-[190px]). The timeline is
@@ -55,6 +56,10 @@ export function GanttPage() {
   const setTaskParent = useStore((s) => s.setTaskParent)
   const tasks = useStore((s) => s.tasks)
 
+  // The task tree is a view of the board, not a second editor: it opens from the
+  // toolbar and draws whatever the project filter is showing.
+  const [treeOpen, setTreeOpen] = useState(false)
+
   const [viewportW, setViewportW] = useState(() => window.innerWidth - SIDEBAR_W)
 
   useEffect(() => {
@@ -62,6 +67,7 @@ export function GanttPage() {
     window.addEventListener('resize', update)
     return () => window.removeEventListener('resize', update)
   }, [])
+
 
   // Computed here rather than inside GanttChart: the toolbar's range label and
   // the axis itself have to agree, and this is the one place both can reach.
@@ -79,13 +85,13 @@ export function GanttPage() {
   // through `openCreate` to the task form directly.
   const [newOpen, setNewOpen] = useState(false)
   const [menu, setMenu] = useState<MenuState | null>(null)
-  // The daily bubble, held here with the menus rather than down in the chart:
-  // it is a floating thing over the board, and the Escape chain below has to
-  // know it is up for the same reason it has to know about the context menu —
+  // One bubble at a time, held here with the menus rather than down in the
+  // chart: it is a floating thing over the board, and the Escape chain below has
+  // to know it is up for the same reason it has to know about the context menu —
   // see `overlayOpen`. Not a `MenuState`: it has no row behind it. What it
-  // carries is where the button that opened it was, so the bubble can hang off
-  // that corner.
-  const [daily, setDaily] = useState<{ x: number; y: number } | null>(null)
+  // carries is which of the day's two lists is up, and where the button that
+  // opened it was, so the bubble can hang off that corner.
+  const [daily, setDaily] = useState<{ kind: 'habits' | 'chores'; x: number; y: number } | null>(null)
   // A row's "+", which asks where the new task goes before opening the dialog on
   // it. Held with the menus because that is what it is — a short one, at the
   // button rather than at the pointer, and the only one of them with a trigger
@@ -153,7 +159,7 @@ export function GanttPage() {
   // dialogs close, and one keypress cannot mean two things at the same level.
   const overlayOpen =
     menu !== null || dialog !== null || logDialog !== null || startTodo !== null || noProject ||
-    mergeOpen || historyOpen || newOpen || daily !== null || add !== null
+    mergeOpen || historyOpen || newOpen || daily !== null || add !== null || treeOpen
   const hasSelection = sel.size > 0
   useEffect(() => {
     if (!editing || overlayOpen) return
@@ -393,6 +399,12 @@ export function GanttPage() {
         <div className="w-px h-6 bg-border" />
         <button onClick={goToday} className="px-2.5 h-7 text-[11px] font-medium text-muted hover:text-fg border border-border rounded-[3px] hover:bg-panel2">{t('gantt.backToToday')}</button>
         <div className="font-mono text-[13px] text-fg whitespace-nowrap">{formatDateRange(lang, range.start, addDays(range.end, -1))}</div>
+        <button
+          onClick={() => setTreeOpen(true)}
+          className="h-7 px-2.5 inline-flex items-center gap-1.5 text-[11px] font-medium text-muted hover:text-fg border border-border rounded-[3px] hover:bg-panel2"
+        >
+          <Network size={14} /> {t('gantt.taskTree')}
+        </button>
         <div className="flex-1" />
         <select
           className="h-7 px-2 bg-panel2 border border-border rounded-[3px] text-[12px] text-fg focus:outline-none"
@@ -496,11 +508,18 @@ export function GanttPage() {
         onAddSibling={(r) => openCreate(r.task.parentId, r.task.projectId, r.task.isTodo)}
         onEdit={openEdit}
         onArchive={handleArchive}
-        dailyOpen={daily !== null}
-        // One press opens it, the next puts it away, the way a button that shows
-        // something does. The corner is only read on the way in: closing does
-        // not need to know where it was.
-        onToggleDaily={(at) => setDaily((open) => (open ? null : at))}
+        dailyOpen={daily?.kind === 'habits'}
+        choresOpen={daily?.kind === 'chores'}
+        // One press opens a list, the next puts it away, the way a button that
+        // shows something does — and a press on the *other* button swaps the
+        // bubble rather than stacking a second one. The corner is only read on
+        // the way in: closing does not need to know where it was.
+        onToggleDaily={(at) =>
+          setDaily((open) => (open?.kind === 'habits' ? null : { kind: 'habits', ...at }))
+        }
+        onToggleChores={(at) =>
+          setDaily((open) => (open?.kind === 'chores' ? null : { kind: 'chores', ...at }))
+        }
       />
 
       {menu && (
@@ -534,7 +553,9 @@ export function GanttPage() {
       )}
 
 
-      {daily && <DailyBubble at={daily} onClose={() => setDaily(null)} />}
+      {daily && <DailyBubble kind={daily.kind} at={daily} onClose={() => setDaily(null)} />}
+
+      {treeOpen && <BoardTreeDialog onClose={() => setTreeOpen(false)} />}
 
       {/* A row's "+", answered. Both items close the menu first and then open the
           task dialog, and the dialog is what the new task's parent, project and
