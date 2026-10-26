@@ -37,6 +37,22 @@ import { createServer } from 'vite'
 globalThis.document = { documentElement: { dataset: {}, style: { setProperty() {} } } }
 globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} }
 
+// The clock is frozen: the preview and the real merge each stamp their new
+// folder with `new Date()`, and the check compares them field for field. Two
+// calls on opposite sides of a millisecond used to fail it at random. Same fix
+// as `check-archive.mjs`.
+const RealDate = Date
+const FROZEN = new RealDate(2026, 8, 15, 12, 0, 0)
+globalThis.Date = class extends RealDate {
+  constructor(...args) {
+    super(...args)
+    if (args.length === 0) this.setTime(FROZEN.getTime())
+  }
+  static now() {
+    return FROZEN.getTime()
+  }
+}
+
 const server = await createServer({
   server: { middlewareMode: true },
   appType: 'custom',

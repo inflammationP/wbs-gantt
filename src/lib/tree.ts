@@ -13,28 +13,26 @@ export interface EffState {
  * The order two siblings sit in, whoever their parent is.
  *
  * Exported because this is the one definition of "which of these two comes
- * first", and three places ask it: the tree itself, the Gantt's roots (which put
- * the project ahead of everything and are otherwise exactly this), and Manage's
- * flat task list. Two of those used to be near-copies of the third, and a
- * near-copy that drops the `id` tiebreak disagrees the moment two tasks share a
- * start date and a name — which is precisely when the order starts to matter.
+ * first", and two places ask it: the tree itself, and the Gantt's roots (which
+ * put the project ahead of everything and are otherwise exactly this). They used
+ * to be near-copies, and a near-copy that drops the `id` tiebreak disagrees the
+ * moment two tasks share a start date and a name — which is precisely when the
+ * order starts to matter.
  */
 export function compareSiblings(a: Task, b: Task): number {
   return (
-    // The hand-set order first, *above* the to-do key, so a to-do dropped among
-    // scheduled work stays where it was dropped. The two used to be the other way
-    // round and it read as a rule — "to-dos come last" — that no drop could
-    // overrule: the order key was never reached between a to-do and a task, so
-    // dragging one up left it and every row around it looking as if the drag had
-    // simply been refused.
-    byOrder(a, b) ||
-    // With nothing arranged, to-dos still sink: they have no start date to sort
-    // by, and unscheduled work belongs after the scheduled work. `? 1 : 0`
-    // rather than `Number(...)` because legacy records are `undefined` until
-    // `normalize` backfills them, and a NaN comparator makes Array.sort's order
-    // implementation-defined. This is also the key that keeps an untouched board
-    // reading exactly as it did before any of this existed.
+    // To-dos sink, always: they have no start date to sort by, and unscheduled
+    // work belongs after the scheduled work. `? 1 : 0` rather than `Number(...)`
+    // because legacy records are `undefined` until `normalize` backfills them,
+    // and a NaN comparator makes Array.sort's order implementation-defined.
+    //
+    // This key used to sit *below* the hand-set order, so a dragged to-do could
+    // stay between two tasks — and before that, above it, which made every drag
+    // bounce back. Neither is the rule now: a to-do is dragged on its own
+    // (the Gantt's to-do focus), so it only ever needs to be ordered among
+    // to-dos, and `byOrder` below does that.
     (a.isTodo ? 1 : 0) - (b.isTodo ? 1 : 0) ||
+    byOrder(a, b) ||
     (a.startDate ?? '').localeCompare(b.startDate ?? '') ||
     a.name.localeCompare(b.name) ||
     a.id.localeCompare(b.id)
@@ -84,6 +82,22 @@ export function computeWbs(tasks: Task[]): Map<string, string> {
   const roots = children.get(null) ?? []
   roots.forEach((t, i) => assignWbs(t, `${i + 1}`, children, map))
   return map
+}
+
+/**
+ * WBS with the numbering restarted in each project, which is what every surface
+ * prints. Numbering across projects as one run gave the same task a different
+ * number on the Manage page than the Gantt showed beside it.
+ */
+export function computeProjectWbs(tasks: Task[]): Map<string, string> {
+  const byProj = new Map<string, Task[]>()
+  for (const t of tasks) {
+    if (!byProj.has(t.projectId)) byProj.set(t.projectId, [])
+    byProj.get(t.projectId)!.push(t)
+  }
+  const wbs = new Map<string, string>()
+  for (const list of byProj.values()) for (const [id, n] of computeWbs(list)) wbs.set(id, n)
+  return wbs
 }
 
 function assignWbs(t: Task, prefix: string, children: Map<string | null, Task[]>, map: Map<string, string>) {
@@ -1127,12 +1141,11 @@ export const todoGroupId = (parentId: string | null, projectId: string) =>
 // to-do children, in each project. Used by expand/collapse all, which can't
 // discover these ids by walking tasks alone.
 //
-// Counted over the whole sibling list rather than over the runs `buildRows`
-// folds, which makes this a superset of the keys that are actually drawn: to-dos
-// with a task between them are two runs of one and draw no folder at all, yet
-// still count here. That is the safe direction — an unread key in `expanded`
-// costs nothing, while a missing one would leave an open folder that
-// "collapse all" could not close.
+// Counted over every task rather than only the live ones, which makes this a
+// superset of the keys that are actually drawn: a filed-away to-do still counts
+// here while `buildRows` folds only what is live. That is the safe direction —
+// an unread key in `expanded` costs nothing, while a missing one would leave an
+// open folder that "collapse all" could not close.
 //
 // A lone to-do has no folder — `buildRows` draws it as a plain row — so its
 // parent has no key here either. The two have to agree on what a folder is, and
@@ -1172,15 +1185,7 @@ export function buildRows(tasks: Task[], expanded: Record<string, boolean>, proj
   // view. Over the live tasks, so the numbers close up behind what is filed
   // away, exactly as they do behind a delete — the two are the same act as far
   // as the board's numbering is concerned.
-  const wbs = new Map<string, string>()
-  const byProj = new Map<string, Task[]>()
-  for (const t of live) {
-    if (!byProj.has(t.projectId)) byProj.set(t.projectId, [])
-    byProj.get(t.projectId)!.push(t)
-  }
-  for (const list of byProj.values()) {
-    for (const [id, n] of computeWbs(list)) wbs.set(id, n)
-  }
+  const wbs = computeProjectWbs(live)
 
   const roots = (children.get(null) ?? []).slice()
   roots.sort((a, b) => {
@@ -1215,7 +1220,7 @@ export function buildRows(tasks: Task[], expanded: Record<string, boolean>, proj
   }
 
   /**
-   * An unbroken run of one parent's to-do children, as rows.
+   * One parent's to-do children, as rows.
    *
    * A folder is drawn only when it has something to fold away. A lone to-do is
    * an ordinary row: a folder line for it would spend a whole row saying "one",
@@ -1251,32 +1256,15 @@ export function buildRows(tasks: Task[], expanded: Record<string, boolean>, proj
   }
 
   /**
-   * A parent's children in order, each unbroken run of to-dos handed to
-   * `visitGroup` as a unit.
+   * A parent's children in order: the scheduled rows, then the to-do folder.
    *
-   * A run is what a folder line can stand for — one collapsed line in place of
-   * the rows beneath it. It used to be all of a parent's to-dos at once, and
-   * that was the same thing only because they sank to the end of their list
-   * whatever the sort key said. A to-do that has been given a place of its own
-   * breaks that rule, which is the whole point of giving it one: with a task
-   * between two to-dos, the folder would have to be drawn either before both or
-   * after both, and either way it would stand where nothing is.
-   *
-   * A run of one is an ordinary row, so splitting a folder up costs nothing
-   * visible — the rows are simply where they were put.
+   * To-dos sink below the tasks in `compareSiblings`, so they are one block at
+   * the end of every sibling list — one folder per parent (or one ordinary row,
+   * when there is only one), never runs to find in between.
    */
   const visitKids = (parentId: string | null, projectId: string, depth: number, kids: Task[]) => {
-    for (let i = 0; i < kids.length; ) {
-      if (!kids[i].isTodo) {
-        visit(kids[i], depth)
-        i++
-        continue
-      }
-      let j = i
-      while (j < kids.length && kids[j].isTodo) j++
-      visitGroup(parentId, projectId, depth, kids.slice(i, j))
-      i = j
-    }
+    for (const k of kids) if (!k.isTodo) visit(k, depth)
+    visitGroup(parentId, projectId, depth, kids.filter((k) => k.isTodo))
   }
 
   /**

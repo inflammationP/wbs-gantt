@@ -1,4 +1,4 @@
-import { Chore, Habit, ItemLog, Note, Project, Stamp, Task, TaskLog, TaskPriority } from '../types'
+import { Chore, DaySortMode, Habit, ItemLog, Note, Project, Stamp, Task, TaskLog, TaskPriority } from '../types'
 import { DEFAULT_LANG, isLang, Lang } from '../lib/i18n'
 import { liftTimes, paragraphs } from '../lib/logs'
 import { isArchived } from '../lib/tree'
@@ -99,6 +99,11 @@ const KEY = 'wbs-gantt.v2'
 export interface Prefs {
   lang: Lang
   theme: ThemeId
+  /**
+   * How the Today and date-detail task lists are ordered. A view preference,
+   * not view state: it is chosen once and should still be there tomorrow.
+   */
+  daySort: DaySortMode
   /**
    * The "create as to-do" note has been read and acknowledged.
    *
@@ -243,6 +248,7 @@ const DEFAULT_RULES: ReminderRule[] = [
 export const DEFAULT_PREFS: Prefs = {
   lang: DEFAULT_LANG,
   theme: DEFAULT_THEME,
+  daySort: 'status',
   todoNoteDismissed: false,
   updateAnchorAt: null,
   nagShownAt: null,
@@ -306,6 +312,7 @@ export function loadPrefs(): Prefs {
     return {
       lang: typeof parsed.lang === 'string' && isLang(parsed.lang) ? parsed.lang : DEFAULT_PREFS.lang,
       theme: typeof parsed.theme === 'string' && isThemeId(parsed.theme) ? parsed.theme : DEFAULT_THEME,
+      daySort: parsed.daySort === 'priority' ? 'priority' : DEFAULT_PREFS.daySort,
       todoNoteDismissed:
         typeof parsed.todoNoteDismissed === 'boolean'
           ? parsed.todoNoteDismissed

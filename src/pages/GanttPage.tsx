@@ -113,6 +113,10 @@ export function GanttPage() {
   // changes, rather than on a page of its own.
   const [historyOpen, setHistoryOpen] = useState(false)
   const [editing, setEditing] = useState(false)
+  // Which kind the mode is dragging. Opens on tasks — the common rearrangement —
+  // and a click on a to-do switches it. Kept beside `editing` because it is part
+  // of the same mode, not of any one gesture.
+  const [todoFocus, setTodoFocus] = useState(false)
   // What editing mode has picked out. Held here rather than in the chart because
   // two things read it: the rows, which paint it and drag it, and the bar above
   // them, which acts on it.
@@ -148,15 +152,17 @@ export function GanttPage() {
   useEffect(() => {
     if (!editing) {
       setSel(new Set())
+      setTodoFocus(false)
       clearUndo()
     }
   }, [editing, clearUndo])
 
-  // Escape steps back one layer at a time — out of the selection first, then out
-  // of editing mode — unless it is already busy closing something on top of
-  // both. A mode you can only leave by finding the button that renamed itself is
-  // a mode people get stuck in; but Escape is also how the context menu and the
-  // dialogs close, and one keypress cannot mean two things at the same level.
+  // Escape steps back one layer at a time — out of the to-do focus, then the
+  // selection, then editing mode — unless it is already busy closing something
+  // on top of all three. A mode you can only leave by finding the button that
+  // renamed itself is a mode people get stuck in; but Escape is also how the
+  // context menu and the dialogs close, and one keypress cannot mean two things
+  // at the same level.
   const overlayOpen =
     menu !== null || dialog !== null || logDialog !== null || startTodo !== null || noProject ||
     mergeOpen || historyOpen || newOpen || daily !== null || add !== null || treeOpen
@@ -165,12 +171,13 @@ export function GanttPage() {
     if (!editing || overlayOpen) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
-      if (hasSelection) setSel(new Set())
+      if (todoFocus) setTodoFocus(false)
+      else if (hasSelection) setSel(new Set())
       else setEditing(false)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [editing, overlayOpen, hasSelection])
+  }, [editing, overlayOpen, hasSelection, todoFocus])
 
   // Every way into the new-task dialog goes through here — the toolbar's button,
   // and the row menus' "add subtask" / "add sibling" — so the one guard covers
@@ -497,6 +504,8 @@ export function GanttPage() {
         todo={todo}
         archived={archived}
         editing={editing}
+        todoFocus={todoFocus}
+        onTodoFocus={setTodoFocus}
         sel={sel}
         onSel={setSel}
         onContext={handleContext}

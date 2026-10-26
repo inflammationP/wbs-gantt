@@ -96,17 +96,23 @@ const half = [task({ id: 'one', order: 0, startDate: '2026-09-20' }), task({ id:
 assert.deepEqual(ids([...half].sort(compareSiblings)), ['two', 'one'])
 assert.deepEqual(ids([...half].reverse().sort(compareSiblings)), ['two', 'one'])
 
-// A to-do that has been given a place keeps it, among scheduled work like
-// anywhere else — the hand-set order outranks the to-do key, and this is the
-// whole of "a to-do can sit anywhere". The two keys used to be the other way
-// round, which no drop could overrule: a to-do dragged between two tasks sprang
-// back to the bottom of the list and the drag looked simply refused.
-const hoisted = [
+// A to-do sinks even when it carries a hand-set order: the kind decides first,
+// and `order` only arranges rows of the same kind. That is the rule the Gantt's
+// to-do focus relies on — a to-do is dragged only among to-dos, so the only
+// place it can be dropped is one it can stay in.
+const sunk = [
   task({ id: 'todo', isTodo: true, startDate: null, endDate: null, order: 0 }),
   task({ id: 'work', order: 1 }),
 ]
-assert.deepEqual(ids([...hoisted].sort(compareSiblings)), ['todo', 'work'])
-assert.deepEqual(ids([...hoisted].reverse().sort(compareSiblings)), ['todo', 'work'])
+assert.deepEqual(ids([...sunk].sort(compareSiblings)), ['work', 'todo'])
+assert.deepEqual(ids([...sunk].reverse().sort(compareSiblings)), ['work', 'todo'])
+
+// Within the to-dos, the hand-set order is still the answer.
+const twoTodos = [
+  task({ id: 't2', isTodo: true, startDate: null, endDate: null, order: 1 }),
+  task({ id: 't1', isTodo: true, startDate: null, endDate: null, order: 0 }),
+]
+assert.deepEqual(ids([...twoTodos].sort(compareSiblings)), ['t1', 't2'])
 
 // With nothing arranged they still sink: unscheduled work belongs after the
 // scheduled work. This is what keeps every board that has never been dragged
@@ -116,6 +122,34 @@ const sinkers = [
   task({ id: 'work' }),
 ]
 assert.deepEqual(ids([...sinkers].sort(compareSiblings)), ['work', 'todo'])
+
+// --- numbering restarts in each project ----------------------------------
+//
+// If a project carried on where the previous one stopped, the same task would
+// have one number on the Gantt and another on the Manage page. That is what the
+// Manage table used to print — its flat date sort over globally numbered roots
+// read `1, 3, 1.1, 2` on a board with two projects. `computeProjectWbs` is the
+// one answer every surface asks, and this is the fixture that keeps it so.
+const projects = [
+  { id: 'p', name: 'P', color: '#888', description: '' },
+  { id: 'q', name: 'Q', color: '#888', description: '' },
+]
+const crossProject = [
+  task({ id: 'p-one', projectId: 'p', order: 0 }),
+  task({ id: 'p-kid', projectId: 'p', parentId: 'p-one' }),
+  task({ id: 'q-one', projectId: 'q', order: 0 }),
+  task({ id: 'p-two', projectId: 'p', order: 1 }),
+]
+const numbered = buildRows(crossProject, {}, projects, []).filter((r) => r.kind === 'task')
+assert.deepEqual(
+  numbered.map((r) => [r.id, r.wbs]),
+  [
+    ['p-one', '1'],
+    ['p-kid', '1.1'],
+    ['p-two', '2'],
+    ['q-one', '1'],
+  ],
+)
 
 // --- moving --------------------------------------------------------------
 

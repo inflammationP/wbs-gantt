@@ -1,5 +1,5 @@
-import { Project, Task, TaskLog, TaskStatus } from '../types'
-import { ancestorNames, buildChildrenMap, collectDescendants, computeWbs, deriveStatus, deriveTaskStatus, isArchived, liveTasks } from './tree'
+import { DaySortMode, Project, Task, TaskLog, TaskPriority, TaskStatus } from '../types'
+import { ancestorNames, buildChildrenMap, collectDescendants, computeProjectWbs, deriveStatus, deriveTaskStatus, isArchived, liveTasks } from './tree'
 import { isPausedOnDay, taskProgress } from './progress'
 import { addDays, toDate, toISO } from './dates'
 
@@ -87,6 +87,10 @@ const STATUS_RANK: Record<TaskStatus, number> = {
   completed: 4,
   todo: 5,
 }
+
+/** Highest first. A missing priority (legacy rows) sits below `low`. */
+const PRIORITY_RANK: Record<TaskPriority, number> = { top: 0, high: 1, medium: 2, low: 3 }
+const priorityRank = (t: Task) => (t.priority ? PRIORITY_RANK[t.priority] : 4)
 
 // Clip for consumers that enumerate log rows, rather than calculate progress.
 export function logsUpTo(logs: TaskLog[], day: string): TaskLog[] {
@@ -435,9 +439,9 @@ export function dayCellState(
 }
 
 /**
- * The day's task list, split into strict and non-strict halves. Everything
- * scheduled on the day is listed — long-term goals, paused tasks and completed
- * ones included; the panel decides how to mark them.
+ * The day's task list, in the order the caller asked for. Everything scheduled
+ * on the day is listed — long-term goals, paused tasks and completed ones
+ * included; the panel decides how to mark them.
  */
 export function daySummary(
   tasks: Task[],
@@ -445,6 +449,7 @@ export function daySummary(
   projects: Project[],
   day: string,
   today: string,
+  sort: DaySortMode = 'status',
 ): DaySummary {
   const clipped = logsUpTo(logs, day)
   const states = dayStates(tasks, logs, day)
@@ -455,13 +460,16 @@ export function daySummary(
   // Numbering restarts per project, matching what the Gantt shows — and is
   // computed over the live tasks for the same reason: a filed-away task has
   // given its number up, exactly as a deleted one has.
-  const wbs = new Map<string, string>()
-  const byProj = new Map<string, Task[]>()
-  for (const t of liveTasks(tasks)) {
-    if (!byProj.has(t.projectId)) byProj.set(t.projectId, [])
-    byProj.get(t.projectId)!.push(t)
+  const wbs = computeProjectWbs(liveTasks(tasks))
+
+  // A task that holds nothing but to-dos is a to-do list, not work of its own:
+  // it is treated as a to-do here and so stays out of the day's list, exactly
+  // as its children do. It keeps its row on the board — this rule is about
+  // what the day is asked to account for.
+  const todoBucket = (t: Task) => {
+    const kids = children.get(t.id) ?? []
+    return kids.length > 0 && kids.every((k) => k.isTodo)
   }
-  for (const list of byProj.values()) for (const [id, n] of computeWbs(list)) wbs.set(id, n)
 
   const rows: DayRow[] = []
   for (const t of tasks) {
@@ -469,7 +477,7 @@ export function daySummary(
     // same reason. Everything below this line — the states, the rates, the
     // parent roll-up the rows are annotated with — still runs over every task,
     // so archiving a finished branch moves no number on any card.
-    if (t.isTodo || isArchived(t) || t.startDate == null) continue
+    if (t.isTodo || isArchived(t) || t.startDate == null || todoBucket(t)) continue
     // Already finished when the day began: it belongs to the day it was
     // finished and to no later one. The test is `progressBefore`, so that day
     // still lists it (the number reaches 100 on it) while the rest of the
@@ -514,55 +522,28 @@ export function daySummary(
     })
   }
 
+  const byStatus = (a: DayRow, b: DayRow) => STATUS_RANK[a.status] - STATUS_RANK[b.status]
+  const byPriority = (a: DayRow, b: DayRow) => priorityRank(a.task) - priorityRank(b.task)
+  // The chosen key first, the other second, so rows sharing a status stay
+  // together under "status" and rows sharing a priority stay together under
+  // "priority". A log obligation (the `*`) is the third key: it still puts the
+  // rows that owe something at the front of their group, but it no longer
+  // splits the whole list in two — that split is what kept a status from ever
+  // being one run.
+  //
+  // Finished rows are last in both orders: this is a worklist, and what is done
+  // is the record of it, not the next thing to pick up.
   const cmp = (a: DayRow, b: DayRow) =>
-    STATUS_RANK[a.status] - STATUS_RANK[b.status] ||
+    (a.status === 'completed' ? 1 : 0) - (b.status === 'completed' ? 1 : 0) ||
+    (sort === 'priority' ? byPriority(a, b) || byStatus(a, b) : byStatus(a, b) || byPriority(a, b)) ||
+    (a.strict ? 0 : 1) - (b.strict ? 0 : 1) ||
+    (a.task.endDate ?? '9999-12-31').localeCompare(b.task.endDate ?? '9999-12-31') ||
     (order.get(a.task.projectId) ?? 999) - (order.get(b.task.projectId) ?? 999) ||
     a.wbs.localeCompare(b.wbs, undefined, { numeric: true }) ||
     a.task.name.localeCompare(b.task.name) ||
     a.task.id.localeCompare(b.task.id)
 
-  // A tree, not a flat queue. Sorting the whole day by status rank read as "what
-  // do I handle first", but it scattered a task away from the branch it belongs
-  // to — and the branch is what the rows are annotated with now, so keeping a
-  // group's leaves adjacent is the only thing left of that complaint. The tree
-  // is built and then flattened: the *order* is the tree's, the list is not.
-  //
-  // A task whose parent is not on this day — the parent is done, or has not
-  // started — is a root here rather than being dropped: the list is what is
-  // scheduled for the day, and that task is.
-  const byId = new Map(rows.map((r) => [r.task.id, r]))
-  const kids = new Map<string, DayRow[]>()
-  const roots: DayRow[] = []
-  for (const r of rows) {
-    const pid = r.task.parentId
-    if (pid != null && byId.has(pid)) {
-      const list = kids.get(pid)
-      if (list) list.push(r)
-      else kids.set(pid, [r])
-    } else {
-      roots.push(r)
-    }
-  }
-
-  roots.sort(cmp)
-  const walked: DayRow[] = []
-  const walk = (r: DayRow) => {
-    walked.push(r)
-    const ks = kids.get(r.task.id)
-    if (!ks) return
-    ks.sort(cmp)
-    for (const k of ks) walk(k)
-  }
-  for (const r of roots) walk(r)
-
-  // Obligation first — over the whole list, not within each rung.
-  //
-  // Hoisting inside a sibling group was the smaller claim, and it was not the
-  // one being made: the day is a worklist, and a task that owes a log must not
-  // sit below a branch that does not merely because the tree put it there. The
-  // two halves are stable, so each keeps the tree's order inside itself and a
-  // branch's leaves stay adjacent wherever that order allowed them to.
-  const ordered = [...walked.filter((r) => r.strict), ...walked.filter((r) => !r.strict)]
+  const ordered = [...rows].sort(cmp)
 
   let logCount = 0
   for (const l of logs) if (l.date === day) logCount++

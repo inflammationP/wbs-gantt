@@ -89,12 +89,24 @@ const setupName = `${conf.productName}_${version}_x64-setup.exe`
 const sigPath = `src-tauri/target/release/bundle/nsis/${setupName}.sig`
 const exePath = `src-tauri/target/release/bundle/nsis/${setupName}`
 
-// 2. build with signing
+// 2. the history the build carries
+//
+// Settings reads release notes from the bundle rather than fetching them, so
+// the version being built has to be in `releaseHistory.json` before the build.
+// Replacing this version's entry rather than adding a second one makes a retry
+// after a failed publish safe. The notes here are the same block that becomes
+// the GitHub release body below, so the two cannot drift.
+const historyPath = 'src/lib/releaseHistory.json'
+const history = JSON.parse(readFileSync(historyPath, 'utf8')).filter((r) => r.version !== version)
+writeFileSync(historyPath, JSON.stringify([{ version, notes }, ...history], null, 2) + '\n')
+console.log(`📝 ${historyPath} 已加入 v${version}，记得连同本次改动一起提交。\n`)
+
+// 3. build with signing
 process.env.TAURI_SIGNING_PRIVATE_KEY = readFileSync(KEY_PATH, 'utf8').replace(/[\r\n]+$/, '')
 process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ''
 run('npm run tauri build')
 
-// 3. the update manifest
+// 4. the update manifest
 // The download URL has to name the asset exactly as GitHub stored it, and GitHub
 // rewrites asset filenames on upload (spaces become dots). So the caller passes
 // in the name GitHub reported back — never the local file name.
@@ -117,7 +129,7 @@ function writeManifest(assetName) {
   return url
 }
 
-// 4. publish via GitHub CLI
+// 5. publish via GitHub CLI
 // The release starts as a draft: releases/latest keeps serving the previous
 // manifest until this one is complete. A live release whose latest.json is
 // missing or points at a 404 silently stops updates for every user, and keeps
@@ -161,7 +173,7 @@ try {
   console.log('或在安装并登录 gh 后重新运行本脚本。\n')
 }
 
-// 5. stamp the release date into the changelog — a fallback, not the normal path
+// 6. stamp the release date into the changelog — a fallback, not the normal path
 // The heading is meant to carry its real date already: a section is written
 // once, finished, and released as it stands. This only fires for a 待发布
 // placeholder that survived — a section written days before the release, whose

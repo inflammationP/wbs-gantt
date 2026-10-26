@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import { Check, ChevronDown, ChevronRight, NotebookText, Pencil, Plus, ScrollText, TriangleAlert } from 'lucide-react'
 import { useStore } from '../store/useStore'
-import { Chore, ChoreSlot, Habit, ItemLog, TaskLog } from '../types'
+import { Chore, ChoreSlot, DaySortMode, Habit, ItemLog, TaskLog } from '../types'
 import { DayRow, dayRowStruck, daySummary, parentPath } from '../lib/dayTasks'
 import { CHORE_SLOTS, carriedSince, choreGroups, parseChoreTime, slotOfTime } from '../lib/chores'
 import { RoutineRow, routineRows } from '../lib/habits'
@@ -126,6 +126,8 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, habitsEdi
   const projects = useStore((s) => s.projects)
   const today = useStore((s) => s.today)
   const setSelected = useStore((s) => s.setSelected)
+  const daySort = useStore((s) => s.daySort)
+  const setDaySort = useStore((s) => s.setDaySort)
 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   // Folded routines, rather than unfolded ones: a branch somebody has not
@@ -142,7 +144,10 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, habitsEdi
   const [fixLog, setFixLog] = useState<TaskLog | null>(null)
   const [logsOpen, setLogsOpen] = useState(false)
 
-  const summary = useMemo(() => daySummary(tasks, logs, projects, day, today), [tasks, logs, projects, day, today])
+  const summary = useMemo(
+    () => daySummary(tasks, logs, projects, day, today, daySort),
+    [tasks, logs, projects, day, today, daySort],
+  )
   const routines = useMemo(() => routineRows(habits, day, foldedHabits), [habits, day, foldedHabits])
   const dayLogs = useMemo(() => logs.filter((l) => l.date === day), [logs, day])
   const dayItemLogs = useMemo(() => itemLogsOn(itemLogs, day), [itemLogs, day])
@@ -212,6 +217,19 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, habitsEdi
       hint={summary.strict.length > 0 ? t('day.logMark') : undefined}
       open={open.tasks}
       onToggle={() => setOpen((o) => ({ ...o, tasks: !o.tasks }))}
+      showAction
+      action={
+        <select
+          value={daySort}
+          onChange={(e) => setDaySort(e.target.value as DaySortMode)}
+          aria-label={t('day.sort')}
+          title={t('day.sort')}
+          className="h-5 px-1 bg-panel2 border border-border rounded-[3px] text-[10px] text-muted"
+        >
+          <option value="status">{t('day.sortStatus')}</option>
+          <option value="priority">{t('day.sortPriority')}</option>
+        </select>
+      }
     >
       {summary.all.length === 0 ? (
         <Empty>{t('day.nothingScheduled')}</Empty>
@@ -470,6 +488,7 @@ function Section({
   open,
   onToggle,
   action,
+  showAction,
   children,
 }: {
   title: string
@@ -489,6 +508,12 @@ function Section({
    * leave a control in the tab order that a keyboard user cannot see.
    */
   action?: ReactNode
+  /**
+   * Keep the action visible instead of revealing it on hover. For a control
+   * that changes what the section shows rather than doing something to it — a
+   * sort nobody can find is a sort that is not offered.
+   */
+  showAction?: boolean
   children: ReactNode
 }) {
   return (
@@ -507,7 +532,11 @@ function Section({
           {count != null && <span className="font-mono normal-case tracking-normal">{count}</span>}
         </button>
         {action && (
-          <div className="shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 has-[:focus-visible]:opacity-100">
+          <div
+            className={`shrink-0 flex items-center gap-1 ${
+              showAction ? '' : 'opacity-0 group-hover:opacity-100 has-[:focus-visible]:opacity-100'
+            }`}
+          >
             {action}
           </div>
         )}
@@ -769,6 +798,7 @@ export function ChoreRow({
   const t = useT()
   const lang = useLang()
   const toggleChore = useStore((s) => s.toggleChore)
+  const { ask, element: dialogs } = useDialogs()
   const [editing, setEditing] = useState(false)
   // Only an *open* chore can be carried: one finished after its day is done,
   // and badging it would be reading a deadline that no longer exists.
@@ -777,7 +807,12 @@ export function ChoreRow({
   return (
     <div className="group relative flex items-start gap-2 px-2 py-1.5 rounded-[3px] hover:bg-panel2">
       <button
-        onClick={() => toggleChore(chore.id)}
+        onClick={() =>
+          ask(
+            t(chore.done ? 'common.unmarkDoneAsk' : 'common.markDoneAsk', { name: chore.title }),
+            () => toggleChore(chore.id),
+          )
+        }
         role="checkbox"
         aria-checked={chore.done}
         aria-label={chore.title}
@@ -836,6 +871,8 @@ export function ChoreRow({
       )}
 
       {editing && <ChoreDialog chore={chore} onClose={() => setEditing(false)} />}
+
+      {dialogs}
     </div>
   )
 }
@@ -1139,7 +1176,19 @@ export function HabitLine({
       )}
 
       {onToggle ? (
-        <button onClick={onToggle} role="checkbox" aria-checked={ticked} aria-label={habit.title} className={boxCls} style={boxStyle}>
+        <button
+          onClick={() =>
+            ask(
+              t(ticked ? 'common.unmarkDoneAsk' : 'common.markDoneAsk', { name: habit.title }),
+              onToggle,
+            )
+          }
+          role="checkbox"
+          aria-checked={ticked}
+          aria-label={habit.title}
+          className={boxCls}
+          style={boxStyle}
+        >
           {mark}
         </button>
       ) : (

@@ -1,5 +1,6 @@
 import { check, type Update } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
+import bundledReleases from './releaseHistory.json'
 
 /**
  * How long to wait for the update endpoint before calling it unreachable.
@@ -160,45 +161,42 @@ export function releasesBetween(
 let releaseCache: ReleaseNotes[] | null = null
 
 /**
- * The releases, by whichever HTTP the app has.
+ * The releases, as GitHub has them.
  *
- * Two transports for one GET. Inside Tauri it is the plugin's fetch, which is
- * not subject to the webview's CORS rules; outside it — the browser build, and
- * `npm run dev` — the platform's own fetch, because GitHub's API answers with
- * `Access-Control-Allow-Origin: *` and there is nothing here to bypass. The
- * timeout is the plugin's own option and has no browser equivalent, which is
- * the only thing the two lines differ by beyond which `fetch` is meant.
- *
- * Nothing about reading a changelog needs an installed app, and the page that
- * shows it is worth being able to open while developing it.
+ * Only the update dialog reaches this, and that dialog exists only in the
+ * desktop app, so it always goes through the plugin's fetch — the webview's own
+ * `fetch` would be subject to CORS and the plugin's is not.
  */
 async function getReleases(): Promise<RawRelease[]> {
   const headers = { Accept: 'application/vnd.github+json' }
-  if (isTauri()) {
-    const { fetch } = await import('@tauri-apps/plugin-http')
-    const res = await fetch(RELEASES_URL, { headers, connectTimeout: CHECK_TIMEOUT_MS })
-    return res.ok ? ((await res.json()) as RawRelease[]) : []
-  }
-  const res = await fetch(RELEASES_URL, { headers })
-  return res.ok ? ((await res.json()) as RawRelease[]) : []
+  const { fetch } = await import('@tauri-apps/plugin-http')
+  const request = fetch(RELEASES_URL, { headers, connectTimeout: CHECK_TIMEOUT_MS })
+  // `connectTimeout` bounds only the connection; a route that stalls after it
+  // would leave this promise pending forever.
+  const res = await Promise.race([
+    request,
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('releases: timed out')), CHECK_TIMEOUT_MS)),
+  ])
+  // Throwing rather than returning `[]`: an empty answer means "this app has
+  // shipped nothing", which is never true, and `loadReleases` would cache it
+  // for the rest of the run — one failed read and the update dialog silently
+  // omits the skipped versions until the app restarts.
+  if (!res.ok) throw new Error(`releases: HTTP ${res.status}`)
+  return (await res.json()) as RawRelease[]
 }
 
 /**
  * The published releases, as GitHub has them.
  *
- * Fetched rather than shipped, because it cannot be shipped: the notes for
- * 0.10.0 have to be readable by someone still on 0.9.0, and any copy baked into
- * that build predates them. Both callers below want the same list read the same
- * way, and they are one cache apart from each other — the update dialog's
- * "what did I skip" and the settings page's "what has this app ever shipped"
- * are the same data asked two questions of.
+ * Only the update dialog's "what did I skip" reads this now. The Settings
+ * history ships in `releaseHistory.json` (`allReleases`) and needs no network.
+ * This one still has to be fetched, because the versions between the installed
+ * build and one released later did not exist when this build was made.
  *
- * Every failure returns an empty list. For the update check that is deliberate:
- * the user this happens to already has the "automatic updates are unavailable"
+ * Every failure returns an empty list, which is deliberate for that dialog: the
+ * user this happens to already has the "automatic updates are unavailable"
  * banner, and the skipped-versions list is the one part of the check that does
- * not affect whether the update can be installed. The settings page's history
- * is a screen the user asked for, so there an empty list has to be said out
- * loud rather than drawn as a blank.
+ * not affect whether the update can be installed.
  */
 async function loadReleases(): Promise<ReleaseNotes[]> {
   if (releaseCache) return releaseCache
@@ -243,15 +241,18 @@ export async function fetchReleaseHistory(current: string, target: string): Prom
 }
 
 /**
- * Everything the app has ever shipped, newest first.
+ * Everything this build has shipped, newest first.
  *
- * Sorted here rather than at the API, which answers in publication order and
- * is not obliged to keep doing so. The copy matters: `releasesBetween` sorts its
- * own filtered array, and sorting the cache in place would be this function
- * quietly reordering what the update dialog reads.
+ * Shipped with the app instead of fetched: the Settings history has to open
+ * before any network is involved, and offline. `scripts/release.mjs` prepends
+ * the notes of the release it is building to `releaseHistory.json`, so each
+ * build carries its own history. The update dialog is the one that still
+ * fetches (`fetchReleaseHistory`): the versions between this build and a newer
+ * one were not published when this build was made, so no local copy can name
+ * them.
  */
-export async function fetchAllReleases(): Promise<ReleaseNotes[]> {
-  return [...(await loadReleases())].sort((a, b) => compareVersions(b.version, a.version))
+export function allReleases(): ReleaseNotes[] {
+  return [...bundledReleases].sort((a, b) => compareVersions(b.version, a.version))
 }
 
 /**

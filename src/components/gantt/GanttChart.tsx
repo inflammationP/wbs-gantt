@@ -99,6 +99,15 @@ interface Props {
   /** Editing mode: rows can be dragged and clicks build a selection. */
   editing: boolean
   /**
+   * Which kind of row a drag takes. False is the mode as it opens — tasks are
+   * draggable and to-dos are greyed — and true is reached by clicking a to-do:
+   * the tasks grey out and only to-dos move. One kind moves at a time because
+   * a to-do always sinks to the bottom, so carrying one along with tasks could
+   * only mean it landing somewhere it cannot stay.
+   */
+  todoFocus: boolean
+  onTodoFocus: (on: boolean) => void
+  /**
    * The rows picked out in editing mode.
    *
    * Owned by the page rather than kept here, because two things read it now: the
@@ -128,7 +137,7 @@ interface Props {
   onArchive: (row: RowTask) => void
 }
 
-export function GanttChart({ rows, range, todo, archived, editing, sel, onSel, onContext, onAddMenu, onAddSibling, onEdit, onArchive, dailyOpen, choresOpen, onToggleDaily, onToggleChores }: Props) {
+export function GanttChart({ rows, range, todo, archived, editing, todoFocus, onTodoFocus, sel, onSel, onContext, onAddMenu, onAddSibling, onEdit, onArchive, dailyOpen, choresOpen, onToggleDaily, onToggleChores }: Props) {
   const t = useT()
   const lang = useLang()
   const viewMode = useStore((s) => s.viewMode)
@@ -468,12 +477,19 @@ export function GanttChart({ rows, range, todo, archived, editing, sel, onSel, o
     // without this the delete button would arm a drag and swallow its own press
     // the moment the pointer twitched.
     if ((e.target as HTMLElement).closest('button')) return
+    // Only one kind moves at a time. The mode opens on tasks; clicking a to-do
+    // switches it, and the other kind is drawn greyed.
+    if (row.task.isTodo !== todoFocus) return
 
     // The roots of the selection, not every ticked row: a tick now covers a whole
     // branch, and a label that counted the ticks would say "moved 12" about one
     // row being dragged. `placeTasks` sorts this out anyway — a row inside
     // another moving row is cargo — but the count is read by a person.
-    const roots = sel.has(row.id) ? movingUnits(tasks, projects, sel).tasks : [row.id]
+    //
+    // Filtered to the pressed kind: a selection can hold both, and carrying a
+    // to-do along with tasks would only drop it among rows it sinks back out of.
+    const picked = sel.has(row.id) ? movingUnits(tasks, projects, sel).tasks : [row.id]
+    const roots = picked.filter((id) => tasks.find((x) => x.id === id)?.isTodo === row.task.isTodo)
     const blocked = new Set<string>()
     let single = ''
     for (const id of roots) {
@@ -637,6 +653,16 @@ export function GanttChart({ rows, range, todo, archived, editing, sel, onSel, o
     // detail panel is still how you look at one — that is what its own row is
     // for, and this mode is not.
     if (isArchived(row.task)) return
+    // The row body says which kind the drag will take; the circle is a
+    // selection control and must not change it. A click on the kind that is not
+    // active only wakes it: the first click of a switch is not also a pick, or
+    // the row that was pressed would come back selected in the mode it was
+    // standing in for.
+    const viaPicker = e.target instanceof Element && e.target.closest('button') !== null
+    if (!viaPicker && row.task.isTodo !== todoFocus) {
+      onTodoFocus(row.task.isTodo)
+      return
+    }
     if (e.shiftKey && anchor.current) {
       const from = rows.findIndex((r) => r.id === anchor.current)
       const to = rows.findIndex((r) => r.id === row.id)
@@ -671,6 +697,9 @@ export function GanttChart({ rows, range, todo, archived, editing, sel, onSel, o
         if (editing) {
           onSel(new Set())
           anchor.current = null
+          // An empty press means "nothing in particular" — back to the mode's
+          // open state, where tasks are the draggable kind.
+          onTodoFocus(false)
         }
       }}
     >
@@ -692,33 +721,39 @@ export function GanttChart({ rows, range, todo, archived, editing, sel, onSel, o
             />
           </div>
           {/* left rows */}
-          {shownRows.map((row, i) => (
-            <div
-              key={row.id}
-              className={`${rowBgLeft(i)} border-b border-line`}
-              style={{ height: heightOf(row) }}
-              data-row-id={row.id}
-              onPointerDown={(e) => beginDrag(e, row)}
-              onPointerMove={onRowMove}
-              onPointerUp={onRowUp}
-              onPointerCancel={onRowUp}
-            >
-              <RowLeft
-                row={row}
-                todo={todo}
-                archived={archived}
-                editing={editing}
-                picked={picking(row.id)}
-                onRowClick={onRowClick}
-                onAddMenu={onAddMenu}
-                onAddSibling={onAddSibling}
-                onEdit={onEdit}
-                onArchive={onArchive}
-                onToggleRow={toggleRow}
-                onContext={onContext}
-              />
-            </div>
-          ))}
+          {shownRows.map((row, i) => {
+            // The kind that cannot be dragged right now is the one drawn greyed.
+            const dimmed =
+              editing && row.kind === 'task' && !isArchived(row.task) && row.task.isTodo !== todoFocus
+            return (
+              <div
+                key={row.id}
+                className={`${rowBgLeft(i)} border-b border-line`}
+                style={{ height: heightOf(row) }}
+                data-row-id={row.id}
+                onPointerDown={(e) => beginDrag(e, row)}
+                onPointerMove={onRowMove}
+                onPointerUp={onRowUp}
+                onPointerCancel={onRowUp}
+              >
+                <RowLeft
+                  row={row}
+                  todo={todo}
+                  archived={archived}
+                  editing={editing}
+                  dimmed={dimmed}
+                  picked={picking(row.id)}
+                  onRowClick={onRowClick}
+                  onAddMenu={onAddMenu}
+                  onAddSibling={onAddSibling}
+                  onEdit={onEdit}
+                  onArchive={onArchive}
+                  onToggleRow={toggleRow}
+                  onContext={onContext}
+                />
+              </div>
+            )
+          })}
 
           {/* splitter handle — pinned with the left region, spans full height */}
           <div

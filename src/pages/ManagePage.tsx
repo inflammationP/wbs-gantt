@@ -7,7 +7,7 @@ import { addDays, toDate, toISO, todayISO } from '../lib/dates'
 import { STATUS_META, STATUS_ORDER, priorityMeta, priorityWash, sig, sigText, toggleIn } from '../lib/ui'
 import { formatShortDate, weekdayLabels } from '../lib/i18n'
 import { useLang, useT } from '../lib/useT'
-import { archivedRoots, collectDescendants, compareSiblings, computeWbs, effectiveStates, isArchived, liveTasks } from '../lib/tree'
+import { archivedRoots, collectDescendants, computeProjectWbs, effectiveStates, isArchived, liveTasks } from '../lib/tree'
 import { ALL_DAYS, RoutineRow, routineRows } from '../lib/habits'
 import { useDialogs } from '../components/dialogs'
 import { HabitDialog } from '../components/HabitDialog'
@@ -95,23 +95,19 @@ export function ManagePage() {
     }
   }, [leaves, eff, today, weekISO])
 
-  const wbs = useMemo(() => computeWbs(live), [live])
+  const wbs = useMemo(() => computeProjectWbs(live), [live])
   const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? ''
 
-  // The Gantt's own sibling order, from the Gantt's own function: to-dos last,
-  // then whatever order the user dragged them into, then the date-and-name sort.
-  // This list used to carry a near-copy of that comparator, and a near-copy is
-  // what it was — it had dropped the `id` tiebreak, and it grouped projects by
-  // the letters of their ids rather than by the order they are listed in. Either
-  // one on its own is invisible until two tasks happen to tie; together with the
-  // project lines now drawn in the Gantt, they read as two pages disagreeing.
+  // WBS order, which is the Gantt's own row order: the numbers are derived from
+  // the tree, so sorting by them reads 1, 1.1, 2 instead of the flat date sort's
+  // 1, 2, 1.1. Projects keep the order they are listed in.
   const projectRank = new Map(projects.map((p, i) => [p.id, i]))
   const filtered = live
     .filter((task) => statusFilter === 'all' || eff.get(task.id)?.status === statusFilter)
     .sort(
       (a, b) =>
         (projectRank.get(a.projectId) ?? 999) - (projectRank.get(b.projectId) ?? 999) ||
-        compareSiblings(a, b),
+        (wbs.get(a.id) ?? '').localeCompare(wbs.get(b.id) ?? '', undefined, { numeric: true }),
     )
 
   // The project card's numbers. Counts come from the live tasks; the percentage

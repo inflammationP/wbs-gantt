@@ -41,9 +41,8 @@ const task = (over) => ({
 })
 
 // A to-do has no schedule, no priority and no log mode of its own — the same
-// shape `addTask` writes for one. `order` is the place a drag gave it, which is
-// what decides whether it sinks to the bottom of its list or sits where it was
-// dropped.
+// shape `addTask` writes for one. `order` is the place a drag gave it; it
+// arranges to-dos among themselves and never lifts one above a task.
 const todo = (id, parentId = 'P', order) =>
   task({ id, name: id, parentId, isTodo: true, startDate: null, endDate: null, priority: null, strictProgress: false, order })
 
@@ -98,12 +97,10 @@ assert.deepEqual(shape({ P: false }, two), [['task', 'P', 0, null]])
 
 // --- where an arranged to-do sits ------------------------------------------
 //
-// Once a parent has been dragged, every one of its children carries a place and
-// the to-do key no longer decides anything — so the to-dos are drawn where they
-// were put, and a folder stands for the run they form there rather than for
-// every to-do of that parent. This is the half that makes a to-do draggable at
-// all: without it the row would go back to the bottom of the list on release,
-// whatever the drop said.
+// To-dos sink below the scheduled rows whatever `order` says, and their own
+// `order` arranges them inside that block. The kind key comes before the order
+// key, so a to-do can never be lifted between two tasks — which is why the
+// folder is always one block at the end of a parent's children.
 
 const A = (over) => task({ id: 'A', name: 'A', parentId: 'P', ...over })
 const arranged = [
@@ -116,40 +113,45 @@ const arranged = [
 assert.deepEqual(shape({}, arranged), [
   ['task', 'P', 0, null],
   ['task', 'A', 1, null],
-  // The run of two, folded — between the two tasks, which is a place the folder
-  // could not be while to-dos sank.
-  ['todoGroup', open, 1, null],
   ['task', 'B', 1, null],
+  // The block of two, folded, after every task.
+  ['todoGroup', open, 1, null],
 ])
 assert.deepEqual(shape({ [open]: true }, arranged), [
   ['task', 'P', 0, null],
   ['task', 'A', 1, null],
+  ['task', 'B', 1, null],
   ['task', 't1', 1, open],
   ['task', 't2', 1, null],
-  ['task', 'B', 1, null],
 ])
 
-// A task between two to-dos splits the run, and a run of one is an ordinary row
-// — so no folder is drawn at all, open or closed, and both to-dos stand where
-// they were put.
-const split = [
+// Inside the block the to-dos' own numbers decide: give t2 the lower one and it
+// stands first, still after every task.
+const swapped = [
+  task({ id: 'P', name: 'parent', order: 0 }),
+  A({ order: 1, startDate: '2026-09-01', endDate: '2026-09-02' }),
+  todo('t1', 'P', 3),
+  todo('t2', 'P', 2),
+  A({ id: 'B', name: 'B', order: 4, startDate: '2026-09-03', endDate: '2026-09-04' }),
+]
+assert.deepEqual(shape({ [open]: true }, swapped).slice(3), [
+  ['task', 't2', 1, open],
+  ['task', 't1', 1, null],
+])
+
+// A to-do numbered next to a task stays below it: one to-do is an ordinary row,
+// and no folder is drawn for a block of one.
+const straddling = [
   task({ id: 'P', name: 'parent', order: 0 }),
   todo('t1', 'P', 1),
   A({ order: 2, startDate: '2026-09-01', endDate: '2026-09-02' }),
-  todo('t2', 'P', 3),
 ]
-assert.deepEqual(shape({}, split), [
+assert.deepEqual(shape({}, straddling), [
   ['task', 'P', 0, null],
-  ['task', 't1', 1, null],
   ['task', 'A', 1, null],
-  ['task', 't2', 1, null],
+  ['task', 't1', 1, null],
 ])
-assert.deepEqual(shape({ [open]: true }, split), shape({}, split))
-// The key outlives the folder, and that is deliberate: `todoGroupIds` counts a
-// parent's to-dos rather than the runs they fall into, so it names keys that no
-// row is drawn under. A key nothing reads costs nothing; a missing one would
-// leave an open folder that "collapse all" could not close.
-assert.deepEqual(todoGroupIds(split), [open])
+assert.deepEqual(todoGroupIds(straddling), [])
 
 // To-dos with no parent are a folder of their own, under the synthetic root key
 // rather than somebody's id.

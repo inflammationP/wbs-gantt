@@ -47,7 +47,7 @@ export function useDialogs(): Dialogs {
   let element: ReactNode = null
   if (pending?.kind === 'confirm') {
     element = (
-      <Modal title={t('common.confirmTitle')} onClose={close} width={420}>
+      <Modal title={t('common.confirmTitle')} onClose={close} width={420} zIndex={90}>
         <div className="text-[13px] text-fg/90 leading-relaxed whitespace-pre-wrap">{pending.message}</div>
         <div className="flex justify-end gap-2 pt-4">
           <button onClick={close} className="h-8 px-3 text-[12px] text-muted hover:text-fg border border-border rounded-[3px]">
@@ -68,7 +68,7 @@ export function useDialogs(): Dialogs {
     )
   } else if (pending?.kind === 'notice') {
     element = (
-      <Modal title={t('common.noticeTitle')} onClose={close} width={420}>
+      <Modal title={t('common.noticeTitle')} onClose={close} width={420} zIndex={90}>
         <div className="text-[13px] text-fg/90 leading-relaxed whitespace-pre-wrap">{pending.message}</div>
         <div className="flex justify-end pt-4">
           <button

@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { create } from 'zustand'
-import { AppView, Chore, ChoreSlot, Habit, ItemLog, Note, Project, Task, TaskLog, TaskPriority, TaskType, ViewMode } from '../types'
+import { AppView, Chore, ChoreSlot, DaySortMode, Habit, ItemLog, Note, Project, Task, TaskLog, TaskPriority, TaskType, ViewMode } from '../types'
 import { ALL_DAYS, habitBranch, runsOn } from '../lib/habits'
 import { todaysChores } from '../lib/chores'
 import { todayISO, addDays, diffDays, pad, toDate, toISO } from '../lib/dates'
@@ -172,6 +172,8 @@ export interface State {
   projectFilter: string
   lang: Lang
   theme: ThemeId
+  /** How the Today and date-detail task lists are ordered. */
+  daySort: DaySortMode
   /**
    * The to-do note in the task dialog has been acknowledged. A preference, not
    * view state: it survives a reload, and it is not part of an imported board.
@@ -248,6 +250,7 @@ export interface State {
 
   setLang: (l: Lang) => void
   setTheme: (t: ThemeId) => void
+  setDaySort: (s: DaySortMode) => void
   setActiveView: (v: AppView) => void
   openGantt: () => void
   setSelected: (id: string | null) => void
@@ -519,6 +522,7 @@ function persistPrefs(): void {
   const {
     lang,
     theme,
+    daySort,
     todoNoteDismissed,
     updateAnchorAt,
     nagShownAt,
@@ -536,6 +540,7 @@ function persistPrefs(): void {
   savePrefs({
     lang,
     theme,
+    daySort,
     todoNoteDismissed,
     updateAnchorAt,
     nagShownAt,
@@ -722,6 +727,7 @@ export const useStore = create<State>()((rawSet, get) => {
   projectFilter: 'all',
   lang: prefs.lang,
   theme: prefs.theme,
+  daySort: prefs.daySort,
   todoNoteDismissed: prefs.todoNoteDismissed,
   updatePhase: 'idle',
   updateInfo: null,
@@ -756,6 +762,10 @@ export const useStore = create<State>()((rawSet, get) => {
   setTheme: (t) => {
     applyTheme(t)
     set({ theme: t })
+    persistPrefs()
+  },
+  setDaySort: (s) => {
+    set({ daySort: s })
     persistPrefs()
   },
   setActiveView: (v) => set({ activeView: v }),

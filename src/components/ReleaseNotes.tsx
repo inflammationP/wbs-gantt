@@ -1,5 +1,4 @@
-import { useEffect, useState } from 'react'
-import { ReleaseNotes, fetchAllReleases } from '../lib/updater'
+import { ReleaseNotes, allReleases } from '../lib/updater'
 import { useT } from '../lib/useT'
 import { Modal } from './ui'
 
@@ -35,40 +34,17 @@ export function ReleaseNotesList({ releases }: { releases: ReleaseNotes[] }) {
 /**
  * The whole release history, opened from Settings.
  *
- * Fetched when it is opened rather than when Settings mounts: this is the one
- * screen in the app that needs the network and nothing on the page behind it
- * does, so asking on the way past would be a request most visits never use.
- * `loadReleases` caches for the session, so the second open costs nothing.
- *
- * Three states and no fourth: still reading, read and there is nothing (which
- * can only mean the fetch failed, since the app has shipped at least the
- * version that is running), and the list. A blank panel in the last case would
- * be indistinguishable from a panel that never arrived.
+ * Reads the list that ships with the build, so it opens at once and works
+ * offline — the one screen it used to need GitHub for. The list ends at the
+ * version that built it; versions published afterwards are the update dialog's
+ * business, and that one still fetches.
  */
 export function ReleaseHistoryDialog({ onClose }: { onClose: () => void }) {
   const t = useT()
-  const [releases, setReleases] = useState<ReleaseNotes[] | null>(null)
-
-  useEffect(() => {
-    let live = true
-    void fetchAllReleases().then((r) => {
-      if (live) setReleases(r)
-    })
-    return () => {
-      live = false
-    }
-  }, [])
-
   return (
     <Modal title={t('update.historyTitle')} onClose={onClose} width={520}>
       <div className="space-y-3">
-        {releases == null ? (
-          <div className="text-[12px] text-muted">{t('update.historyLoading')}</div>
-        ) : releases.length === 0 ? (
-          <div className="text-[12px] text-muted">{t('update.historyFailed')}</div>
-        ) : (
-          <ReleaseNotesList releases={releases} />
-        )}
+        <ReleaseNotesList releases={allReleases()} />
       </div>
     </Modal>
   )

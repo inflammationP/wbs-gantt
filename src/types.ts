@@ -3,6 +3,8 @@ export type TaskPriority = 'low' | 'medium' | 'high' | 'top'
 export type TaskType = 'phase' | 'long-term'
 export type ViewMode = 'day' | 'week' | 'month' | 'quarter' | 'year'
 export type AppView = 'gantt' | 'today' | 'calendar' | 'logs' | 'manage' | 'settings'
+/** How the Today and date-detail task lists are ordered. */
+export type DaySortMode = 'status' | 'priority'
 
 export interface Project {
   id: string

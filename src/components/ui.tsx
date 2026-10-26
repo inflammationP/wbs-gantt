@@ -11,17 +11,27 @@ export function Modal({
   onClose,
   children,
   width = 560,
+  zIndex = 60,
 }: {
   title: string
   onClose: () => void
   children: ReactNode
   width?: number
+  /**
+   * Only the confirmations raised from inside a floating bubble need to move:
+   * the bubble is z-70, so a question asked from it has to clear that. The
+   * default stays below the popovers a dialog opens out of itself (the task
+   * dialog's parent picker is z-70).
+   */
+  zIndex?: number
 }) {
   const t = useT()
   return createPortal(
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60"
-      onMouseDown={(e) => {
+      data-modal
+      style={{ zIndex }}
+      className="fixed inset-0 flex items-center justify-center bg-black/60"
+      onPointerDown={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
     >

@@ -16,8 +16,9 @@ import { ChoreRow, HabitLine } from '../DayBoard'
  * are outside the tree — no WBS number, no progress, no dates — and they are
  * opened to be read and ticked and then put away. So each hangs off its button,
  * over the board, and leaves the chart's width and rows exactly as they were. It
- * is deliberately not a modal: nothing here needs an answer, and a dialog would
- * have to be dismissed twice.
+ * is deliberately not a modal: the bubble itself asks nothing, and a dialog
+ * would have to be dismissed twice. A tick does ask for confirmation, and that
+ * question sits above the bubble rather than replacing it.
  *
  * **The rows are the day views' own, literally** — `HabitLine` and `ChoreRow`,
  * the components the Today page and the day panel draw, with the pencils left
@@ -58,7 +59,9 @@ export function DailyBubble({ kind, at, onClose }: {
   // below: the bubble, and the button it hangs off. See `useDismiss` for why the
   // button has to be named. Both buttons share the name: pressing the other one
   // is answered by that button (it swaps the bubble), not by this handler.
-  useDismiss('[data-daily-bubble], [data-daily-toggle]', onClose)
+  // `[data-modal]` is the confirmation a tick can raise: the bubble has to stay
+  // put while it is answered, or unmounting it would take the question with it.
+  useDismiss('[data-daily-bubble], [data-daily-toggle], [data-modal]', onClose)
 
   const W = 320
   // To the right of the button, and kept on screen: the button sits near the

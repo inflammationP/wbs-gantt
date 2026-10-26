@@ -108,6 +108,12 @@ interface Props {
   archived: ArchiveActions
   /** Editing mode is on: rows can be dragged, and clicks build a selection. */
   editing?: boolean
+  /**
+   * The other kind is being dragged: a to-do while the mode is on tasks, or a
+   * task while it is on to-dos. Drawn back so the movable rows are the only
+   * ones that read as live.
+   */
+  dimmed?: boolean
   /** Whether this row is one of the rows about to be dragged. */
   picked?: boolean
   /**
@@ -144,7 +150,7 @@ const stop = (fn: () => void) => (e: MouseEvent) => {
   fn()
 }
 
-export function RowLeft({ row, todo, archived, editing, picked, onRowClick, onAddMenu, onAddSibling, onEdit, onArchive, onToggleRow, onContext }: Props) {
+export function RowLeft({ row, todo, archived, editing, dimmed, picked, onRowClick, onAddMenu, onAddSibling, onEdit, onArchive, onToggleRow, onContext }: Props) {
   const t = useT()
   const { ask, element: dialogs } = useDialogs()
   const setSelected = useStore((s) => s.setSelected)
@@ -229,9 +235,10 @@ export function RowLeft({ row, todo, archived, editing, picked, onRowClick, onAd
     <div
       className={`relative h-full flex items-stretch text-[12px] group ${
         // Nothing filed away is draggable: it is not on the board to be moved,
-        // and the cursor is the one thing that says so before the attempt.
-        editing && !filed ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
-      } ${selected ? 'bg-accent/10' : 'hover:bg-panel2/60'}`}
+        // and the cursor is the one thing that says so before the attempt. Nor
+        // is the kind the mode is not on — that row is drawn back below.
+        editing && !filed && !dimmed ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
+      } ${dimmed ? 'opacity-40' : ''} ${selected ? 'bg-accent/10' : 'hover:bg-panel2/60'}`}
       // Priority as a band off the row's own left edge — the canvas's edge,
       // before the indent, the chevron and the WBS number — so the washes line
       // up down the column however deep their tasks sit. `priorityWash` holds

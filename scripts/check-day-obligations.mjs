@@ -8,9 +8,9 @@
  * disagreement would only ever show up as a number that looks slightly off.
  *
  * `daySummary` is checked here too because the order it returns *is* the day's
- * list: a tree walk that quietly stopped nesting, or stopped hoisting the
- * siblings that owe a log, would look like nothing at all until someone
- * noticed the list reading wrong.
+ * list: the chosen key has to group, the other key has to break ties, and a log
+ * obligation still has to come first inside its group. Any of those stopping
+ * would look like nothing at all until someone noticed the list reading wrong.
  *
  * No framework, nothing mocked: `src/lib/dayTasks.ts` is loaded straight from
  * source by Vite, the same way the other checks load theirs.
@@ -123,7 +123,8 @@ assert.equal(cell('2026-09-15', false, rate(2, 2)), 'full')
 
 const PROJECTS = [{ id: 'p', name: 'p', color: '#888', description: '' }]
 /** The day's task ids, in the order the panel renders them. */
-const list = (tasks, day = TODAY) => daySummary(tasks, [], PROJECTS, day, day).all.map((r) => r.task.id)
+const list = (tasks, day = TODAY, sort = 'status') =>
+  daySummary(tasks, [], PROJECTS, day, day, sort).all.map((r) => r.task.id)
 
 const rowsFor = (tasks, day = TODAY) => daySummary(tasks, [], PROJECTS, day, day).all
 
@@ -171,12 +172,42 @@ const away = [
 assert.deepEqual(list(away), ['b'])
 assert.deepEqual(rowsFor(away)[0].parents, ['phase'])
 
-// A child that is itself a to-do does not make a container. To-dos are
-// unscheduled and take no part in the roll-up, so a task whose children are all
-// to-dos keeps its own dates and is a leaf here.
+// A task whose children are all to-dos is a to-do list, not work: it is treated
+// as a to-do here and stays out of the day's list exactly as its child does. The
+// board still draws it — this rule is about what the day is asked to account
+// for, not about the task ceasing to exist.
 const todoKid = [task({ id: 'a' }), task({ id: 't', parentId: 'a', isTodo: true, startDate: null, endDate: null })]
-assert.deepEqual(list(todoKid), ['a'])
-assert.deepEqual(rowsFor(todoKid)[0].parents, [])
+assert.deepEqual(list(todoKid), [])
+
+// A real child keeps its parent a container, and that child is still listed.
+const mixedKid = [
+  task({ id: 'a' }),
+  task({ id: 't', parentId: 'a', isTodo: true, startDate: null, endDate: null }),
+  task({ id: 'k', parentId: 'a' }),
+]
+assert.deepEqual(list(mixedKid), ['k'])
+
+// --- the two orders the list can be asked for ------------------------------
+
+// The chosen key decides, the other one breaks the tie. These two disagree, so
+// the direction of the sort is visible in the result.
+const crossed = [
+  task({ id: 'late-low', endDate: '2026-09-14', priority: 'low' }),
+  task({ id: 'active-top', priority: 'top' }),
+]
+assert.deepEqual(list(crossed, TODAY, 'status'), ['late-low', 'active-top'])
+assert.deepEqual(list(crossed, TODAY, 'priority'), ['active-top', 'late-low'])
+
+// Finished work is last in both orders, whatever its priority. A log at 100 on
+// the day is what makes the row completed.
+const finished = [task({ id: 'done-top', priority: 'top' }), task({ id: 'open-low', priority: 'low' })]
+const finishedLogs = [log('done-top', TODAY, 100)]
+for (const sort of ['status', 'priority']) {
+  assert.deepEqual(
+    daySummary(finished, finishedLogs, PROJECTS, TODAY, TODAY, sort).all.map((r) => r.task.id),
+    ['open-low', 'done-top'],
+  )
+}
 
 // --- the chain printed in front of a row's name ------------------------------
 
