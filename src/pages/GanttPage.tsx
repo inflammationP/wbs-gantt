@@ -443,11 +443,21 @@ export function GanttPage() {
           {editing ? <Check size={14} /> : <FolderTree size={14} />}
           {editing ? t('gantt.editDone') : t('gantt.editMode')}
         </button>
+        {/* Which kind the mode is moving needs a word: the button to its left
+            says only "done", and both kinds share it. Shown for exactly as long
+            as the to-do focus is on; leaving the focus takes it away. */}
+        {editing && todoFocus && (
+          <span className="h-7 px-2 inline-flex items-center whitespace-nowrap text-[11px] font-medium rounded-[3px] bg-todo/15 text-todo border border-todo/30">
+            {t('gantt.todoEditMode')}
+          </span>
+        )}
         {/* The project-level move, and the reason the mode above is no longer
             named for the tasks: rearranging rows is not the only thing it now
             holds. It stands where the "editing" badge used to — the button to
             its left says the mode already, and says it in the accent colour, so
-            a badge repeating the word was a word spent saying nothing.
+            a badge repeating the word was a word spent saying nothing. The
+            to-do badge above is the exception: it names the *kind*, which the
+            button does not.
             A project line carries no controls at all (see `ProjectRow`), which
             is why this is reached from the toolbar and not from the rows it
             acts on. */}

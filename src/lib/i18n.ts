@@ -221,6 +221,7 @@ const en = {
   // label: the button itself now says the mode, and says it twice when pressed.
   'gantt.editDone': 'Done',
   'gantt.editMode': 'Edit mode',
+  'gantt.todoEditMode': 'To-do edit mode',
   'gantt.selected': { one: '{count} selected', other: '{count} selected' },
   'gantt.clearSelection': 'Clear selection',
   'gantt.setTodoMany': {
@@ -892,6 +893,7 @@ const zh: Dict = {
   'taskTree.subtasks': { one: '{count} 个子任务', other: '{count} 个子任务' },
   'gantt.editDone': '完成',
   'gantt.editMode': '编辑模式',
+  'gantt.todoEditMode': '待办编辑模式',
   'gantt.selected': { one: '已选 {count} 项', other: '已选 {count} 项' },
   'gantt.clearSelection': '取消选择',
   'gantt.setTodoMany': {
@@ -1470,6 +1472,7 @@ const fr: Dict = {
   'taskTree.subtasks': { one: '{count} sous-tâche', other: '{count} sous-tâches' },
   'gantt.editDone': 'Terminé',
   'gantt.editMode': 'Mode édition',
+  'gantt.todoEditMode': 'Édition des tâches à faire',
   'gantt.selected': { one: '{count} sélectionnée', other: '{count} sélectionnées' },
   'gantt.clearSelection': 'Tout désélectionner',
   'gantt.setTodoMany': {
