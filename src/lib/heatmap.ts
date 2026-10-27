@@ -1,6 +1,7 @@
-import { Chore, Habit, Task, TaskLog } from '../types'
+import { Chore, DayPlan, Habit, Task, TaskLog } from '../types'
 import { buildChildrenMap, collectDescendants } from './tree'
-import { activeOnDay, isPausedOnDay } from './dayTasks'
+import { activeOnDay, isPausedOnDay, plannedIdSet } from './dayTasks'
+import { planOn, plannedIds } from './schedule'
 
 /**
  * What a heatmap's days are made of.
@@ -51,7 +52,14 @@ export interface DayTally {
  * Every log indexed by task in one pass: asking per leaf instead would walk the
  * whole log list once for each of them.
  */
-function dayTallies(logs: TaskLog[], today: string, scope: Task[], days: string[]): Map<string, DayTally> {
+function dayTallies(
+  logs: TaskLog[],
+  today: string,
+  tasks: Task[],
+  scope: Task[],
+  days: string[],
+  plans: DayPlan[] = [],
+): Map<string, DayTally> {
   const out = new Map<string, DayTally>()
 
   const logged = new Map<string, Set<string>>()
@@ -62,9 +70,11 @@ function dayTallies(logs: TaskLog[], today: string, scope: Task[], days: string[
   }
 
   for (const day of days) {
+    const plan = plannedIdSet(tasks, plannedIds(planOn(plans, day)))
     let total = 0
     let done = 0
     for (const t of scope) {
+      if (plan && !plan.has(t.id)) continue
       if (!activeOnDay(t, day) || isPausedOnDay(t, day)) continue
       total++
       // Both kinds of task are done on a day because a person said so: a log for
@@ -89,11 +99,12 @@ export function branchDayTallies(
   today: string,
   rootId: string,
   days: string[],
+  plans: DayPlan[] = [],
 ): Map<string, DayTally> {
   const children = buildChildrenMap(tasks)
   const ids = new Set([rootId, ...collectDescendants(tasks, rootId)])
   const scope = scheduledLeaves(tasks.filter((t) => ids.has(t.id)), children)
-  return dayTallies(logs, today, scope, days)
+  return dayTallies(logs, today, tasks, scope, days, plans)
 }
 
 /**
@@ -136,8 +147,9 @@ export function boardDayTallies(
   habits: Habit[],
   today: string,
   days: string[],
+  plans: DayPlan[] = [],
 ): Map<string, DayTally> {
-  const out = dayTallies(logs, today, scheduledLeaves(tasks, buildChildrenMap(tasks)), days)
+  const out = dayTallies(logs, today, tasks, scheduledLeaves(tasks, buildChildrenMap(tasks)), days, plans)
   for (const c of chores) {
     // `days` is a window, not all of time: a chore ticked before it starts has
     // no square to land on, and must not fall through to one.

@@ -119,6 +119,7 @@ export function scheduleReminderSync(delay = REMINDER_SETTLE_MS): void {
         logs: s.logs,
         chores: s.chores,
         habits: s.habits,
+        dayPlans: s.dayPlans,
       },
       s.lang,
       {
@@ -145,6 +146,7 @@ export function startReminderRuntime(store: StoreApi<State>): void {
       state.logs !== prev.logs ||
       state.chores !== prev.chores ||
       state.habits !== prev.habits ||
+      state.dayPlans !== prev.dayPlans ||
       state.lang !== prev.lang ||
       state.today !== prev.today
     ) {

@@ -8,7 +8,8 @@
  * numbers on screen are the strings written below.
  *
  * `?lang=fr` and `?theme=paper` to see the other two languages and the other
- * three palettes; `?open` to start with the folded section already unfolded.
+ * three palettes; `?open` to start with the folded section already unfolded;
+ * `?important` for the important-release layout, with a longer note to read.
  * Language and theme are set through `applyLang` / `applyTheme` rather than the
  * store's `setLang` / `setTheme`, because those persist — looking at the dialog
  * must not change what the app opens in tomorrow. Closing the dialog leaves an
@@ -48,7 +49,17 @@ const NOTES: Record<string, string[]> = {
   ],
 }
 
+/** Long enough that the important layout has something to scroll. */
+const IMPORTANT_NOTES = [
+  '数据格式升级：这次更新会重写本地存档，升级前建议在设置里导出一份备份。',
+  '第一次启动会重新索引全部日志，任务多的话可能要几十秒，属于正常现象。',
+  '甘特图的时间轴改成了按周刻度，原来的日 / 月 / 季 / 年视图位置不变。',
+  '提醒的发送时间需要重新确认一次，旧的自定义时间不会再自动沿用。',
+  '修复了归档任务在某些筛选条件下仍然出现的问题。',
+]
+
 const asNotes = (version: string) => NOTES[version].map((line) => `- ${line}`).join('\n')
+const important = params.has('important')
 
 useStore.setState({
   lang: isLang(lang) ? lang : 'zh',
@@ -61,7 +72,8 @@ useStore.setState({
     kind: 'available',
     version: '0.12.0',
     current: '0.9.0',
-    notes: asNotes('0.12.0'),
+    notes: important ? IMPORTANT_NOTES.map((line) => `- ${line}`).join('\n') : asNotes('0.12.0'),
+    important,
     date: null,
     download: async () => {},
     install: async () => {},

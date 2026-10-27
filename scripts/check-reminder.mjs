@@ -92,7 +92,7 @@ const log = (over) => ({
   createdAt: `${DAY}T00:00:00.000Z`, updatedAt: `${DAY}T00:00:00.000Z`,
   ...over,
 })
-const board = (over) => ({ tasks: [], logs: [], chores: [], habits: [], ...over })
+const board = (over) => ({ tasks: [], logs: [], chores: [], habits: [], dayPlans: [], ...over })
 
 /** A board with exactly one item in each of the seven categories. */
 const FULL = board({
@@ -448,6 +448,15 @@ for (const s of SLOTS) {
 {
   const t = testDigest('zh')
   assert.ok(t.title && t.body, 'the test message must not be blank')
+}
+
+// ── the day's plan narrows what the digest says is owed ─────────────────────
+{
+  const rest = collectDay(board({ tasks: [task({})], dayPlans: [{ date: DAY, taskIds: [] }] }), DAY, LEAD)
+  assert.equal(rest.obligations.length, 0, 'a rest day owes no log')
+  assert.equal(rest.logsOwed.length, 0)
+  const chosen = collectDay(board({ tasks: [task({})], dayPlans: [{ date: DAY, taskIds: ['x'] }] }), DAY, LEAD)
+  assert.equal(chosen.obligations.length, 1, 'a planned strict task still owes its log')
 }
 
 await server.close()

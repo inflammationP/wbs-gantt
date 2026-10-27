@@ -127,12 +127,55 @@ try {
     notes: [{ date: '2026-10-13', body: 'note', updatedAt: '', stamps: [{ at: '12:00' }] }],
     itemLogs: [{ kind: 'chore', ownerId: 'c', date: '2026-10-13', content: 'entry', createdAt: '', updatedAt: '' }],
     todoFolders: { folder: 'custom name' },
+    dayPlans: [
+      { date: '2026-10-13', taskIds: ['a'], capacityHours: 6, hours: { a: 2.5 } },
+      { date: '2026-10-14', taskIds: [] },
+    ],
+    scheduleBlocks: [{ id: 'b1', date: '2026-10-13', start: '09:00', end: '10:30', title: 'block' }],
   })
   const roundTrip = parseImport(state().exportData())
   assert.equal(roundTrip.todoFolders.folder, 'custom name')
   for (const field of ['chores', 'habits', 'notes', 'itemLogs']) assert.equal(roundTrip[field].length, 1)
+  // The two day-scoped collections ride through the same snapshot. A missing
+  // registration site shows up here as a zero, not as a silent loss on save.
+  assert.equal(roundTrip.dayPlans.length, 2)
+  assert.deepEqual(roundTrip.dayPlans[0].hours, { a: 2.5 })
+  assert.equal(roundTrip.scheduleBlocks.length, 1)
 
   const importing = (tasks, over = {}) => parseImport(JSON.stringify({ projects, tasks, logs: [], ...over }))
+
+  // Bad rows are dropped by `normalize`, not rejected: a typo must not make a
+  // save unopenable.
+  const sanitized = importing([task('a')], {
+    dayPlans: [
+      { date: '2026-10-13', taskIds: ['a'], hours: { a: 2 } },
+      { date: '2026-10-13', taskIds: [], hours: { a: 2 } },
+      { date: '2026-10-14', taskIds: 'bad' },
+      { date: '2026-10-15', capacityHours: 25 },
+      { date: '2026-10-16', capacityHours: 6 },
+      { date: '2026-10-17', taskIds: ['a'], hours: { a: 2, stranger: 3, neg: -1, str: '2', huge: 30 } },
+      { date: '2026-10-18', hours: { a: 2 } },
+    ],
+    scheduleBlocks: [
+      { id: 'ok', date: '2026-10-13', start: '09:00', end: '10:00', title: 'ok' },
+      { id: 'dead', date: '2026-10-13', start: '17:00', end: '10:00', title: 'deadline', deadline: true },
+      { id: 'bad', date: '2026-10-13', start: '9:00', end: '10:00', title: 'bad' },
+      { id: 'empty', date: '2026-10-13', start: '09:00', end: '10:00', title: '' },
+    ],
+  })
+  assert.deepEqual(sanitized.dayPlans.map((p) => p.date), ['2026-10-13', '2026-10-16', '2026-10-17'])
+  assert.deepEqual(sanitized.dayPlans[0].taskIds, [], 'last duplicate wins; [] is a rest day')
+  assert.equal(sanitized.dayPlans[0].hours, undefined, 'a rest day keeps no per-task hours')
+  assert.equal(sanitized.dayPlans[1].capacityHours, 6)
+  assert.deepEqual(
+    sanitized.dayPlans[2].hours,
+    { a: 2 },
+    'hours outside the plan, out of range, or unreadable are dropped',
+  )
+  assert.equal(sanitized.dayPlans.length, 3, 'hours alone are not a plan')
+  assert.deepEqual(sanitized.scheduleBlocks.map((b) => b.id), ['ok', 'dead'])
+  assert.equal(sanitized.scheduleBlocks[1].end, '17:00', 'a deadline is forced to a point')
+
   assert.throws(() => importing([task('a', { parentId: 'b' }), task('b', { parentId: 'a' })]), /cycle/)
   assert.throws(() => importing([task('a', { parentId: 'missing' })]), /parent does not exist/)
   assert.throws(() => importing([task('a'), task('a')]), /duplicate/)

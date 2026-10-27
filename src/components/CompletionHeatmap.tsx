@@ -59,6 +59,7 @@ export function CompletionHeatmap({ taskId, start, end, weeks = PANEL_WEEKS, tit
   const chores = useStore((s) => s.chores)
   const habits = useStore((s) => s.habits)
   const today = useStore((s) => s.today)
+  const dayPlans = useStore((s) => s.dayPlans)
 
   const grid = useMemo(() => {
     // The window ends where the subject does; for the board that is today, which
@@ -74,10 +75,10 @@ export function CompletionHeatmap({ taskId, start, end, weeks = PANEL_WEEKS, tit
     // Chores and habits go to the board and not to a branch: they belong to no
     // task.
     const tallies = taskId == null
-      ? boardDayTallies(tasks, logs, chores, habits, today, isos)
-      : branchDayTallies(tasks, logs, today, taskId, isos)
+      ? boardDayTallies(tasks, logs, chores, habits, today, isos, dayPlans)
+      : branchDayTallies(tasks, logs, today, taskId, isos, dayPlans)
     return { last, days, tallies }
-  }, [start, end, taskId, weeks, tasks, logs, chores, habits, today])
+  }, [start, end, taskId, weeks, tasks, logs, chores, habits, today, dayPlans])
 
   const { last, days, tallies } = grid
   const weeksDr = days.length / ROWS

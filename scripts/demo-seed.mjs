@@ -9,7 +9,11 @@
  *
  * The dataset is `seed-v0.5.0.ts` at the repo root, which is a copy of `seed.ts`
  * parked there the last time it was taken off `main`. It knows nothing about
- * habits — those postdate it — so `HABIT_SPECS` below is added on top.
+ * habits — those postdate it — so `HABIT_SPECS` below is added on top. The
+ * timetable and daily planning postdate it too: `SCHEDULE_BLOCKS` and
+ * `DAY_PLANS` add a few blocks around today and a planned tomorrow, so the
+ * Today page's three views, the load readout and the plan dialog all have
+ * something to show.
  *
  * That archive imports `'../types'` and `'./dates'`, written as though it still
  * sat in `src/lib/`. Rather than move or rewrite it, the two specifiers are
@@ -48,6 +52,8 @@ const { toDate, weekdayIndex } = await server.ssrLoadModule('/src/lib/dates.ts')
 const { archiveCascade, buildRows, effectiveStates, isArchived, liveTasks } = await server.ssrLoadModule('/src/lib/tree.ts')
 const { paragraphs } = await server.ssrLoadModule('/src/lib/logs.ts')
 const { timelineRange } = await server.ssrLoadModule('/src/lib/timeline.ts')
+const { activeOnDay } = await server.ssrLoadModule('/src/lib/dayTasks.ts')
+const { dayLoadMinutes } = await server.ssrLoadModule('/src/lib/schedule.ts')
 
 /** yyyy-MM-dd, `offset` days from today — the same arithmetic the archive uses. */
 function isoOffset(offset) {
@@ -159,6 +165,38 @@ const habits = HABIT_SPECS.map((s, i) => {
   }
 })
 
+// A day's timetable, with the cases the view has to draw: a task block, a
+// free event, an overlapping pair (the lanes), a deadline, and a second day
+// with its own blocks. The dates are relative, like everything else here.
+const TODAY = isoOffset(0)
+const TOMORROW = isoOffset(1)
+const DAY_AFTER = isoOffset(2)
+const REST_DAY = isoOffset(3)
+const SCHEDULE_BLOCKS = [
+  { id: 'demo-block-1', date: TODAY, start: '09:00', end: '10:30', title: 'Bring-up & test', taskId: 'stm-motor-test' },
+  { id: 'demo-block-2', date: TODAY, start: '09:30', end: '10:00', title: 'Code review' },
+  { id: 'demo-block-3', date: TODAY, start: '10:30', end: '11:00', title: 'Team stand-up' },
+  { id: 'demo-block-4', date: TODAY, start: '11:00', end: '12:00', title: 'CAN bus driver', taskId: 'stm-can' },
+  { id: 'demo-block-5', date: TODAY, start: '14:00', end: '16:00', title: 'Vision', taskId: 'team-vision' },
+  { id: 'demo-block-6', date: TODAY, start: '17:00', end: '17:00', title: 'PCB layout due', taskId: 'stm-motor-pcb', deadline: true },
+  { id: 'demo-block-7', date: TOMORROW, start: '09:00', end: '11:00', title: 'PID tuning', taskId: 'stm-pid' },
+  { id: 'demo-block-8', date: TOMORROW, start: '14:00', end: '16:00', title: 'Lab booking' },
+  { id: 'demo-block-9', date: TOMORROW, start: '16:00', end: '17:30', title: 'Electrical', taskId: 'team-elec' },
+  { id: 'demo-block-10', date: TOMORROW, start: '17:30', end: '17:30', title: 'PID review', taskId: 'stm-pid', deadline: true },
+  { id: 'demo-block-11', date: DAY_AFTER, start: '09:00', end: '11:00', title: 'Bring-up & test', taskId: 'stm-motor-test' },
+]
+
+// The three load colours in one week: today is near full (5.5h of 6), tomorrow
+// is over (5.5h of 4), the day after is comfortable (2h of 4), and the fourth
+// day is an explicit rest day. Today has no task selection — only the capacity
+// override — so the archive's full automatic list still shows.
+const DAY_PLANS = [
+  { date: TODAY, capacityHours: 6 },
+  { date: TOMORROW, taskIds: ['stm-can', 'stm-pid', 'team-elec'], capacityHours: 4 },
+  { date: DAY_AFTER, taskIds: ['stm-motor-test'], capacityHours: 4 },
+  { date: REST_DAY, taskIds: [], capacityHours: 4 },
+]
+
 const json = JSON.stringify(
   {
     version: 1,
@@ -170,6 +208,8 @@ const json = JSON.stringify(
     habits,
     notes: seed.notes,
     todoFolders: seed.todoFolders,
+    dayPlans: DAY_PLANS,
+    scheduleBlocks: SCHEDULE_BLOCKS,
   },
   null,
   2,
@@ -224,6 +264,51 @@ assert.ok(!shown.some((h) => h.id === 'hb-stretch'), 'the suspended habit is bac
 // still import perfectly, and would demonstrate nothing.
 
 const byId = new Map(loaded.tasks.map((t) => [t.id, t]))
+
+// The timetable and the plans have to be things the app could actually hold:
+// the blocks land on days their tasks are active, no block is upside down, and
+// tomorrow's plan is a real subset of the tasks on that day.
+assert.equal(loaded.dayPlans.length, DAY_PLANS.length, 'a day plan was dropped on import')
+assert.equal(loaded.scheduleBlocks.length, SCHEDULE_BLOCKS.length, 'a block was dropped on import')
+const todayPlan = loaded.dayPlans.find((p) => p.date === TODAY)
+assert.ok(todayPlan, 'today’s capacity override was dropped')
+assert.equal(todayPlan.taskIds, undefined, 'today must stay unplanned, not become a rest day')
+assert.equal(todayPlan.capacityHours, 6)
+const tomorrowPlan = loaded.dayPlans.find((p) => p.date === TOMORROW)
+assert.ok(tomorrowPlan, 'the planned tomorrow did not survive import')
+for (const id of tomorrowPlan.taskIds) {
+  const task = byId.get(id)
+  assert.ok(task, `${id} is planned but not on the board`)
+  assert.ok(activeOnDay(task, TOMORROW), `${id} is planned on a day it is not active`)
+}
+const dayAfterPlan = loaded.dayPlans.find((p) => p.date === DAY_AFTER)
+assert.ok(dayAfterPlan, 'the comfortable day was dropped')
+const dayAfterTask = byId.get(dayAfterPlan.taskIds[0])
+assert.ok(dayAfterTask, 'the comfortable day plans a task that is not on the board')
+assert.ok(activeOnDay(dayAfterTask, DAY_AFTER), 'the comfortable day plans an inactive task')
+const restDay = loaded.dayPlans.find((p) => p.date === REST_DAY)
+assert.ok(restDay, 'the rest day was dropped')
+assert.deepEqual(restDay.taskIds, [], 'a rest day must stay an empty plan, not become "no plan"')
+for (const block of loaded.scheduleBlocks) {
+  if (block.taskId) {
+    const task = byId.get(block.taskId)
+    assert.ok(task, `block ${block.id} points at a missing task`)
+    assert.ok(activeOnDay(task, block.date), `block ${block.id} points at a task not active that day`)
+  }
+  assert.ok(
+    block.deadline ? block.start === block.end : block.start < block.end,
+    `block ${block.id} has an impossible window`,
+  )
+}
+const todayLoad = dayLoadMinutes(loaded.scheduleBlocks, TODAY) / 60
+const tomorrowLoad = dayLoadMinutes(loaded.scheduleBlocks, TOMORROW) / 60
+const dayAfterLoad = dayLoadMinutes(loaded.scheduleBlocks, DAY_AFTER) / 60
+assert.ok(todayLoad / todayPlan.capacityHours >= 0.8 && todayLoad <= todayPlan.capacityHours,
+  'today is not in the near-full band, so the yellow load state is missing')
+assert.ok(tomorrowLoad > tomorrowPlan.capacityHours,
+  'tomorrow is not over capacity, so the red load state is missing')
+assert.ok(dayAfterLoad / dayAfterPlan.capacityHours < 0.8,
+  'the day after is not comfortable, so the blue load state is missing')
 
 // Already filed away: the whole branch, though only its root says so in the file.
 // The children are archived on the way in, by the same repair that rescues a
@@ -283,6 +368,7 @@ console.log(`wrote ${out}`)
 console.log(
   `${loaded.projects.length} projects · ${loaded.tasks.length} tasks · ${loaded.logs.length} logs · ${loaded.chores.length} chores · ${loaded.habits.length} habits · ${loaded.notes.length} notes`,
 )
+console.log(`${loaded.dayPlans.length} day plans · ${loaded.scheduleBlocks.length} timetable blocks`)
 console.log(`${drawer.count} of those tasks are filed away (drawer: ${drawer.taskIds.join(', ')})`)
 console.log('import it from the sidebar, on an empty board')
 process.exit(0)

@@ -1,122 +1,117 @@
 import { useMemo, useState } from 'react'
 import { useStore } from '../store/useStore'
-import { addDays, toDate, toISO } from '../lib/dates'
+import { addDays, startOfWeek, toDate, toISO } from '../lib/dates'
 import { plannedFor, todaysChores } from '../lib/chores'
-import { useT } from '../lib/useT'
+import { formatShortDate, weekdayName } from '../lib/i18n'
+import { useLang, useT } from '../lib/useT'
 import { DayBoard } from '../components/DayBoard'
+import { Timetable } from '../components/Timetable'
+import { Segmented } from '../components/ui'
+
+type TodayView = 'today' | 'tomorrow' | 'week'
 
 /**
- * Today and tomorrow, side by side.
+ * Three views of the same question: what is on, and when.
  *
- * Two columns rather than two pages because the honest question at the end of a
- * day is "does anything belong to tomorrow", and answering it should not mean
- * navigating away from what is still open today. The focused column is both
- * wider and at full strength; the other is narrowed and dimmed rather than
- * hidden, so it stays readable without competing.
- *
- * Each column carries the whole day — the same thing the day panel shows, down
- * to the log-writing button — because the point of the page is to run the day
- * from one place rather than to be a second, thinner view of it.
- *
- * No `<h1>`: the two column headings already say Today and Tomorrow, and a page
- * title above them would be the third time.
+ * Today and Tomorrow pair the day's list with a single-column timetable; This
+ * week is the timetable alone, seven columns wide, for the macro read. The old
+ * side-by-side Today/Tomorrow pair is gone — it made each day half a screen
+ * when what a day needed was its own timetable beside it.
  */
 export function TodayPage() {
   const t = useT()
+  const lang = useLang()
   const today = useStore((s) => s.today)
-  const [focused, setFocused] = useState<'today' | 'tomorrow'>('today')
-
+  const [view, setView] = useState<TodayView>('today')
   const tomorrow = toISO(addDays(toDate(today), 1))
+  const weekDays = useMemo(() => {
+    const start = startOfWeek(toDate(today))
+    return Array.from({ length: 7 }, (_, i) => toISO(addDays(start, i)))
+  }, [today])
+
+  const activeDate = view === 'today' ? today : tomorrow
+  const heading =
+    view === 'week' ? t('time.thisWeek') : weekdayName(lang, toDate(activeDate).getDay())
+  const subheading =
+    view === 'week'
+      ? `${formatShortDate(lang, toDate(weekDays[0]))} – ${formatShortDate(lang, toDate(weekDays[6]))}`
+      : formatShortDate(lang, toDate(activeDate))
 
   return (
-    <div className="flex-1 min-h-0 flex">
-      {/* Both columns carry the daily list; only today's can be ticked. The
-          difference is the callbacks, not the contents — tomorrow's rows come
-          out as drawn boxes rather than buttons, which is what "visible but not
-          yours to mark yet" looks like. */}
-      <Column
-        title={t('time.today')}
-        date={today}
-        focused={focused === 'today'}
-        onFocus={() => setFocused('today')}
-        divider
-        editable
-      />
-      <Column
-        title={t('time.tomorrow')}
-        date={tomorrow}
-        focused={focused === 'tomorrow'}
-        onFocus={() => setFocused('tomorrow')}
-      />
+    <div
+      className="flex-1 min-h-0 flex flex-col"
+      style={{
+        backgroundImage:
+          'radial-gradient(ellipse at 18% -12%, rgb(var(--c-accent) / 0.07), transparent 52%), radial-gradient(rgb(var(--c-fg) / 0.045) 1px, transparent 1px)',
+        backgroundSize: 'auto, 22px 22px',
+      }}
+    >
+      <div className="shrink-0 px-4 pt-3 pb-2 flex items-end gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="text-[16px] font-semibold text-fg">{heading}</div>
+          <div className="mt-0.5 font-mono text-[11px] text-dim">{subheading}</div>
+        </div>
+        <Segmented<TodayView>
+          pill
+          value={view}
+          onChange={setView}
+          options={[
+            { value: 'today', label: t('time.today') },
+            { value: 'tomorrow', label: t('time.tomorrow') },
+            { value: 'week', label: t('time.thisWeek') },
+          ]}
+        />
+      </div>
+
+      {view === 'week' ? (
+        <div className="flex-1 min-h-0 px-3 pb-3">
+          <div className="h-full rounded-2xl border border-border/70 bg-panel shadow-sm overflow-hidden">
+            <Timetable days={weekDays} className="h-full" />
+          </div>
+        </div>
+      ) : (
+        <DayView date={activeDate} editable={view === 'today'} />
+      )}
     </div>
   )
 }
 
-function Column({
-  title,
-  date,
-  focused,
-  onFocus,
-  divider,
-  editable,
-}: {
-  title: string
-  /** The day this column is, and the day a chore typed into it is filed under. */
-  date: string
-  focused: boolean
-  onFocus: () => void
-  divider?: boolean
-  /**
-   * Whether this column's habits can be added, ticked and edited — which is a
-   * different question from whether they are shown. Every column shows the day's
-   * habits; only the one whose day is happening may write to them.
-   */
-  editable?: boolean
-}) {
+function DayView({ date, editable }: { date: string; editable: boolean }) {
   const chores = useStore((s) => s.chores)
   const habits = useStore((s) => s.habits)
   const today = useStore((s) => s.today)
   const addChore = useStore((s) => s.addChore)
   const toggleHabit = useStore((s) => s.toggleHabit)
 
-  // Which day this is decides which question is being asked of the chores, and
-  // the two have opposite shapes: today's column carries slipped work forward
-  // and keeps what was finished as the day's tally, tomorrow's is a plain plan
-  // and holds nothing already done. Chosen here rather than guessed at inside
-  // `DayBoard`.
+  // Which question is being asked of the chores depends on which day this is:
+  // today carries slipped work forward and keeps what was finished as the day's
+  // tally; tomorrow is a plain plan. Chosen here rather than guessed inside
+  // `DayBoard`, the same split the old Today/Tomorrow columns made.
   const dayChores = useMemo(
     () => (date <= today ? todaysChores(chores, today) : plannedFor(chores, date)),
     [chores, today, date],
   )
 
-  // The whole list, not the day's slice of it: which routines a day shows is
-  // `routineRows`'s answer now — a routine that is a heading appears when its
-  // children do, so a filter here would cut the tree's own rows. Both columns
-  // ask the same question of them; only the callbacks differ.
-
   return (
-    // `onMouseDown` rather than `onClick`: a click on a control in the *other*
-    // column has to widen that column on the way to the control, not after it.
-    <section
-      onMouseDown={onFocus}
-      className={`flex-1 min-w-0 flex flex-col transition-all duration-300 ease-out ${
-        divider ? 'border-r border-border' : ''
-      } ${focused ? 'opacity-100' : 'opacity-45 hover:opacity-75'}`}
-      style={{ flexGrow: focused ? 1.5 : 1 }}
-    >
-      <div className="shrink-0 flex items-baseline gap-2 px-4 py-3 border-b border-border">
-        <h2 className="text-[15px] font-semibold text-fg">{title}</h2>
+    <div className="flex-1 min-h-0 flex gap-3 px-3 pb-3">
+      <div className="flex-1 min-w-0 flex flex-col rounded-2xl border border-border/70 bg-panel shadow-sm overflow-hidden">
+        <DayBoard
+          day={date}
+          dayChores={dayChores}
+          habits={habits}
+          // Tasks on the left, routines and chores in their own pane on the
+          // right — the arrangement the old Today page had. The timetable is
+          // the next column over, not a replacement for either.
+          layout="side"
+          onAddChore={(title, slot) => addChore(title, date, slot)}
+          habitsEditable={editable}
+          onToggleHabit={editable ? toggleHabit : undefined}
+          plannable
+        />
       </div>
-
-      <DayBoard
-        day={date}
-        dayChores={dayChores}
-        habits={habits}
-        layout="side"
-        onAddChore={(title, slot) => addChore(title, date, slot)}
-        habitsEditable={editable}
-        onToggleHabit={editable ? toggleHabit : undefined}
-      />
-    </section>
+      <div className="w-[clamp(320px,32%,440px)] shrink-0 rounded-2xl border border-border/70 bg-panel shadow-sm overflow-hidden flex flex-col">
+        <Timetable days={[date]} className="flex-1 min-h-0" />
+      </div>
+    </div>
   )
 }

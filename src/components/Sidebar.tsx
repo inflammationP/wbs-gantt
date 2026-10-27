@@ -35,6 +35,7 @@ export function Sidebar() {
   const activeView = useStore((s) => s.activeView)
   const setActiveView = useStore((s) => s.setActiveView)
   const openGantt = useStore((s) => s.openGantt)
+  const openToday = useStore((s) => s.openToday)
   const projects = useStore((s) => s.projects)
   const tasks = useStore((s) => s.tasks)
   const logs = useStore((s) => s.logs)
@@ -145,7 +146,9 @@ export function Sidebar() {
           return (
             <button
               key={item.id}
-              onClick={() => (item.id === 'gantt' ? openGantt() : setActiveView(item.id))}
+              onClick={() =>
+                item.id === 'gantt' ? openGantt() : item.id === 'today' ? openToday() : setActiveView(item.id)
+              }
               title={item.id === 'settings' ? settingsReason : undefined}
               className={`w-full flex items-center gap-2.5 px-4 h-9 text-[12px] transition-colors border-l-2 ${
                 active

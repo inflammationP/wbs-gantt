@@ -38,6 +38,11 @@ export type CheckResult =
       current: string
       /** Release notes, as written into `latest.json` by `scripts/release.mjs`. */
       notes: string
+      /**
+       * The release notes began with the important marker, so the dialog gives
+       * them the prominent treatment. The marker itself never reaches the screen.
+       */
+      important: boolean
       date: string | null
       /** Fetch it. Separate from `install` so the app can carry on meanwhile. */
       download: () => Promise<void>
@@ -111,6 +116,22 @@ const RELEASES_URL = 'https://api.github.com/repos/inflammationP/wbs-gantt/relea
  * as a bug.
  */
 const NO_NOTES = 'No release notes.'
+
+/**
+ * The marker `release.mjs` puts on the first line of an important release.
+ *
+ * It has to live in the notes themselves: the app is checking a release that
+ * was built after it, so nothing compiled into the running build can know the
+ * answer. A whole line, so a note that merely starts with the word is not
+ * mistaken for one — and stripped before display, because the line is plumbing
+ * rather than something to read.
+ */
+const IMPORTANT_MARK = /^\s*\[(?:重要|important)\]\s*(?:\r?\n|$)/i
+
+export function splitReleaseNotes(raw: string): { important: boolean; notes: string } {
+  const match = raw.match(IMPORTANT_MARK)
+  return match ? { important: true, notes: raw.slice(match[0].length) } : { important: false, notes: raw }
+}
 
 /** `'v0.9.0'` and `'0.9.0'` both read as `[0, 9, 0]`. */
 function versionParts(v: string): number[] {
@@ -279,11 +300,13 @@ export async function checkForUpdate(): Promise<CheckResult> {
   if (!update) return { kind: 'current' }
 
   const handle = update
+  const notes = splitReleaseNotes(handle.body ?? '')
   return {
     kind: 'available',
     version: handle.version,
     current: handle.currentVersion,
-    notes: handle.body ?? '',
+    notes: notes.notes,
+    important: notes.important,
     date: handle.date ?? null,
     /**
      * Fetching and installing are two steps, and the user gets a say between

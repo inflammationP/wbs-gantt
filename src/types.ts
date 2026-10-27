@@ -13,6 +13,61 @@ export interface Project {
   description: string
 }
 
+/** One push of a task's end date, with the reason it was made. */
+export interface Postponement {
+  /** yyyy-MM-dd, the day the decision was written. */
+  date: string
+  /** The end date before and after the push. */
+  from: string
+  to: string
+  reason: string
+}
+
+/**
+ * A day's own plan: which tasks were chosen for it, and how much room it has.
+ *
+ * `taskIds` is deliberately optional rather than a `planned: boolean` plus a
+ * list — two fields can contradict each other, one cannot:
+ *   absent   never planned; the old automatic day rules still apply
+ *   []       planned as a rest day: the day owes nothing
+ *   [id...]  only these tasks count for the day
+ *
+ * A row may exist only to carry `capacityHours`; row presence therefore does
+ * not mean "planned". Ask `planOn` / `plannedIds` in lib/schedule.ts.
+ */
+export interface DayPlan {
+  date: string // yyyy-MM-dd, one per day
+  taskIds?: string[]
+  /** Hours available that day; absent = the default eight. */
+  capacityHours?: number
+  /**
+   * How many hours each planned task is expected to take *that day*.
+   *
+   * Per day rather than per task: the same task can be a forty-hour project
+   * worked on in two-hour slices. Keys are always a subset of `taskIds`; a task
+   * with no entry contributes nothing until the timetable blocks it.
+   */
+  hours?: Record<string, number>
+}
+
+/**
+ * One block on the day timetable: a task session, a free event, or a deadline.
+ *
+ * `title` is a snapshot taken when the block is written, so a block whose task
+ * is later deleted still reads. While the task exists the live name wins; see
+ * `Timetable`. A deadline is a zero-length marker: `end === start` and
+ * `deadline: true`.
+ */
+export interface ScheduleBlock {
+  id: string
+  date: string // yyyy-MM-dd
+  start: string // HH:MM
+  end: string // HH:MM; equals start for a deadline
+  title: string
+  taskId?: string
+  deadline?: boolean
+}
+
 export interface Task {
   id: string
   name: string
@@ -62,6 +117,15 @@ export interface Task {
   paused: boolean
   pauseDate: string | null // yyyy-MM-dd, set while paused
   pauses: { pauseDate: string; resumeDate: string }[]
+  /**
+   * Every time the end date was pushed back, oldest first.
+   *
+   * A record, not a schedule input: the dates on the task are the schedule, and
+   * this says how they got there and why. Kept on the task rather than in a
+   * collection of its own for the reason `archivedAt` gives — a task field rides
+   * through export, import and the save subscriber by object spread.
+   */
+  postponements: Postponement[]
   priority: TaskPriority | null // null only for to-dos
   /**
    * Where this task sits among its siblings, once the user has said so by

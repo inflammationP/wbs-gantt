@@ -2,7 +2,8 @@ import { Fragment, useMemo, useState } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { CopyKey, DigestCategory, DigestItem, collectDay, copy } from '../lib/reminder'
-import { strictLogRate } from '../lib/dayTasks'
+import { plannedIdSet, strictLogRate } from '../lib/dayTasks'
+import { planOn, plannedIds } from '../lib/schedule'
 import { liveTasks } from '../lib/tree'
 import { sig } from '../lib/ui'
 import { addDays, toDate, toISO } from '../lib/dates'
@@ -62,6 +63,7 @@ export function DailyReport({ onClose }: { onClose: () => void }) {
   const logs = useStore((s) => s.logs)
   const chores = useStore((s) => s.chores)
   const habits = useStore((s) => s.habits)
+  const dayPlans = useStore((s) => s.dayPlans)
   const leadDays = useStore((s) => s.reminderLeadDays)
   // The user's own wording for everything the panel calls a thing. These are the
   // same keys the day's opening notification renders its four figures from, so a
@@ -72,18 +74,21 @@ export function DailyReport({ onClose }: { onClose: () => void }) {
   const yesterday = toISO(addDays(toDate(today), -1))
 
   const recap = useMemo(() => {
-    const { total, pct } = strictLogRate(tasks, logs, yesterday)
+    const plan = planOn(dayPlans, yesterday)
+    const planSet = plannedIdSet(tasks, plannedIds(plan))
+    const { total, pct } = strictLogRate(tasks, logs, yesterday, plannedIds(plan))
     return {
       // Entries, not tasks: two logs on one task is two things written down, and
-      // that is what the line counts.
-      written: logs.filter((l) => l.date === yesterday).length,
+      // that is what the line counts. Filtered by the same plan as `owed`, or a
+      // log on an unplanned task would make the fraction read 3 / 2.
+      written: logs.filter((l) => l.date === yesterday && (!planSet || planSet.has(l.taskId))).length,
       // What the day asked for. The same figure the rate below is a percentage
       // of, and the same one the day's ring and the Calendar cell are drawn
       // from — so `3 / 5` here and `60%` beside it are one fact, not two.
       owed: total,
       pct,
     }
-  }, [tasks, logs, yesterday])
+  }, [tasks, logs, yesterday, dayPlans])
 
   const cats = useMemo(
     // Filed-away work is not coming up: the report is the same list the push is
@@ -91,8 +96,8 @@ export function DailyReport({ onClose }: { onClose: () => void }) {
     // is due. The log rate above is not filtered — obligations drop archived
     // tasks themselves, and they are the only part of that number that could
     // have counted one.
-    () => collectDay({ tasks: liveTasks(tasks), logs, chores, habits }, today, leadDays),
-    [tasks, logs, chores, habits, today, leadDays],
+    () => collectDay({ tasks: liveTasks(tasks), logs, chores, habits, dayPlans }, today, leadDays),
+    [tasks, logs, chores, habits, dayPlans, today, leadDays],
   )
 
   // The four figures the opening notification sends, and the same four rows —

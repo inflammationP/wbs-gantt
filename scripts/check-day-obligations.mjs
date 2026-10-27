@@ -19,7 +19,7 @@ import assert from 'node:assert/strict'
 import { createServer } from 'vite'
 
 const server = await createServer({ server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' })
-const { strictLogObligations, daySummary, dayRowStruck } = await server.ssrLoadModule('/src/lib/dayTasks.ts')
+const { strictLogObligations, daySummary, dayRowStruck, pendingLogsUnder, plannedStrictLeafUnder } = await server.ssrLoadModule('/src/lib/dayTasks.ts')
 const { taskProgress } = await server.ssrLoadModule('/src/lib/progress.ts')
 
 const TODAY = '2026-09-15'
@@ -266,6 +266,47 @@ const plain = task({ id: 'plain', strictProgress: false, startDate: '2026-09-15'
 assert.equal(dayRowStruck(rowOf([plain], [], 'plain')), false, 'unfinished work is not struck')
 const ticked = task({ id: 'ticked', strictProgress: false, startDate: '2026-09-15', endDate: '2026-09-15', confirmedDays: ['2026-09-15'] })
 assert.equal(dayRowStruck(rowOf([ticked], [], 'ticked')), true, 'and a day that finishes it does')
+
+// --- a plan narrows the day; it never resurrects anything ------------------
+
+const planned = (tasks, ids, logs = [], day = TODAY) =>
+  daySummary(tasks, logs, PROJECTS, day, day, 'status', ids)
+const two = [task({ id: 'a' }), task({ id: 'b', name: 'b' })]
+
+// No plan is the old list, untouched.
+assert.deepEqual(planned(two, undefined).all.map((r) => r.task.id), list(two))
+assert.equal(planned(two, undefined).ring.total, 2)
+
+// A plan keeps its ids only; the ring is narrowed by the same list.
+assert.deepEqual(planned(two, ['a']).all.map((r) => r.task.id), ['a'])
+assert.deepEqual(planned(two, ['a']).ring, { done: 0, total: 1, pct: 0 })
+
+// An empty plan is a rest day, not "no plan".
+assert.deepEqual(planned(two, []).all, [])
+assert.deepEqual(planned(two, []).ring, { done: 0, total: 0, pct: 0 })
+
+// A plan cannot pull in work the day's window does not cover, and it can drop
+// overdue work that was not chosen.
+const overdue = task({ id: 'over', endDate: '2026-09-14' })
+assert.deepEqual(planned([overdue], undefined).all.map((r) => r.task.id), ['over'])
+assert.deepEqual(planned([overdue], ['b']).all, [])
+assert.deepEqual(planned([overdue], ['over']).all.map((r) => r.task.id), ['over'])
+
+// A planned container stands for what is under it — a leaf that grew children
+// does not fall out of the day it was chosen for.
+const branch = [task({ id: 'p' }), task({ id: 'c', parentId: 'p' })]
+assert.deepEqual(planned(branch, ['p']).all.map((r) => r.task.id), ['c'])
+
+const owedWith = (tasks, ids) => strictLogObligations(tasks, [], TODAY, ids).map((o) => o.task.id)
+assert.deepEqual(owedWith(two, undefined), ['a', 'b'])
+assert.deepEqual(owedWith(two, ['a']), ['a'])
+assert.deepEqual(owedWith(two, []), [], 'an unplanned strict task owes no log that day')
+assert.deepEqual(owedWith(branch, ['p']), ['c'], 'the plan expands to the branch')
+
+assert.deepEqual(pendingLogsUnder(branch, [], TODAY, 'p', ['p']).map((t) => t.id), ['c'])
+assert.deepEqual(pendingLogsUnder(branch, [], TODAY, 'p', []), [])
+assert.equal(plannedStrictLeafUnder(branch, 'p', new Set(['p', 'c'])), true)
+assert.equal(plannedStrictLeafUnder(branch, 'p', new Set(['p'])), false)
 
 await server.close()
 console.log('day obligations: ok')

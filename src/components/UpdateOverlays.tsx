@@ -1,3 +1,4 @@
+import { CircleAlert } from 'lucide-react'
 import { SNOOZE_DAYS, useStore } from '../store/useStore'
 import { updateOverlay } from '../lib/updater'
 import { useT } from '../lib/useT'
@@ -150,18 +151,38 @@ function UpdateDialog() {
   // version section, not this.
   if (!info) return null
 
+  // An important release is the same dialog with the notes made unmissable:
+  // more room, larger type, and a sentence saying why the window looks
+  // different. Nothing is gated — the reader can still leave or snooze at any
+  // moment, which is what keeps this a prompt rather than a trap.
+  const important = info.important
+
   return (
-    <Modal title={t('update.availableTitle')} onClose={closeUpdateDialog} width={460}
+    <Modal
+      title={important ? t('update.importantTitle') : t('update.availableTitle')}
+      onClose={closeUpdateDialog}
+      width={important ? 620 : 460}
     >
       <p className="text-[12px] text-fg">
         {t('update.availableBody', { version: info.version, current: info.current })}
       </p>
 
+      {important && (
+        <div className="mt-3 flex items-start gap-2.5 rounded-[3px] border border-today/50 bg-today/15 px-3 py-2.5">
+          <CircleAlert size={16} className="mt-0.5 shrink-0 text-today" />
+          <p className="text-[12px] leading-relaxed text-fg">{t('update.importantBody')}</p>
+        </div>
+      )}
+
       <div className="mt-4 text-[10px] uppercase tracking-wider text-dim">{t('update.notes')}</div>
       {/* The notes are plain text from a single-line release prompt, so they are
           wrapped and never parsed. Capped in height, because a long note would
           otherwise push the buttons out of the modal. */}
-      <div className="mt-1 max-h-[40vh] overflow-auto whitespace-pre-wrap leading-relaxed text-[12px] text-muted bg-panel2 border border-border rounded-[3px] p-3">
+      <div
+        className={`mt-1 overflow-auto whitespace-pre-wrap bg-panel2 border border-border rounded-[3px] p-3 leading-relaxed ${
+          important ? 'max-h-[48vh] text-[13px] text-fg' : 'max-h-[40vh] text-[12px] text-muted'
+        }`}
+      >
         {info.notes.trim() || t('update.noNotes')}
       </div>
 

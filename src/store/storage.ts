@@ -1,7 +1,8 @@
-import { Chore, DaySortMode, Habit, ItemLog, Note, Project, Stamp, Task, TaskLog, TaskPriority } from '../types'
+import { Chore, DayPlan, DaySortMode, Habit, ItemLog, Note, Project, ScheduleBlock, Stamp, Task, TaskLog, TaskPriority } from '../types'
 import { DEFAULT_LANG, isLang, Lang } from '../lib/i18n'
 import { liftTimes, paragraphs } from '../lib/logs'
 import { isArchived } from '../lib/tree'
+import { isHHMM, minutesOf } from '../lib/schedule'
 import { DEFAULT_THEME, isThemeId, ThemeId } from '../lib/theme'
 import { ALL_DAYS } from '../lib/habits'
 import { PRIORITY_ORDER } from '../lib/ui'
@@ -54,6 +55,13 @@ export interface PersistedData {
    * count it has always shown.
    */
   todoFolders?: Record<string, string>
+  /**
+   * The day plans (chosen tasks + capacity) and the timetable blocks — see
+   * `DayPlan` and `ScheduleBlock` in types.ts. Optional on the same terms as
+   * the collections above: older saves have neither field.
+   */
+  dayPlans?: DayPlan[]
+  scheduleBlocks?: ScheduleBlock[]
 }
 
 /**
@@ -72,6 +80,7 @@ export function workData(source: LoadedData): LoadedData {
     projects: source.projects, tasks: source.tasks, logs: source.logs,
     chores: source.chores, habits: source.habits, notes: source.notes,
     itemLogs: source.itemLogs, todoFolders: source.todoFolders,
+    dayPlans: source.dayPlans, scheduleBlocks: source.scheduleBlocks,
   }
 }
 
@@ -183,6 +192,21 @@ export interface Prefs {
    */
   reportSeenDay: string | null
   /**
+   * The day the start-of-day plan prompt was last put off.
+   *
+   * A date rather than a flag, for the same reason as `reportSeenDay`: it
+   * expires by itself at midnight, so tomorrow's prompt is due again.
+   */
+  planSkippedOn: string | null
+  /**
+   * How long a task usually takes in a day, keyed by task id.
+   *
+   * A convenience for filling the plan dialog's hour box, not a fact about the
+   * work — the actual hours are per day, in `DayPlan.hours`. Kept out of the
+   * board so importing someone else's file does not adopt their habits.
+   */
+  taskDefaultHours: Record<string, number>
+  /**
    * Wording the user has replaced, per language.
    *
    * Per language rather than one set, because the alternative produces a state
@@ -258,6 +282,8 @@ export const DEFAULT_PREFS: Prefs = {
   reminderTopics: [...DIGEST_CATEGORIES],
   reminderLeadDays: 3,
   reportSeenDay: null,
+  planSkippedOn: null,
+  taskDefaultHours: {},
   reminderCopy: {},
   reminderToken: '',
   // On by default. The desktop notification is the channel that costs nothing
@@ -296,6 +322,23 @@ function isCopyOverrides(v: unknown): v is Partial<Record<Lang, CopyOverrides>> 
     if (typeof entries !== 'object' || entries === null || Array.isArray(entries)) return false
     return Object.values(entries as Record<string, unknown>).every((s) => typeof s === 'string')
   })
+}
+
+/**
+ * The default hours a task carries in the plan dialog.
+ *
+ * Values outside a day are dropped: zero would fill the box with nothing, and
+ * anything past twenty-four is a bar nobody can fill. A bad entry is skipped
+ * rather than costing the user the rest of their defaults.
+ */
+function readTaskDefaults(v: unknown): Record<string, number> {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return {}
+  const out: Record<string, number> = {}
+  for (const [id, hours] of Object.entries(v as Record<string, unknown>)) {
+    if (!id || typeof hours !== 'number' || !Number.isFinite(hours) || hours <= 0 || hours > 24) continue
+    out[id] = hours
+  }
+  return out
 }
 
 // Anything unrecognised falls back to the default rather than propagating: a
@@ -348,6 +391,8 @@ export function loadPrefs(): Prefs {
           ? parsed.reminderLeadDays
           : DEFAULT_PREFS.reminderLeadDays,
       reportSeenDay: typeof parsed.reportSeenDay === 'string' ? parsed.reportSeenDay : null,
+      planSkippedOn: typeof parsed.planSkippedOn === 'string' ? parsed.planSkippedOn : null,
+      taskDefaultHours: readTaskDefaults(parsed.taskDefaultHours),
       reminderCopy: isCopyOverrides(parsed.reminderCopy) ? parsed.reminderCopy : DEFAULT_PREFS.reminderCopy,
       reminderToken:
         typeof parsed.reminderToken === 'string' ? parsed.reminderToken : DEFAULT_PREFS.reminderToken,
@@ -461,6 +506,102 @@ function readStamps(v: unknown): Stamp[] {
     : []
 }
 
+/**
+ * Day plans, sanitized rather than rejected.
+ *
+ * A broken row is dropped and the rest of the board still opens: a hand-edited
+ * file should not be able to keep someone out of their own work. Duplicate
+ * dates resolve to the last row, and a bad `taskIds` is read as "not planned"
+ * rather than as an accidental rest day (`[]` is meaningful).
+ */
+function readDayPlans(value: unknown): DayPlan[] {
+  if (!Array.isArray(value)) return []
+  const byDate = new Map<string, DayPlan>()
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
+    const row = raw as Record<string, unknown>
+    const date = typeof row.date === 'string' ? row.date.trim() : ''
+    if (!date) continue
+    const taskIds =
+      Array.isArray(row.taskIds) && row.taskIds.every((id) => typeof id === 'string')
+        ? [...new Set(row.taskIds as string[])]
+        : undefined
+    const capacityHours =
+      typeof row.capacityHours === 'number' &&
+      Number.isFinite(row.capacityHours) &&
+      row.capacityHours >= 0 &&
+      row.capacityHours <= 24
+        ? row.capacityHours
+        : undefined
+    const hours = taskIds === undefined ? undefined : readPlanHours(row.hours, new Set(taskIds))
+    if (taskIds === undefined && capacityHours === undefined) continue
+    byDate.set(date, {
+      date,
+      ...(taskIds !== undefined ? { taskIds } : {}),
+      ...(capacityHours !== undefined ? { capacityHours } : {}),
+      ...(hours !== undefined ? { hours } : {}),
+    })
+  }
+  return [...byDate.values()]
+}
+
+/**
+ * The per-task hours of a plan row.
+ *
+ * Only keys the row actually plans survive: hours for a task that is not in the
+ * plan would never be read, and carrying them would make "remove from plan"
+ * look like it had lost something. Zero is absence, not an estimate.
+ */
+function readPlanHours(v: unknown, ids: Set<string>): Record<string, number> | undefined {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return undefined
+  const out: Record<string, number> = {}
+  for (const [id, hours] of Object.entries(v as Record<string, unknown>)) {
+    if (!ids.has(id)) continue
+    if (typeof hours !== 'number' || !Number.isFinite(hours) || hours <= 0 || hours > 24) continue
+    out[id] = hours
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+/**
+ * Timetable blocks, sanitized on the same terms.
+ *
+ * Times are strict `HH:MM` because a block's geometry is derived from them; a
+ * value that cannot be placed has no honest rendering, so it is dropped. A
+ * deadline is a point, so its end is forced to its start; anything else must
+ * have a positive duration.
+ */
+function readScheduleBlocks(value: unknown): ScheduleBlock[] {
+  if (!Array.isArray(value)) return []
+  const seen = new Set<string>()
+  const out: ScheduleBlock[] = []
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
+    const row = raw as Record<string, unknown>
+    const id = typeof row.id === 'string' ? row.id.trim() : ''
+    const date = typeof row.date === 'string' ? row.date.trim() : ''
+    const start = typeof row.start === 'string' ? row.start : ''
+    const end = typeof row.end === 'string' ? row.end : ''
+    if (!id || !date || !isHHMM(start) || !isHHMM(end) || seen.has(id)) continue
+    const deadline = row.deadline === true
+    if (!deadline && (minutesOf(end) ?? 0) <= (minutesOf(start) ?? 0)) continue
+    const taskId = typeof row.taskId === 'string' && row.taskId.trim() !== '' ? row.taskId : undefined
+    const title = typeof row.title === 'string' ? row.title : ''
+    if (!title.trim() && !taskId) continue
+    seen.add(id)
+    out.push({
+      id,
+      date,
+      start,
+      end: deadline ? start : end,
+      title,
+      ...(taskId !== undefined ? { taskId } : {}),
+      ...(deadline ? { deadline: true } : {}),
+    })
+  }
+  return out
+}
+
 // Normalize data loaded from disk or import: backfill `type`/`strictProgress`,
 // coerce missing dates to null, and default missing collections. This is also
 // the invariant repair point for to-dos — a task marked `isTodo` always comes
@@ -538,6 +679,9 @@ function normalize(data: PersistedData): LoadedData {
         paused: isTodo ? false : (t.paused ?? false),
         pauseDate: isTodo ? null : (t.pauseDate ?? null),
         pauses: Array.isArray(t.pauses) ? t.pauses : [],
+        // Absent from every save written before postponements existed; the
+        // record is history, so it is kept through a to-do like the rest.
+        postponements: Array.isArray(t.postponements) ? t.postponements : [],
         // Kept through a to-do rather than cleared with the other scheduling
         // fields: logs survive that trip too, and a task that comes back should
         // not come back with its work forgotten.
@@ -581,6 +725,8 @@ function normalize(data: PersistedData): LoadedData {
         date: l.date ?? '',
         ...stampsOf(l),
       })),
+    dayPlans: readDayPlans(data.dayPlans),
+    scheduleBlocks: readScheduleBlocks(data.scheduleBlocks),
   }
 }
 
@@ -727,6 +873,8 @@ export function exportJson(data: PersistedData): string {
       notes: data.notes ?? [],
       itemLogs: data.itemLogs ?? [],
       todoFolders: data.todoFolders ?? {},
+      dayPlans: data.dayPlans ?? [],
+      scheduleBlocks: data.scheduleBlocks ?? [],
     },
     null,
     2,
@@ -753,6 +901,8 @@ export function prepareData(parsed: PersistedData): LoadedData {
     notes: parsed.notes ?? [],
     itemLogs: parsed.itemLogs ?? [],
     todoFolders: parsed.todoFolders ?? {},
+    dayPlans: parsed.dayPlans ?? [],
+    scheduleBlocks: parsed.scheduleBlocks ?? [],
   })
 }
 
@@ -786,6 +936,11 @@ function validateData(data: PersistedData): void {
       record(p) && typeof p.pauseDate === 'string' && typeof p.resumeDate === 'string'))) {
       throw new Error(`Task ${t.id}: invalid pauses`)
     }
+    if (t.postponements != null && (!Array.isArray(t.postponements) || !t.postponements.every((p) =>
+      record(p) && typeof p.date === 'string' && typeof p.from === 'string' &&
+      typeof p.to === 'string' && typeof p.reason === 'string'))) {
+      throw new Error(`Task ${t.id}: invalid postponements`)
+    }
     tasks.set(t.id, t)
   }
   // Iterative so a deeply nested import cannot exhaust the call stack here.
@@ -818,6 +973,10 @@ function validateData(data: PersistedData): void {
       throw new Error(`Invalid ${key}: expected an array of objects`)
     }
   }
+  // `dayPlans` and `scheduleBlocks` are deliberately absent from the checks
+  // below: they are sanitized row by row in `normalize` (`readDayPlans` /
+  // `readScheduleBlocks`), so one bad row cannot keep the whole board from
+  // opening. Rejecting them here would turn a typo into an unopenable save.
   // Check values used directly by the UI; TypeScript cannot validate a file.
   const text = (row: object, keys: string[]) => {
     const r = row as Record<string, unknown>

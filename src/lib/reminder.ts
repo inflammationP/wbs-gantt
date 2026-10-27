@@ -1,8 +1,9 @@
-import { Chore, Habit, Task, TaskLog } from '../types'
+import { Chore, DayPlan, Habit, Task, TaskLog } from '../types'
 import { Lang, Params, formatShortDate, interpolate, translate } from './i18n'
 import { addDays, toDate, toISO, weekdayIndex } from './dates'
 import { buildChildrenMap } from './tree'
 import { dayStates, milestonesOnDay, strictLogObligations } from './dayTasks'
+import { planOn, plannedIds } from './schedule'
 import { todaysChores } from './chores'
 import { routineRows } from './habits'
 
@@ -18,12 +19,13 @@ export interface Digest {
   body: string
 }
 
-/** What `composeDigest` reads. The four collections, nothing else. */
+/** What `composeDigest` reads. The four collections plus the day plans. */
 export interface Board {
   tasks: Task[]
   logs: TaskLog[]
   chores: Chore[]
   habits: Habit[]
+  dayPlans: DayPlan[]
 }
 
 /**
@@ -352,7 +354,7 @@ function byDateThenName(a: Task, b: Task): number {
  * the log debt the day's ring is drawn from.
  */
 export function collectDay(board: Board, day: string, leadDays: number): DayCats {
-  const { tasks, logs, chores, habits } = board
+  const { tasks, logs, chores, habits, dayPlans } = board
 
   // A parent's dates and status are rolled up from its children, so listing the
   // phase next to the child that produced the roll-up spends a line saying the
@@ -393,7 +395,12 @@ export function collectDay(board: Board, day: string, leadDays: number): DayCats
   // Called once, read twice: the whole set is the report's 任务清单 figure and the
   // unwritten half is this slot-row's `logsOwed`. Two calls would be two tree
   // walks answering the same question.
-  const obligations = strictLogObligations(tasks, logs, day)
+  const obligations = strictLogObligations(
+    tasks,
+    logs,
+    day,
+    plannedIds(planOn(dayPlans, day)),
+  )
 
   return {
     overdue: overdues,

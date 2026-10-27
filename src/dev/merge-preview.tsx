@@ -49,6 +49,7 @@ const task = (over: Pick<Task, 'id' | 'name' | 'projectId'> & Partial<Task>): Ta
   paused: false,
   pauseDate: null,
   pauses: [],
+  postponements: [],
   priority: 'medium',
   tags: [],
   dependencies: [],

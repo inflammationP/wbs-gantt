@@ -233,6 +233,22 @@ export interface LogObligation {
 }
 
 /**
+ * The day's chosen ids as a set, with planned containers expanded to their
+ * descendants.
+ *
+ * `undefined` means the day has no plan and every old rule still applies —
+ * distinct from an empty set, which is a planned rest day. The expansion is
+ * what keeps a plan meaningful when a planned leaf later grows children: the
+ * branch it became is still the work that was chosen.
+ */
+export function plannedIdSet(tasks: Task[], planned?: readonly string[]): Set<string> | null {
+  if (planned === undefined) return null
+  const set = new Set(planned)
+  for (const id of planned) for (const d of collectDescendants(tasks, id)) set.add(d)
+  return set
+}
+
+/**
  * The strict leaves that owed a log on `day`, and which of them got one.
  *
  * Kept separate from `strictLogRate` so that anything else asking "what is still
@@ -246,13 +262,23 @@ export interface LogObligation {
  * not paused that day; not already finished when the day began; and not already
  * logged. That fourth one is why a finished task never comes back to nag.
  */
-export function strictLogObligations(tasks: Task[], logs: TaskLog[], day: string): LogObligation[] {
+export function strictLogObligations(
+  tasks: Task[],
+  logs: TaskLog[],
+  day: string,
+  planned?: readonly string[],
+): LogObligation[] {
   const clipped = logsUpTo(logs, day)
   const logged = loggedOnDay(logs, day)
   const children = buildChildrenMap(tasks)
+  const plan = plannedIdSet(tasks, planned)
   const owed: LogObligation[] = []
   for (const t of tasks) {
     if (!isStrictLeaf(t, children)) continue
+    // A plan narrows the day; it never resurrects work the day's window does
+    // not cover. An unplanned strict task owes nothing today — and no entry is
+    // written for it anywhere.
+    if (plan && !plan.has(t.id)) continue
     // Filed away work owes nothing, and this is the one place the archive is
     // kept out of a *number* rather than out of a list. It is not an exception
     // to the rule that filing away changes what is shown and not what is
@@ -294,11 +320,36 @@ export function hasStrictLeafUnder(tasks: Task[], rootId: string): boolean {
  * How much of the day's strict work has been logged: the tasks that owed a log
  * on `day` versus the ones that got one.
  */
-export function strictLogRate(tasks: Task[], logs: TaskLog[], day: string): StrictLogRate {
-  const owed = strictLogObligations(tasks, logs, day)
+export function strictLogRate(
+  tasks: Task[],
+  logs: TaskLog[],
+  day: string,
+  planned?: readonly string[],
+): StrictLogRate {
+  const owed = strictLogObligations(tasks, logs, day, planned)
   const total = owed.length
   const done = owed.filter((o) => o.logged).length
   return { done, total, pct: total ? Math.round((done / total) * 100) : 0 }
+}
+
+/**
+ * Whether a branch holds a strict leaf the day actually planned.
+ *
+ * `hasStrictLeafUnder` answers the structural question ("does logging mean
+ * anything here"); this answers the day's ("is anything here on today's
+ * plan"). The task panel needs the second one to avoid telling someone every
+ * strict task under a branch is logged when none of them was planned.
+ */
+export function plannedStrictLeafUnder(
+  tasks: Task[],
+  rootId: string,
+  planned: Set<string>,
+): boolean {
+  const children = buildChildrenMap(tasks)
+  const ids = new Set([rootId, ...collectDescendants(tasks, rootId)])
+  return tasks.some(
+    (t) => ids.has(t.id) && planned.has(t.id) && !isArchived(t) && isStrictLeaf(t, children),
+  )
 }
 
 /**
@@ -313,8 +364,14 @@ export function strictLogRate(tasks: Task[], logs: TaskLog[], day: string): Stri
  * A parent is never in the result: `strictProgress` is inert on anything with
  * children, so a parent is not a strict leaf and owes nothing itself.
  */
-export function pendingLogsUnder(tasks: Task[], logs: TaskLog[], day: string, rootId: string): Task[] {
-  const owed = new Map(strictLogObligations(tasks, logs, day).map((o) => [o.task.id, o]))
+export function pendingLogsUnder(
+  tasks: Task[],
+  logs: TaskLog[],
+  day: string,
+  rootId: string,
+  planned?: readonly string[],
+): Task[] {
+  const owed = new Map(strictLogObligations(tasks, logs, day, planned).map((o) => [o.task.id, o]))
   const out: Task[] = []
   for (const id of [rootId, ...collectDescendants(tasks, rootId)]) {
     const o = owed.get(id)
@@ -450,9 +507,11 @@ export function daySummary(
   day: string,
   today: string,
   sort: DaySortMode = 'status',
+  planned?: readonly string[],
 ): DaySummary {
   const clipped = logsUpTo(logs, day)
   const states = dayStates(tasks, logs, day)
+  const plan = plannedIdSet(tasks, planned)
   const children = buildChildrenMap(tasks)
   const logged = loggedOnDay(logs, day)
   const order = new Map(projects.map((p, i) => [p.id, i]))
@@ -499,6 +558,10 @@ export function daySummary(
     // on its own.
     const overdue = !active && (strict || plain) && st.status === 'delayed'
     if (!active && !overdue) continue
+    // The plan narrows what was already the day's work; it never adds a task
+    // whose window does not cover the day. Applied after the active/overdue
+    // decision for exactly that reason.
+    if (plan && !plan.has(t.id)) continue
     rows.push({
       task: t,
       wbs: wbs.get(t.id) ?? '',
@@ -571,7 +634,7 @@ export function daySummary(
     all: leaves,
     strict: leaves.filter((r) => r.strict),
     nonStrict: leaves.filter((r) => !r.strict),
-    ring: strictLogRate(tasks, logs, day),
+    ring: strictLogRate(tasks, logs, day, planned),
     logCount,
   }
 }

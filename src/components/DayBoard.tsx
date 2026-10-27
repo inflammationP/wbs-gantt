@@ -4,6 +4,7 @@ import { Check, ChevronDown, ChevronRight, NotebookText, Pencil, Plus, ScrollTex
 import { useStore } from '../store/useStore'
 import { Chore, ChoreSlot, DaySortMode, Habit, ItemLog, TaskLog } from '../types'
 import { DayRow, dayRowStruck, daySummary, parentPath } from '../lib/dayTasks'
+import { planOn, plannedIds } from '../lib/schedule'
 import { CHORE_SLOTS, carriedSince, choreGroups, parseChoreTime, slotOfTime } from '../lib/chores'
 import { RoutineRow, routineRows } from '../lib/habits'
 import { itemLogsOn } from '../lib/itemLogs'
@@ -16,6 +17,7 @@ import { ProgressRing } from './ProgressRing'
 import { LogDialog } from './LogDialog'
 import { ItemLogDialog } from './ItemLogDialog'
 import { DayLogsModal } from './DayLogsModal'
+import { PlanDialog } from './PlanDialog'
 import { Field, Modal, Segmented, Stat, inputCls } from './ui'
 import { useDialogs } from './dialogs'
 import { HabitDialog } from './HabitDialog'
@@ -48,7 +50,7 @@ const SLOT_LABEL: Record<ChoreSlot, keyof Dict> = {
  * two would be a second place for the option list to live.
  */
 const SLOT_SELECT =
-  'h-8 px-1.5 bg-panel2 border border-border rounded-[3px] text-[11px] text-fg focus:outline-none focus:border-accent'
+  'h-8 px-2 bg-panel2/60 border border-border/70 rounded-xl text-[11px] text-fg focus:outline-none focus:border-accent/70'
 
 /** The four slots plus "nobody said", which is the value for no slot. */
 const SLOT_OPTIONS: { value: '' | ChoreSlot; key: keyof Dict }[] = [
@@ -106,6 +108,13 @@ interface Props {
    */
   habitsEditable?: boolean
   onToggleHabit?: (id: string) => void
+  /**
+   * Whether this board may plan the day. The Today/Tomorrow views say yes; the
+   * 320px day panel is a record and does not — the same split as chores and
+   * habits, for the same reason: a second place to edit is a second place to
+   * disagree.
+   */
+  plannable?: boolean
 }
 
 /**
@@ -118,7 +127,16 @@ interface Props {
  * real difference is the arrangement and whether the chores can be touched, so
  * that is all `layout` and `onAddChore` carry.
  */
-export function DayBoard({ day, dayChores, habits, layout, onAddChore, habitsEditable, onToggleHabit }: Props) {
+export function DayBoard({
+  day,
+  dayChores,
+  habits,
+  layout,
+  onAddChore,
+  habitsEditable,
+  onToggleHabit,
+  plannable,
+}: Props) {
   const t = useT()
   const tasks = useStore((s) => s.tasks)
   const logs = useStore((s) => s.logs)
@@ -128,6 +146,9 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, habitsEdi
   const setSelected = useStore((s) => s.setSelected)
   const daySort = useStore((s) => s.daySort)
   const setDaySort = useStore((s) => s.setDaySort)
+  const dayPlans = useStore((s) => s.dayPlans)
+  const plan = planOn(dayPlans, day)
+  const planned = plannedIds(plan)
 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   // Folded routines, rather than unfolded ones: a branch somebody has not
@@ -143,10 +164,11 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, habitsEdi
   /** The entry whose figure is being corrected — see `LogDialog`'s `existing`. */
   const [fixLog, setFixLog] = useState<TaskLog | null>(null)
   const [logsOpen, setLogsOpen] = useState(false)
+  const [planOpen, setPlanOpen] = useState(false)
 
   const summary = useMemo(
-    () => daySummary(tasks, logs, projects, day, today, daySort),
-    [tasks, logs, projects, day, today, daySort],
+    () => daySummary(tasks, logs, projects, day, today, daySort, planned),
+    [tasks, logs, projects, day, today, daySort, planned],
   )
   const routines = useMemo(() => routineRows(habits, day, foldedHabits), [habits, day, foldedHabits])
   const dayLogs = useMemo(() => logs.filter((l) => l.date === day), [logs, day])
@@ -161,11 +183,16 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, habitsEdi
   // to come has no coverage to report, so it gets its own state rather than the
   // "nothing logged yet" accusation.
   const isFuture = day > today
+  // A planned rest day is not "nothing was scheduled" by accident — it is a
+  // decision, and the ring says so rather than reading like an empty window.
+  const restDay = planned !== undefined && planned.length === 0
   const ringView = isFuture
     ? { fill: null, track: TRACK, icon: null, caption: t('day.notYetDue'), tone: 'text-dim' }
-    : // The remaining states are told apart by icon and wording as much as by
-      // colour: the ring's green and amber are only ΔE 3.8 apart under protanopia.
-      ring.total === 0
+    : restDay
+      ? { fill: null, track: TRACK, icon: null, caption: t('plan.restDay'), tone: 'text-dim' }
+      : // The remaining states are told apart by icon and wording as much as by
+        // colour: the ring's green and amber are only ΔE 3.8 apart under protanopia.
+        ring.total === 0
       ? { fill: null, track: TRACK, icon: null, caption: t('day.noStrictScheduled'), tone: 'text-dim' }
       : ring.done === ring.total
         ? { fill: sig('completed'), track: sigAlpha('completed', 0.16), icon: Check, caption: t('day.allLogged'), tone: 'text-completed' }
@@ -219,20 +246,30 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, habitsEdi
       onToggle={() => setOpen((o) => ({ ...o, tasks: !o.tasks }))}
       showAction
       action={
-        <select
-          value={daySort}
-          onChange={(e) => setDaySort(e.target.value as DaySortMode)}
-          aria-label={t('day.sort')}
-          title={t('day.sort')}
-          className="h-5 px-1 bg-panel2 border border-border rounded-[3px] text-[10px] text-muted"
-        >
-          <option value="status">{t('day.sortStatus')}</option>
-          <option value="priority">{t('day.sortPriority')}</option>
-        </select>
+        <>
+          {plannable && (
+            <button
+              onClick={() => setPlanOpen(true)}
+              className="h-6 px-2.5 text-[10px] font-medium text-accent bg-accent/10 border border-accent/30 rounded-full hover:bg-accent/20"
+            >
+              {planned === undefined ? t('plan.button') : t('plan.adjust')}
+            </button>
+          )}
+          <select
+            value={daySort}
+            onChange={(e) => setDaySort(e.target.value as DaySortMode)}
+            aria-label={t('day.sort')}
+            title={t('day.sort')}
+            className="h-6 px-2 bg-panel2/60 border border-border/70 rounded-full text-[10px] text-muted"
+          >
+            <option value="status">{t('day.sortStatus')}</option>
+            <option value="priority">{t('day.sortPriority')}</option>
+          </select>
+        </>
       }
     >
       {summary.all.length === 0 ? (
-        <Empty>{t('day.nothingScheduled')}</Empty>
+        <Empty>{restDay ? t('plan.restDayEmpty') : t('day.nothingScheduled')}</Empty>
       ) : (
         summary.all.map((r) => <DayRowView key={r.task.id} row={r} {...rowProps} />)
       )}
@@ -356,7 +393,11 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, habitsEdi
           format for a headline number across the app. Narrow, the cards would
           each be about eighty pixels, so the panel keeps the ring and its three
           lines, which say the same things in prose. */}
-      <div className="shrink-0 px-4 py-3 border-b border-border flex items-center gap-4">
+      <div
+        className={`shrink-0 px-4 py-3 border-b border-line flex items-center gap-4 ${
+          layout === 'side' ? 'bg-gradient-to-b from-panel2/40 to-transparent' : ''
+        }`}
+      >
         <ProgressRing
           value={isFuture ? 0 : ring.pct}
           fill={ringView.fill}
@@ -382,9 +423,9 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, habitsEdi
 
         {layout === 'side' ? (
           <div className="flex-1 min-w-0 grid grid-cols-3 gap-3">
-            <Stat label={t('day.strictLogs')} value={ringValue} sub={ringView.caption} />
-            <Stat label={t('common.tasks')} value={String(taskCount)} sub={t('day.tasksBreakdown', { strict: summary.strict.length, other: summary.nonStrict.length })} />
-            <Stat label={t('chore.section')} value={`${choresDone}/${dayChores.length}`} sub={choresSub} />
+            <Stat soft label={t('day.strictLogs')} value={ringValue} sub={ringView.caption} />
+            <Stat soft label={t('common.tasks')} value={String(taskCount)} sub={t('day.tasksBreakdown', { strict: summary.strict.length, other: summary.nonStrict.length })} />
+            <Stat soft label={t('chore.section')} value={`${choresDone}/${dayChores.length}`} sub={choresSub} />
           </div>
         ) : (
           <div className="min-w-0">
@@ -403,11 +444,19 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, habitsEdi
         // than a flat split: a chore is a line of text and a task carries a WBS,
         // a project and a progress bar behind it.
         <div className="flex-1 min-h-0 flex">
-          <div className="flex-1 min-w-0 overflow-auto">{taskSections}</div>
+          <div
+            className="flex-1 min-w-0 overflow-auto"
+            style={{
+              backgroundImage:
+                'radial-gradient(ellipse at 50% 115%, rgb(var(--c-accent) / 0.05), transparent 55%)',
+            }}
+          >
+            {taskSections}
+          </div>
           {/* Bounded at both ends. Uncapped below, the pane collapses to about
               two words as soon as it is the unfocused column; uncapped above, it
               runs away on a wide screen and leaves the tasks ragged. */}
-          <div className="w-[34%] min-w-[240px] max-w-[320px] shrink-0 border-l border-border overflow-auto">
+          <div className="w-[34%] min-w-[240px] max-w-[320px] shrink-0 border-l border-line bg-panel2/15 overflow-auto">
             {habitSection}
             {choreSection}
             <NoteSection day={day} />
@@ -422,16 +471,17 @@ export function DayBoard({ day, dayChores, habits, layout, onAddChore, habitsEdi
         </div>
       )}
 
-      <div className="shrink-0 p-3 border-t border-border">
+      <div className="shrink-0 p-3 border-t border-line bg-panel2/10">
         <button
           onClick={() => setLogsOpen(true)}
           disabled={logCount === 0}
-          className="w-full h-8 inline-flex items-center justify-center gap-1.5 text-[12px] font-medium bg-accent text-on-accent disabled:opacity-40 disabled:cursor-default rounded-[3px] hover:brightness-110"
+          className="w-full h-8 inline-flex items-center justify-center gap-1.5 text-[12px] font-medium bg-accent text-on-accent disabled:opacity-40 disabled:cursor-default rounded-xl hover:brightness-110"
         >
           <ScrollText size={14} /> {logCount ? t('day.readLogsCount', { count: logCount }) : t('day.readLogs')}
         </button>
       </div>
 
+      {planOpen && plannable && <PlanDialog day={day} onClose={() => setPlanOpen(false)} />}
       {logFor && <LogDialog taskId={logFor} onClose={() => setLogFor(null)} />}
       {fixLog && <LogDialog taskId={fixLog.taskId} existing={fixLog} onClose={() => setFixLog(null)} />}
       {itemLogFor && (
@@ -593,7 +643,7 @@ function DayRowView({
           The badges keep to the right via `ml-auto`. */}
       <div
         onClick={() => onToggle(row.task.id)}
-        className="flex items-center gap-1.5 pl-2 pr-2 h-7 rounded-[3px] hover:bg-panel2"
+        className="flex items-center gap-1.5 pl-2 pr-2 h-7 rounded-lg hover:bg-panel2"
       >
         <button
           aria-expanded={isOpen}
@@ -683,12 +733,12 @@ function DayRowView({
             not, so it never told anyone anything the name did not. */}
         <span className="ml-auto shrink-0 flex items-center gap-1.5">
           {row.overdue && (
-            <span className="shrink-0 px-1 h-4 inline-flex items-center text-[9px] font-medium rounded-[2px] bg-delayed/15 text-delayed border border-delayed/30">
+            <span className="shrink-0 px-1.5 h-4 inline-flex items-center text-[9px] font-medium rounded-full bg-delayed/15 text-delayed border border-delayed/30">
               {t('manage.overdue')}
             </span>
           )}
           {row.pausedToday && (
-            <span className="shrink-0 px-1 h-4 inline-flex items-center text-[9px] font-medium rounded-[2px] bg-paused/15 text-paused border border-paused/30">
+            <span className="shrink-0 px-1.5 h-4 inline-flex items-center text-[9px] font-medium rounded-full bg-paused/15 text-paused border border-paused/30">
               {t('status.paused')}
             </span>
           )}
@@ -742,7 +792,7 @@ function ChoreComposer({ day, onAdd }: { day: string; onAdd: (title: string, slo
     <>
       <form onSubmit={submit} className="px-2 pb-1 flex items-center gap-1">
         <input
-          className={`${inputCls} flex-1 min-w-0`}
+          className={`${inputCls} !rounded-xl flex-1 min-w-0`}
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder={t('chore.placeholder')}
@@ -805,7 +855,7 @@ export function ChoreRow({
   const carried = !chore.done && chore.date < today
 
   return (
-    <div className="group relative flex items-start gap-2 px-2 py-1.5 rounded-[3px] hover:bg-panel2">
+    <div className="group relative flex items-start gap-2 px-2 py-1.5 rounded-lg hover:bg-panel2">
       <button
         onClick={() =>
           ask(
@@ -888,7 +938,7 @@ export function ChoreRow({
 function ChoreLine({ chore }: { chore: Chore }) {
   const done = sig('completed')
   return (
-    <div className="px-2 py-1 rounded-[3px]">
+    <div className="px-2 py-1 rounded-lg">
       <div className="flex items-start gap-2">
         <span
           className="mt-[2px] shrink-0 w-[14px] h-[14px] rounded-[2px] border border-border grid place-items-center"
@@ -1154,7 +1204,7 @@ export function HabitLine({
 
   return (
     <div
-      className={`group relative flex items-start gap-2 pr-2 py-1.5 rounded-[3px] ${onToggle || hasKids ? 'hover:bg-panel2' : ''}`}
+      className={`group relative flex items-start gap-2 pr-2 py-1.5 rounded-lg ${onToggle || hasKids ? 'hover:bg-panel2' : ''}`}
       // The step is the tree, and it is the whole of it: nothing here draws a
       // rail, because a routine's children are all in one pane a few hundred
       // pixels wide and a fold triangle already says a branch is there.
@@ -1283,7 +1333,7 @@ function HabitComposer() {
     <div className="px-2 pb-1.5">
       <button
         onClick={() => setAdding(true)}
-        className="w-full h-7 inline-flex items-center justify-center gap-1 text-[12px] text-muted hover:text-fg border border-border rounded-[3px] hover:bg-panel2"
+        className="w-full h-8 inline-flex items-center justify-center gap-1 text-[12px] text-muted hover:text-fg border border-border/70 rounded-full hover:bg-panel2/70"
       >
         <Plus size={12} /> {t('habit.new')}
       </button>

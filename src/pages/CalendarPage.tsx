@@ -7,7 +7,8 @@ import { addMonths, startOfMonth, startOfWeek, addDays, toISO } from '../lib/dat
 import { formatLongDate, monthName, weekdayLabels } from '../lib/i18n'
 import { TFunc, useLang, useT } from '../lib/useT'
 import { effectiveStates } from '../lib/tree'
-import { DayCellState, DayMilestones, StrictLogRate, activeOnDay, dayCellState, milestonesOnDay, strictLogRate } from '../lib/dayTasks'
+import { DayCellState, DayMilestones, StrictLogRate, activeOnDay, dayCellState, milestonesOnDay, plannedIdSet, strictLogRate } from '../lib/dayTasks'
+import { plannedIds } from '../lib/schedule'
 
 export function CalendarPage() {
   const t = useT()
@@ -15,6 +16,7 @@ export function CalendarPage() {
   const tasks = useStore((s) => s.tasks)
   const logs = useStore((s) => s.logs)
   const today = useStore((s) => s.today)
+  const dayPlans = useStore((s) => s.dayPlans)
   const selectedDay = useStore((s) => s.selectedDay)
   const setSelected = useStore((s) => s.setSelected)
   const setSelectedDay = useStore((s) => s.setSelectedDay)
@@ -31,26 +33,39 @@ export function CalendarPage() {
     return Array.from({ length: 42 }, (_, i) => addDays(start, i))
   }, [year, month])
 
+  const plansByDay = useMemo(() => new Map(dayPlans.map((p) => [p.date, p])), [dayPlans])
+
   // One sweep for the whole grid, so a cell can show how much of its strict work
   // has been logged without recomputing 42 times per render.
   const rings = useMemo(() => {
     const m = new Map<string, StrictLogRate>()
-    for (const d of days) m.set(toISO(d), strictLogRate(tasks, logs, toISO(d)))
+    for (const d of days) {
+      const iso = toISO(d)
+      m.set(iso, strictLogRate(tasks, logs, iso, plannedIds(plansByDay.get(iso))))
+    }
     return m
-  }, [days, tasks, logs])
+  }, [days, tasks, logs, plansByDay])
 
   // Whether anything was *on* each day, which is not the same question as
   // whether anything was owed on it. Swept here because the cells ask it 42
   // times a render and it must not be recomputed on each hover; the answer is
   // what tells a day off apart from a day that finished all of nothing.
+  //
+  // A planned day asks the plan instead: an empty plan is a rest day and must
+  // not be marked just because a task's window happens to cover it.
   const worked = useMemo(() => {
     const s = new Set<string>()
     for (const d of days) {
       const iso = toISO(d)
-      if (tasks.some((task) => activeOnDay(task, iso))) s.add(iso)
+      const plan = plannedIdSet(tasks, plannedIds(plansByDay.get(iso)))
+      if (plan) {
+        if (tasks.some((task) => plan.has(task.id) && activeOnDay(task, iso))) s.add(iso)
+      } else if (tasks.some((task) => activeOnDay(task, iso))) {
+        s.add(iso)
+      }
     }
     return s
-  }, [days, tasks])
+  }, [days, tasks, plansByDay])
 
   // Beginnings and deadlines — the cell's contents. Swept the same way, for the
   // same reason.

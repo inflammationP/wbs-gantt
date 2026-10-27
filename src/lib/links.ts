@@ -4,6 +4,16 @@ import { isTauri } from './updater'
 export const REPO_URL = 'https://github.com/inflammationP/wbs-gantt'
 
 /**
+ * Where the feedback box sends mail.
+ *
+ * Deliberately a mailto and not a server: the app has no backend, nothing has
+ * to be deployed, and a message the user can read in their own outbox before
+ * sending is the most honest form this can take. It is public in the source,
+ * so it is a work address, not a private one.
+ */
+export const FEEDBACK_EMAIL = '3327219287@qq.com'
+
+/**
  * Watt Toolkit, the connectivity accelerator recommended in Settings.
  *
  * Verified rather than recalled: the project's own repository

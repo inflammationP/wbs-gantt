@@ -7,7 +7,7 @@ import { STATUS_META } from '../lib/ui'
 import { useT } from '../lib/useT'
 import { isTauri } from '../lib/updater'
 import { ReleaseHistoryDialog } from '../components/ReleaseNotes'
-import { ACCELERATOR_URL, REPO_URL, openExternal } from '../lib/links'
+import { ACCELERATOR_URL, FEEDBACK_EMAIL, REPO_URL, openExternal } from '../lib/links'
 
 export function SettingsPage() {
   const t = useT()
@@ -46,6 +46,9 @@ export function SettingsPage() {
 
         {/* ---- Version ---- */}
         <VersionSection />
+
+        {/* ---- Feedback ---- */}
+        <FeedbackSection />
 
         {/* ---- Closing the window ---- */}
         <CloseToTrayRow />
@@ -227,6 +230,106 @@ function VersionSection() {
             {t('update.openRepo')}
           </button>
         </div>
+      </div>
+    </section>
+  )
+}
+
+/**
+ * The feedback box.
+ *
+ * The app has no backend, so this composes a mail in the user's own client:
+ * nothing is posted silently, and the version/OS footer stays visible in the
+ * draft before they send it. The address is on screen too, because a machine
+ * with no mail client configured would otherwise get silence — and copying the
+ * same text works in webmail.
+ */
+function FeedbackSection() {
+  const t = useT()
+  const lang = useStore((s) => s.lang)
+  const [text, setText] = useState('')
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const ready = text.trim() !== ''
+
+  const compose = () => {
+    const os = navigator.userAgent.match(/Windows NT [\d.]+/)?.[0] ?? navigator.platform ?? 'unknown'
+    return [
+      text.trim(),
+      '',
+      '---',
+      `App: v${import.meta.env.VITE_APP_VERSION}`,
+      `OS: ${os}`,
+      `Lang: ${lang}`,
+    ].join('\n')
+  }
+
+  const send = () => {
+    if (!ready) return
+    const subject = encodeURIComponent(t('feedback.subject'))
+    void openExternal(`mailto:${FEEDBACK_EMAIL}?subject=${subject}&body=${encodeURIComponent(compose())}`)
+  }
+
+  const flashCopy = (state: 'copied' | 'failed') => {
+    setCopyState(state)
+    window.setTimeout(() => setCopyState('idle'), 2000)
+  }
+
+  const copy = () => {
+    if (!ready) return
+    const body = compose()
+    // A browser or a locked-down WebView can refuse the async clipboard. The
+    // old selection trick still works there, and if even that is refused the
+    // button has to say so — a copy that silently does nothing is worse than
+    // no button at all.
+    const fallback = () => {
+      const el = document.createElement('textarea')
+      el.value = body
+      el.style.position = 'fixed'
+      el.style.opacity = '0'
+      document.body.appendChild(el)
+      el.select()
+      const ok = document.execCommand('copy')
+      el.remove()
+      return ok
+    }
+    navigator.clipboard
+      .writeText(body)
+      .then(() => flashCopy('copied'), () => flashCopy(fallback() ? 'copied' : 'failed'))
+  }
+
+  return (
+    <section>
+      <h2 className="text-[14px] font-semibold text-fg mb-1">{t('feedback.title')}</h2>
+      <p className="text-[12px] text-muted mb-3">{t('feedback.hint')}</p>
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.currentTarget.value)}
+        rows={5}
+        placeholder={t('feedback.placeholder')}
+        className="w-full resize-y rounded-[3px] border border-border bg-panel2 px-2.5 py-2 text-[12px] leading-relaxed text-fg placeholder:text-dim focus:outline-none focus:border-accent"
+      />
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <button
+          onClick={send}
+          disabled={!ready}
+          className="h-8 px-3 text-[12px] font-medium bg-accent text-on-accent rounded-[3px] disabled:opacity-40"
+        >
+          {t('feedback.send')}
+        </button>
+        <button
+          onClick={copy}
+          disabled={!ready}
+          className="h-8 px-3 text-[12px] text-muted hover:text-fg border border-border rounded-[3px] disabled:opacity-40"
+        >
+          {copyState === 'copied'
+            ? t('feedback.copied')
+            : copyState === 'failed'
+              ? t('feedback.copyFailed')
+              : t('feedback.copy')}
+        </button>
+        <span className="ml-auto text-[11px] text-dim select-all">
+          {t('feedback.address')} {FEEDBACK_EMAIL}
+        </span>
       </div>
     </section>
   )

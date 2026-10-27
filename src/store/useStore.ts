@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { create } from 'zustand'
-import { AppView, Chore, ChoreSlot, DaySortMode, Habit, ItemLog, Note, Project, Task, TaskLog, TaskPriority, TaskType, ViewMode } from '../types'
+import { AppView, Chore, ChoreSlot, DayPlan, DaySortMode, Habit, ItemLog, Note, Project, ScheduleBlock, Task, TaskLog, TaskPriority, TaskType, ViewMode } from '../types'
 import { ALL_DAYS, habitBranch, runsOn } from '../lib/habits'
 import { todaysChores } from '../lib/chores'
 import { todayISO, addDays, diffDays, pad, toDate, toISO } from '../lib/dates'
@@ -40,6 +40,8 @@ import {
 import { loadData, saveData, loadPrefs, savePrefs, backupStoredData, workData, exportJson, prepareData, PersistedData, Prefs } from './storage'
 import { PROJECT_COLORS } from '../lib/ui'
 import { isLogDayOpen, logStamp, restamp } from '../lib/logs'
+import { postponePatch } from '../lib/postpone'
+import { DEFAULT_CAPACITY_HOURS, isHHMM, minutesOf } from '../lib/schedule'
 import { applyLang, Lang, translate } from '../lib/i18n'
 import { applyTheme, ThemeId } from '../lib/theme'
 import { buildSeed } from '../lib/seed'
@@ -152,10 +154,18 @@ export interface State {
   itemLogs: ItemLog[]
   /** What the user calls each to-do folder, by `todoGroupId` — see `storage.ts`. */
   todoFolders: Record<string, string>
+  /** Per-day planning and the timetable — see `DayPlan` / `ScheduleBlock`. */
+  dayPlans: DayPlan[]
+  scheduleBlocks: ScheduleBlock[]
   activeView: AppView
   // Bumped by `openGantt` and used as the Gantt page's React key, so clicking
   // the nav item remounts it rather than reusing the mounted one.
   ganttKey: number
+  // The same trick for Today: the nav item returns to the Today tab rather
+  // than leaving the page on whichever of Today / Tomorrow / This week was
+  // last open.
+  todayKey: number
+  openToday: () => void
   selectedTaskId: string | null
   selectedProjectId: string | null
   // yyyy-MM-dd of the day whose detail panel is open in the Calendar. View
@@ -240,6 +250,10 @@ export interface State {
   reminderLeadDays: number
   reminderCopy: Partial<Record<Lang, CopyOverrides>>
   reportSeenDay: string | null
+  /** The day the start-of-day plan prompt was put off — see `prefs`. */
+  planSkippedOn: string | null
+  /** A task's usual daily hours, used to prefill the plan dialog. */
+  taskDefaultHours: Record<string, number>
   reminderToken: string
   autostart: boolean
   closeToTray: boolean
@@ -360,6 +374,14 @@ export interface State {
 
   pauseTask: (id: string) => void
   resumeTask: (id: string) => void
+  /**
+   * Push a task's end date later and write down why.
+   *
+   * The guard is in `postponePatch` — later end, non-empty reason, a scheduled
+   * phase — so a request that is really an edit is refused rather than recorded
+   * as a postponement that never happened.
+   */
+  postponeTask: (id: string, newEnd: string, reason: string) => void
 
   setTaskTodo: (id: string) => void
   startTodoTasks: (entries: StartTodoInput[]) => void
@@ -383,6 +405,21 @@ export interface State {
   /** Name a to-do folder, or clear the name by passing a blank one. */
   setTodoFolderName: (groupId: string, name: string) => void
   deleteChore: (id: string) => void
+
+  /**
+   * Choose a day's work: `[]` is an explicit rest day, `null` restores the
+   * automatic rules. Never writes a log or any "not scheduled" entry.
+   */
+  setDayPlan: (date: string, taskIds: string[] | null, hours?: Record<string, number>) => void
+  /** Put the start-of-day prompt away for today; the corner tag stays. */
+  skipTodayPlan: () => void
+  /** A task's usual daily hours, prefilled next time it is planned; `null` clears. */
+  setTaskDefaultHours: (taskId: string, hours: number | null) => void
+  /** The day's available hours; `8` (the default) removes the override. */
+  setDayCapacity: (date: string, hours: number) => void
+  addScheduleBlock: (input: Omit<ScheduleBlock, 'id'>) => string
+  updateScheduleBlock: (id: string, patch: Partial<Omit<ScheduleBlock, 'id' | 'date'>>) => void
+  deleteScheduleBlock: (id: string) => void
 
   /**
    * Write a day's notebook. One action, because a day holds one box — see
@@ -485,6 +522,61 @@ function uid(): string {
   return 'id-' + Math.random().toString(36).slice(2) + Date.now().toString(36)
 }
 
+/**
+ * The plan's per-task hours, limited to the tasks the plan keeps.
+ *
+ * Zero and every unreadable value mean "no estimate", which is also what an
+ * empty map means, so the field disappears rather than storing a row of zeros.
+ */
+function planHours(
+  hours: Record<string, number> | undefined,
+  ids: string[],
+): Record<string, number> | undefined {
+  if (!hours) return undefined
+  const out: Record<string, number> = {}
+  for (const id of ids) {
+    const value = hours[id]
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0 && value <= 24) out[id] = value
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+function sameHours(
+  a: Record<string, number> | undefined,
+  b: Record<string, number> | undefined,
+): boolean {
+  if (a === undefined || b === undefined) return a === b
+  const keys = Object.keys(a)
+  return keys.length === Object.keys(b).length && keys.every((k) => a[k] === b[k])
+}
+
+/**
+ * A block as the timetable can draw it, or null.
+ *
+ * The dialog validates first; this is the door every write comes through, so a
+ * bad block cannot reach persistence by another path. A deadline is a point —
+ * its end is the start. Everything else must have a positive duration.
+ */
+function readBlockInput(
+  input: Omit<ScheduleBlock, 'id'>,
+): Omit<ScheduleBlock, 'id'> | null {
+  const date = input.date?.trim() ?? ''
+  const title = input.title.trim()
+  const taskId = input.taskId?.trim() || undefined
+  if (!date || !isHHMM(input.start) || !isHHMM(input.end)) return null
+  const deadline = input.deadline === true
+  if (!deadline && (minutesOf(input.end) ?? 0) <= (minutesOf(input.start) ?? 0)) return null
+  if (!title && !taskId) return null
+  return {
+    date,
+    start: input.start,
+    end: deadline ? input.start : input.end,
+    title,
+    ...(taskId ? { taskId } : {}),
+    ...(deadline ? { deadline: true } : {}),
+  }
+}
+
 const loaded = loadData()
 const initialData = loaded.kind === 'loaded' ? loaded.data : buildSeed()
 const initial = { ...initialData, tasks: syncParentDates(initialData.tasks, initialData.logs) }
@@ -533,6 +625,8 @@ function persistPrefs(): void {
     reminderLeadDays,
     reminderCopy,
     reportSeenDay,
+    planSkippedOn,
+    taskDefaultHours,
     reminderToken,
     autostart,
     closeToTray,
@@ -551,6 +645,8 @@ function persistPrefs(): void {
     reminderLeadDays,
     reminderCopy,
     reportSeenDay,
+    planSkippedOn,
+    taskDefaultHours,
     reminderToken,
     autostart,
     closeToTray,
@@ -712,10 +808,13 @@ export const useStore = create<State>()((rawSet, get) => {
   notes: initial.notes,
   itemLogs: initial.itemLogs,
   todoFolders: initial.todoFolders,
+  dayPlans: initial.dayPlans,
+  scheduleBlocks: initial.scheduleBlocks,
   lastUndo: null,
   history: EMPTY_HISTORY,
   activeView: 'gantt',
   ganttKey: 0,
+  todayKey: 0,
   selectedTaskId: null,
   selectedProjectId: null,
   selectedDay: null,
@@ -747,6 +846,8 @@ export const useStore = create<State>()((rawSet, get) => {
   reminderLeadDays: prefs.reminderLeadDays,
   reminderCopy: prefs.reminderCopy,
   reportSeenDay: prefs.reportSeenDay,
+  planSkippedOn: prefs.planSkippedOn,
+  taskDefaultHours: prefs.taskDefaultHours,
   reminderToken: prefs.reminderToken,
   autostart: prefs.autostart,
   closeToTray: prefs.closeToTray,
@@ -779,6 +880,7 @@ export const useStore = create<State>()((rawSet, get) => {
       selectedProjectId: null,
       ganttKey: s.ganttKey + 1,
     })),
+  openToday: () => set((s) => ({ activeView: 'today', todayKey: s.todayKey + 1 })),
   setSelected: (id) => set({ selectedTaskId: id, selectedProjectId: null }),
   setSelectedProject: (id) => set({ selectedProjectId: id, selectedTaskId: null }),
   setSelectedDay: (day) => set({ selectedDay: day }),
@@ -1022,6 +1124,7 @@ export const useStore = create<State>()((rawSet, get) => {
         paused: false,
         pauseDate: null,
         pauses: [],
+        postponements: [],
         priority: isTodo ? null : (input.priority ?? 'medium'),
         order,
         tags: input.tags ?? [],
@@ -1303,6 +1406,22 @@ export const useStore = create<State>()((rawSet, get) => {
       }),
     })),
 
+  postponeTask: (id, newEnd, reason) => {
+    const s = get()
+    const task = s.tasks.find((t) => t.id === id)
+    if (!task || isArchived(task)) return
+    // A parent's window is its children's span, so an end written here would be
+    // replaced by the next sync — leaving a record of a postponement the
+    // schedule never kept.
+    if (s.tasks.some((t) => t.parentId === id && !t.isTodo)) return
+    const patch = postponePatch(task, newEnd, reason, s.today)
+    if (!patch) return
+    set((state) => {
+      const tasks = editTask(state.tasks, state.projects, id, patch)
+      return tasks ? { tasks } : {}
+    })
+  },
+
   // Park a task as unscheduled work. Cascades to every unfinished descendant
   // (completed work is finished, and stays scheduled where it is). Written as a
   // single atomic `set` because App re-runs syncParentEnds on every `tasks`
@@ -1463,6 +1582,111 @@ export const useStore = create<State>()((rawSet, get) => {
         return { todoFolders: next }
       }),
     ),
+
+  setDayPlan: (date, taskIds, hours) => {
+    if (!date) return
+    const ids = taskIds === null ? undefined : [...new Set(taskIds)]
+    set((s) => {
+      const existing = s.dayPlans.find((p) => p.date === date)
+      const nextHours = ids === undefined ? undefined : planHours(hours ?? existing?.hours, ids)
+      if (!existing) {
+        if (ids === undefined) return {}
+        return {
+          dayPlans: [
+            ...s.dayPlans,
+            { date, taskIds: ids, ...(nextHours ? { hours: nextHours } : {}) },
+          ],
+        }
+      }
+      const same =
+        (ids === undefined
+          ? existing.taskIds === undefined
+          : existing.taskIds !== undefined &&
+            existing.taskIds.length === ids.length &&
+            existing.taskIds.every((id, i) => id === ids[i])) && sameHours(existing.hours, nextHours)
+      if (same) return {}
+      const next: DayPlan = { ...existing }
+      if (ids === undefined) {
+        delete next.taskIds
+        delete next.hours
+      } else {
+        next.taskIds = ids
+        if (nextHours) next.hours = nextHours
+        else delete next.hours
+      }
+      // A row exists only while it says something; capacity alone keeps it.
+      if (next.taskIds === undefined && next.capacityHours === undefined) {
+        return { dayPlans: s.dayPlans.filter((p) => p !== existing) }
+      }
+      return { dayPlans: s.dayPlans.map((p) => (p === existing ? next : p)) }
+    })
+  },
+
+  skipTodayPlan: () => {
+    set({ planSkippedOn: todayISO() })
+    persistPrefs()
+  },
+
+  setTaskDefaultHours: (taskId, hours) => {
+    if (!taskId) return
+    const value = hours !== null && Number.isFinite(hours) && hours > 0 && hours <= 24 ? hours : null
+    const current = get().taskDefaultHours
+    if (value === null ? current[taskId] === undefined : current[taskId] === value) return
+    if (value === null) {
+      const next = { ...current }
+      delete next[taskId]
+      set({ taskDefaultHours: next })
+    } else {
+      set({ taskDefaultHours: { ...current, [taskId]: value } })
+    }
+    persistPrefs()
+  },
+
+  setDayCapacity: (date, hours) => {
+    if (!date || !Number.isFinite(hours)) return
+    const value = Math.max(0, Math.min(24, Math.round(hours * 2) / 2))
+    set((s) => {
+      const existing = s.dayPlans.find((p) => p.date === date)
+      if (!existing) {
+        if (value === DEFAULT_CAPACITY_HOURS) return {}
+        return { dayPlans: [...s.dayPlans, { date, capacityHours: value }] }
+      }
+      if (existing.capacityHours === value) return {}
+      const next: DayPlan = { ...existing }
+      if (value === DEFAULT_CAPACITY_HOURS) delete next.capacityHours
+      else next.capacityHours = value
+      if (next.taskIds === undefined && next.capacityHours === undefined) {
+        return { dayPlans: s.dayPlans.filter((p) => p !== existing) }
+      }
+      return { dayPlans: s.dayPlans.map((p) => (p === existing ? next : p)) }
+    })
+  },
+
+  addScheduleBlock: (input) => {
+    const row = readBlockInput(input)
+    if (!row) return ''
+    const id = uid()
+    set((s) => ({ scheduleBlocks: [...s.scheduleBlocks, { id, ...row }] }))
+    return id
+  },
+
+  updateScheduleBlock: (id, patch) => {
+    set((s) => {
+      const existing = s.scheduleBlocks.find((b) => b.id === id)
+      if (!existing) return {}
+      const { id: _id, ...rest } = { ...existing, ...patch }
+      const row = readBlockInput(rest)
+      if (!row) return {}
+      const next = { id, ...row }
+      const same = (['date', 'start', 'end', 'title', 'taskId', 'deadline'] as const).every(
+        (key) => existing[key] === next[key],
+      )
+      return same ? {} : { scheduleBlocks: s.scheduleBlocks.map((b) => (b.id === id ? next : b)) }
+    })
+  },
+
+  deleteScheduleBlock: (id) =>
+    set((s) => ({ scheduleBlocks: s.scheduleBlocks.filter((b) => b.id !== id) })),
 
   toggleChore: (id) =>
     set((s) => ({
@@ -1746,7 +1970,9 @@ useStore.subscribe((state, prev) => {
     state.habits !== prev.habits ||
     state.notes !== prev.notes ||
     state.itemLogs !== prev.itemLogs ||
-    state.todoFolders !== prev.todoFolders
+    state.todoFolders !== prev.todoFolders ||
+    state.dayPlans !== prev.dayPlans ||
+    state.scheduleBlocks !== prev.scheduleBlocks
   ) {
     if (inGesture) persistenceDirty = true
     else persistWork()

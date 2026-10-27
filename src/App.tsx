@@ -11,6 +11,7 @@ import { ProjectDetailPanel } from './components/ProjectDetailPanel'
 import { DayDetailPanel } from './components/DayDetailPanel'
 import { UpdateOverlays } from './components/UpdateOverlays'
 import { StorageNotice } from './components/StorageNotice'
+import { PlanPrompt } from './components/PlanPrompt'
 import { useStore } from './store/useStore'
 import { useT } from './lib/useT'
 import { setTrayLabels } from './lib/notify'
@@ -22,6 +23,7 @@ export default function App() {
   // Re-keyed on every click of the nav's Gantt item, so the page remounts (and
   // scrolls back to today) instead of resuming where it was left.
   const ganttKey = useStore((s) => s.ganttKey)
+  const todayKey = useStore((s) => s.todayKey)
   const selectedDay = useStore((s) => s.selectedDay)
   const selectedTaskId = useStore((s) => s.selectedTaskId)
   const setSelected = useStore((s) => s.setSelected)
@@ -95,11 +97,12 @@ export default function App() {
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <StorageNotice />
         {view === 'gantt' && <GanttPage key={ganttKey} />}
-        {view === 'today' && <TodayPage />}
+        {view === 'today' && <TodayPage key={todayKey} />}
         {view === 'logs' && <LogsPage />}
         {view === 'manage' && <ManagePage />}
         {view === 'calendar' && <CalendarPage />}
         {view === 'settings' && <SettingsPage />}
+        <PlanPrompt />
         <UpdateOverlays />
       </main>
       {/* Sits left of the task panel, so opening a task from a day keeps the

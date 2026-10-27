@@ -37,7 +37,7 @@ const server = await createServer({
   // ever generated.
   optimizeDeps: { entries: [] },
 })
-const { updateOverlay } = await server.ssrLoadModule('/src/lib/updater.ts')
+const { updateOverlay, splitReleaseNotes } = await server.ssrLoadModule('/src/lib/updater.ts')
 const { useStore } = await server.ssrLoadModule('/src/store/useStore.ts')
 await server.close()
 
@@ -158,6 +158,25 @@ for (const info of [null, handle()]) {
     }
   }
 }
+
+// --- the important-release marker ------------------------------------------
+
+// The app is reading a note written for a release newer than itself, so the
+// only place the answer can live is the note. The marker owns its line and is
+// gone before the dialog reads anything.
+assert.deepEqual(splitReleaseNotes('[重要]\n- one'), { important: true, notes: '- one' })
+assert.deepEqual(splitReleaseNotes('[important]\r\n- one'), { important: true, notes: '- one' })
+assert.deepEqual(splitReleaseNotes('[重要]\n'), { important: true, notes: '' })
+assert.deepEqual(
+  splitReleaseNotes('[重要] 数据迁移'),
+  { important: false, notes: '[重要] 数据迁移' },
+  'a line that merely starts with the marker is a note, not a flag',
+)
+assert.deepEqual(splitReleaseNotes('- [重要] a real bullet'), {
+  important: false,
+  notes: '- [重要] a real bullet',
+})
+assert.deepEqual(splitReleaseNotes(''), { important: false, notes: '' })
 
 console.log('update flow: all assertions passed')
 // Loading the store leaves a handle open — the same reason every check that

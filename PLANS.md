@@ -26,6 +26,8 @@
 | 2026-10-02 | 项目合并（把项目拉下来当父任务） | [2026-10-02-project-merge.md](docs/plans/2026-10-02-project-merge.md) | 待提交 | 本次 |
 | 2026-10-02 | 历史操作树（分叉、多步撤回） | [2026-10-02-history-tree.md](docs/plans/2026-10-02-history-tree.md) | 待提交 | 本次 |
 | 2026-10-02 | 层级管理器（批量移动项目与任务） | [2026-10-02-hierarchy-manager.md](docs/plans/2026-10-02-hierarchy-manager.md) | 待提交 | 本次 |
+| 2026-10-27 | 今天页：日程表 + 每日任务规划（v0.18.0） | [2026-10-27-today-timetable-and-daily-plan.md](docs/plans/2026-10-27-today-timetable-and-daily-plan.md) | 待提交 | `075d21a4` |
+| 2026-10-28 | 启动时的今日规划弹窗 + 右侧提醒标签（v0.18.0） | [2026-10-28-day-plan-prompt.md](docs/plans/2026-10-28-day-plan-prompt.md) | 待提交 | `075d21a4` |
 
 > **2026-09-17 那两份都带一节「获批之后的修订」，读的时候要看那一节。**
 > 《日志进度：两个格子，必填》三条：报错时两格一起标红、必填提示要指明是哪个格子、推翻了获批方案里「增量可为负」这条。
@@ -44,6 +46,8 @@
 >
 > **同日那份《撤销补齐 + 删掉任务条拖动》没有偏差**，正文即终稿：范围由用户当场圈定（编辑模式里的操作 + 编辑模式以外的删除/归档/暂停/恢复/设为待办/从待办恢复），四条确认里「从待办恢复」不加第二道是获批稿里就写明的判断。
 >
+> **2026-10-27 / 10-28 那两份也都是终稿，而且同一个计划文件写了两份。** `quirky-honking-kitten.md` 先写《今天页：日程表 + 每日任务规划》，第二天写《启动时的今日规划弹窗》时覆盖了它；第一份按 `075d21a4` 的对话记录还原。日程表那份 10 条偏差，其中三列布局、视觉语言、时间轴比例、负载仪表（红黄蓝 / 轨道边框）、**任务计时 + 统一负载**、悬停高亮、演示数据都是用户见到实现前后追加或推翻的；弹窗那份 6 条，最显眼的是右侧标签从 20px 角标改成可展开的贴边标签，经历「太小 → 支出来的标签 → 再大一点 → 常态收缩、悬停展开」三轮返工。两份都逐处标了偏差，文末汇总。
+>
 
 源文件对应关系（便于回查原始位置）：
 
@@ -58,6 +62,8 @@
 ~/.claude/plans/breezy-stargazing-firefly.md   -> docs/plans/2026-09-14-update-ui.md
 ~/.claude/plans/splendid-hatching-yeti.md      -> docs/plans/2026-09-28-notes.md（同一个文件被写两次，见下）
 ~/.claude/plans/sleepy-splashing-key.md        -> docs/plans/2026-09-28-task-tree-drag.md
+~/.claude/plans/quirky-honking-kitten.md       -> docs/plans/2026-10-27-today-timetable-and-daily-plan.md
+                                                  和 docs/plans/2026-10-28-day-plan-prompt.md（同一个文件被写两次，见下）
 ```
 
 ## 阅读须知

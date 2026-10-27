@@ -581,6 +581,7 @@ export function moveInto(
       paused: false,
       pauseDate: null,
       pauses: [],
+      postponements: [],
       priority: 'medium',
       tags: [],
       dependencies: [],

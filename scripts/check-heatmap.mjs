@@ -33,16 +33,16 @@ const log = (taskId, date) => ({ id: `${taskId}@${date}`, taskId, date, content:
 
 // Every clause asks about one week, so one list of days does for all of them.
 const WEEK = ['2026-09-09', '2026-09-10', '2026-09-11', '2026-09-12', '2026-09-13', '2026-09-14', '2026-09-15']
-const talliesOf = (tasks, logs, days = WEEK) => branchDayTallies(tasks, logs, TODAY, 'a', days)
-const board = (tasks, logs, days = WEEK) => boardDayTallies(tasks, logs, [], [], TODAY, days)
+const talliesOf = (tasks, logs, days = WEEK, plans = []) => branchDayTallies(tasks, logs, TODAY, 'a', days, plans)
+const board = (tasks, logs, days = WEEK, plans = []) => boardDayTallies(tasks, logs, [], [], TODAY, days, plans)
 const chore = (over) => ({
   id: 'c', title: 'c', note: '', date: '2026-09-11', done: false,
   completedDate: null, createdAt: '', updatedAt: '',
   ...over,
 })
 /** The days a branch counts as clean — what the task panel's heatmap lights. */
-const doneOn = (tasks, logs, days = WEEK) => {
-  const tallies = talliesOf(tasks, logs, days)
+const doneOn = (tasks, logs, days = WEEK, plans = []) => {
+  const tallies = talliesOf(tasks, logs, days, plans)
   return days.filter((day) => {
     const { total, done } = tallies.get(day)
     return total > 0 && done === total
@@ -220,6 +220,34 @@ const mixed = boardDayTallies(
   TODAY, WEEK,
 )
 assert.equal(mixed.get('2026-09-13').done - base.get('2026-09-13').done, 2)
+
+// --- a plan decides which days the task's heatmap counts -------------------
+
+const planTicked = task({ id: 'a', confirmedDays: ['2026-09-11', '2026-09-13'] })
+assert.deepEqual(doneOn([planTicked], []), ['2026-09-11', '2026-09-13'], 'no plan is the old rule')
+
+const dayPlans = [
+  { date: '2026-09-11', taskIds: ['a'] },
+  { date: '2026-09-12', taskIds: [] },
+  { date: '2026-09-13', taskIds: ['someone-else'] },
+]
+assert.deepEqual(
+  doneOn([planTicked], [], WEEK, dayPlans),
+  ['2026-09-11'],
+  'a rest day and a day that planned another task do not count; unplanned days keep the old rule',
+)
+
+const boardPlan = board([planTicked], [], WEEK, dayPlans)
+assert.equal(boardPlan.get('2026-09-12').total, 0, 'a rest day has nothing to be done for')
+assert.equal(boardPlan.get('2026-09-11').done, 1)
+
+// A planned container stands for the leaves under it.
+const parent = task({ id: 'a' })
+const child = task({ id: 'b', parentId: 'a', confirmedDays: ['2026-09-11'] })
+const expanded = branchDayTallies([parent, child], [], TODAY, 'a', WEEK, [
+  { date: '2026-09-11', taskIds: ['a'] },
+])
+assert.deepEqual(expanded.get('2026-09-11'), { total: 1, done: 1 })
 
 await server.close()
 console.log('heatmap: ok')

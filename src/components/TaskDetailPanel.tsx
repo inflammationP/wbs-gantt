@@ -6,7 +6,8 @@ import { useStore } from '../store/useStore'
 import { computeWbs, effectiveStates, isArchived, nameQualifiers, todoCascadeIds } from '../lib/tree'
 import { isLogDayOpen, logsForTask } from '../lib/logs'
 import { LogLines } from './LogLines'
-import { hasStrictLeafUnder, pendingLogsUnder } from '../lib/dayTasks'
+import { hasStrictLeafUnder, pendingLogsUnder, plannedIdSet, plannedStrictLeafUnder } from '../lib/dayTasks'
+import { planOn, plannedIds } from '../lib/schedule'
 import { STATUS_META, priorityMeta, sig, sigText } from '../lib/ui'
 import { diffDays, toDate } from '../lib/dates'
 import { formatDayMonthYear } from '../lib/i18n'
@@ -15,6 +16,7 @@ import { CompletionHeatmap } from './CompletionHeatmap'
 import { LogDialog } from './LogDialog'
 import { TaskTreeDialog } from './TaskTreeDialog'
 import { StartTodoDialog } from './StartTodoDialog'
+import { PostponeDialog } from './PostponeDialog'
 import { useDialogs } from './dialogs'
 
 function ReadOnlyField({ label, children }: { label: string; children: ReactNode }) {
@@ -36,6 +38,7 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
   const tasks = useStore((s) => s.tasks)
   const logs = useStore((s) => s.logs)
   const projects = useStore((s) => s.projects)
+  const dayPlans = useStore((s) => s.dayPlans)
   // The store's own `today`, refreshed on a timer — anchoring the pending list
   // to it means the reminder rolls over at midnight like every other count.
   const today = useStore((s) => s.today)
@@ -53,6 +56,8 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
   const [startTodo, setStartTodo] = useState<string[] | null>(null)
   const [showHistory, setShowHistory] = useState(true)
   const [showPauses, setShowPauses] = useState(false)
+  const [showPostpones, setShowPostpones] = useState(true)
+  const [postponeOpen, setPostponeOpen] = useState(false)
 
   const project = useMemo(() => projects.find((p) => p.id === task?.projectId), [projects, task])
 
@@ -72,6 +77,10 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
 
   const subtasks = tasks.filter((t) => t.parentId === task.id)
   const hasKids = subtasks.length > 0
+  // A parent's window is its children's span; only a task whose dates are its
+  // own can have them postponed. A childless task, and a parent of to-dos only,
+  // still keeps its own pair — the same test `TaskDialog` makes.
+  const rollsUp = hasKids && subtasks.some((k) => !k.isTodo)
   const projectTasks = tasks.filter((t) => t.projectId === task.projectId)
   // Numbered over the live tasks, matching the board: a filed-away task has
   // given its number up, and this is what keeps the panel from printing last
@@ -87,8 +96,13 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
   const taskLogs = logsForTask(logs, task.id)
   // The branch's logging, not this task's: a parent's own progress comes from
   // its children, so its children's gaps are the thing worth surfacing here.
-  const branchPending = hasKids ? pendingLogsUnder(tasks, logs, today, task.id) : []
-  const tracksLogs = hasKids && hasStrictLeafUnder(tasks, task.id)
+  const plannedToday = plannedIds(planOn(dayPlans, today))
+  const planSet = plannedIdSet(tasks, plannedToday)
+  const branchPending = hasKids ? pendingLogsUnder(tasks, logs, today, task.id, plannedToday) : []
+  const tracksLogs =
+    hasKids &&
+    hasStrictLeafUnder(tasks, task.id) &&
+    (planSet === null || plannedStrictLeafUnder(tasks, task.id, planSet))
   // Not `useMemo`: this sits below the early return above, and a hook after a
   // conditional return is a hook that sometimes does not run.
   const qualifiers = nameQualifiers(branchPending, tasks)
@@ -340,21 +354,27 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
           <>
             <div className="grid grid-cols-2 gap-3">
               <ReadOnlyField label={t('common.start')}>{task.startDate ? formatDate(task.startDate) : t('common.none')}</ReadOnlyField>
-              <ReadOnlyField label={task.pauses.length ? t('task.endPostponed') : t('common.end')}>
+              <ReadOnlyField label={task.pauses.length || task.postponements.length ? t('task.endPostponed') : t('common.end')}>
                 {task.type === 'long-term' ? t('common.tbd') : formatDate(task.endDate)}
               </ReadOnlyField>
             </div>
             {task.type !== 'long-term' && taskStatus !== 'completed' && (
-              // Two ways of putting the same work aside, and the pair is worth
-              // seeing together: a pause keeps the schedule and hands back the
-              // days it cost, parking drops the schedule entirely.
+              // Three ways of dealing with work that is not going to finish on
+              // the current plan, and they are worth seeing together: postpone
+              // moves the end and records why, pause keeps the schedule and
+              // hands back the days it cost, parking drops the schedule
+              // entirely.
               //
               // "Not started" still gets no pause — there is no schedule to
-              // interrupt yet, and a pause would only postpone nothing — but
-              // parking is there in every state, which is what the pairing is
-              // for. The two are tied together tighter than the body's usual
-              // spacing, because they are one choice with two answers.
+              // interrupt yet — but postponing and parking are there in every
+              // state. The three are tied together tighter than the body's
+              // usual spacing, because they are one choice with three answers.
               <div className="space-y-1.5">
+                {!rollsUp && task.endDate != null && (
+                  <button onClick={() => setPostponeOpen(true)} className="w-full h-7 text-[12px] text-muted hover:text-fg border border-border rounded-[3px]">
+                    {t('task.postpone')}
+                  </button>
+                )}
                 {taskStatus !== 'not-started' && (
                   <button onClick={handlePause} className="w-full h-7 text-[12px] text-muted hover:text-fg border border-border rounded-[3px]">
                     {t('task.pause')}
@@ -380,6 +400,29 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
                 {task.pauses.map((p, i) => (
                   <div key={i} className="text-[11px] text-muted">
                     {t('task.pauseEntry', { from: formatDate(p.pauseDate), to: formatDate(p.resumeDate) })}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Postpone history — someone reading a task that slipped wants the
+            reasons in front of them, so this opens by default. */}
+        {!task.isTodo && task.postponements.length > 0 && (
+          <div>
+            <button onClick={() => setShowPostpones(!showPostpones)} className="text-[11px] text-accent hover:text-fg">
+              {showPostpones ? '▾' : '▸'} {t('task.postponeHistory', { count: task.postponements.length })}
+            </button>
+            {showPostpones && (
+              <div className="mt-1.5 space-y-1.5">
+                {task.postponements.map((p, i) => (
+                  <div key={i} className="text-[11px]">
+                    <div className="flex items-center gap-1.5 text-muted">
+                      <span className="font-mono text-dim">{formatDate(p.date)}</span>
+                      <span>{formatDate(p.from)} → {formatDate(p.to)}</span>
+                    </div>
+                    <div className="text-muted whitespace-pre-wrap">{p.reason}</div>
                   </div>
                 ))}
               </div>
@@ -474,6 +517,7 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
       />
     )}
     {startTodo && <StartTodoDialog taskIds={startTodo} onClose={() => setStartTodo(null)} />}
+    {postponeOpen && <PostponeDialog taskId={task.id} onClose={() => setPostponeOpen(false)} />}
     {dialogs}
     </>
   )
