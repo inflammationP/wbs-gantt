@@ -83,6 +83,6 @@ s().withUndo('删除 接口设计', () => s().deleteTask('b'))
 
 s().undoLast()
 s().undoLast()
-s().withUndo('暂停 联调与压测', () => s().pauseTask('c'))
+s().withUndo('暂停 联调与压测', () => s().pauseTask('c', '预览'))
 
 createRoot(document.getElementById('root')!).render(<HistoryDialog onClose={() => {}} />)

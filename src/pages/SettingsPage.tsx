@@ -238,11 +238,10 @@ function VersionSection() {
 /**
  * The feedback box.
  *
- * The app has no backend, so this composes a mail in the user's own client:
- * nothing is posted silently, and the version/OS footer stays visible in the
- * draft before they send it. The address is on screen too, because a machine
- * with no mail client configured would otherwise get silence — and copying the
- * same text works in webmail.
+ * The app has no backend. The one path that delivers on its own is GitHub: a
+ * prefilled new-issue page opens in the browser, and a signed-in user submits
+ * it. The address is on screen and the copy button puts the same write-up on
+ * the clipboard, for anyone who would rather send it themselves.
  */
 function FeedbackSection() {
   const t = useT()
@@ -263,15 +262,17 @@ function FeedbackSection() {
     ].join('\n')
   }
 
-  const send = () => {
-    if (!ready) return
-    const subject = encodeURIComponent(t('feedback.subject'))
-    void openExternal(`mailto:${FEEDBACK_EMAIL}?subject=${subject}&body=${encodeURIComponent(compose())}`)
-  }
-
   const flashCopy = (state: 'copied' | 'failed') => {
     setCopyState(state)
     window.setTimeout(() => setCopyState('idle'), 2000)
+  }
+
+  // The GitHub route: a prefilled new-issue page. No token, no API — the user
+  // only has to be signed in for the page to accept the submit.
+  const sendGithub = () => {
+    if (!ready) return
+    const subject = encodeURIComponent(t('feedback.subject'))
+    void openExternal(`${REPO_URL}/issues/new?title=${subject}&body=${encodeURIComponent(compose())}`)
   }
 
   const copy = () => {
@@ -310,11 +311,11 @@ function FeedbackSection() {
       />
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <button
-          onClick={send}
+          onClick={sendGithub}
           disabled={!ready}
           className="h-8 px-3 text-[12px] font-medium bg-accent text-on-accent rounded-[3px] disabled:opacity-40"
         >
-          {t('feedback.send')}
+          {t('feedback.github')}
         </button>
         <button
           onClick={copy}
@@ -331,6 +332,10 @@ function FeedbackSection() {
           {t('feedback.address')} {FEEDBACK_EMAIL}
         </span>
       </div>
+      <p className="mt-1.5 text-[11px] text-dim">
+        <span className="mr-1">·</span>
+        {t('feedback.githubHint')}
+      </p>
     </section>
   )
 }

@@ -12,6 +12,7 @@ import { DayDetailPanel } from './components/DayDetailPanel'
 import { UpdateOverlays } from './components/UpdateOverlays'
 import { StorageNotice } from './components/StorageNotice'
 import { PlanPrompt } from './components/PlanPrompt'
+import { StickyNotes } from './components/StickyNotes'
 import { useStore } from './store/useStore'
 import { useT } from './lib/useT'
 import { setTrayLabels } from './lib/notify'
@@ -119,6 +120,9 @@ export default function App() {
           ? <ProjectDetailPanel projectId={selectedProject.id} />
           : (selectedExists && selectedTaskId ? <TaskDetailPanel taskId={selectedTaskId} /> : null)}
       </div>
+      {/* Portalled to the body, so it survives page switches and is never
+          clipped by the shell's overflow. */}
+      <StickyNotes />
     </div>
   )
 }

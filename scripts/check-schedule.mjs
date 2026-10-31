@@ -25,6 +25,8 @@ const {
   promptDue,
   formatHours,
   packBlocks,
+  dragSpan,
+  loadRead,
 } = await server.ssrLoadModule('/src/lib/schedule.ts')
 
 // --- stored times are strict, unlike typed chore times --------------------
@@ -58,6 +60,27 @@ assert.equal(blockMinutes(block({ start: '10:00', end: '09:00' })), 0)
 assert.equal(blockMinutes(block({ deadline: true, start: '17:00', end: '10:00' })), 0)
 assert.equal(blockMinutes(block({ start: '9:00' })), 0)
 
+// --- drag-to-create -------------------------------------------------------
+
+// A drag gives the span between its two ends, whichever way it went; a press
+// and release in one slot is a click, and takes no end from the drag.
+assert.deepEqual(dragSpan(9 * 60, 11 * 60), { start: 540, end: 660 })
+assert.deepEqual(dragSpan(11 * 60, 9 * 60), { start: 540, end: 660 })
+assert.deepEqual(dragSpan(9 * 60, 9 * 60), { start: 540, end: null })
+assert.deepEqual(dragSpan(23 * 60 + 30, 0), { start: 0, end: 1410 })
+
+// --- when a load can be stated ---------------------------------------------
+
+// No capacity means no load: the board no longer assumes a working day.
+assert.deepEqual(loadRead(0, 5, 5), { computable: false, reference: false })
+// Below three fifths of the tasks carrying an estimate, the sum is not a total.
+assert.deepEqual(loadRead(8, 2, 5), { computable: false, reference: false })
+assert.deepEqual(loadRead(8, 3, 5), { computable: true, reference: true })
+// Every task estimated: stated plainly.
+assert.deepEqual(loadRead(8, 5, 5), { computable: true, reference: false })
+// Nothing planned: no estimate is missing, and the blocks still count.
+assert.deepEqual(loadRead(8, 0, 0), { computable: true, reference: false })
+
 // --- load -----------------------------------------------------------------
 
 const day = '2026-10-27'
@@ -69,11 +92,12 @@ const blocks = [
 ]
 assert.equal(dayLoadMinutes(blocks, day), 120, 'overlap counts twice; deadline and other days do not count')
 
-assert.equal(capacityOf(undefined), 8)
-assert.equal(capacityOf({ date: day }), 8)
+// Nobody has said: zero, not an invented eight-hour day.
+assert.equal(capacityOf(undefined), 0)
+assert.equal(capacityOf({ date: day }), 0)
 assert.equal(capacityOf({ date: day, capacityHours: 6 }), 6)
 assert.equal(capacityOf({ date: day, capacityHours: 0 }), 0)
-assert.equal(capacityOf({ date: day, capacityHours: 25 }), 8)
+assert.equal(capacityOf({ date: day, capacityHours: 25 }), 0)
 
 const load = dayLoad({ date: day, capacityHours: 6 }, blocks, day)
 assert.deepEqual(load, { used: 2, capacity: 6, ratio: 2 / 6, over: false })

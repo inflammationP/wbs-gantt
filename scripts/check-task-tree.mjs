@@ -414,14 +414,16 @@ addLog({ taskId: g3, date: useStore.getState().today, content: 'wrote it up' })
 const find = (id) => board().find((t) => t.id === id)
 
 withUndo('paused two', () => {
-  pauseTask(g1)
-  pauseTask(g2)
+  pauseTask(g1, 'waiting on parts')
+  pauseTask(g2, 'waiting on parts')
 })
 assert.equal(find(g1).paused, true)
+assert.equal(find(g1).pauseReason, 'waiting on parts', 'the reason is kept while paused')
 undoLast()
 assert.equal(find(g1).paused, false, 'two actions in one run are one step, taken back together')
 assert.equal(find(g2).paused, false)
 assert.equal(find(g1).pauseDate, null, 'down to the date the pause was stamped with')
+assert.equal(find(g1).pauseReason ?? null, null, 'and the open reason with it')
 assert.equal(lastUndo(), null, 'and the one offer is spent, not two')
 
 // Parking a task wipes its schedule — so the undo has to put the dates back, not
@@ -474,11 +476,13 @@ assert.equal(find(g2).startDate, null, 'with the schedule it was given taken off
 // history is the board's.
 useStore.setState({ activeView: 'today' })
 const offGantt = useStore.getState().history.steps.length
-withUndo('paused one', () => pauseTask(g1))
+withUndo('paused one', () => pauseTask(g1, 'off the board'))
 assert.equal(find(g1).paused, true, 'the action still happens')
 assert.equal(useStore.getState().history.steps.length, offGantt + 1, 'and it is a step off the Gantt too')
 useStore.setState({ activeView: 'gantt' })
 withUndo('resumed one', () => resumeTask(g1))
+assert.equal(find(g1).pauseReason, null, 'resuming clears the open reason')
+assert.equal(find(g1).pauses.at(-1).reason, 'off the board', 'and closes the pair with it')
 assert.ok(lastUndo(), 'the same step is offered on the board')
 undoLast()
 

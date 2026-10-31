@@ -17,6 +17,7 @@ import { LogDialog } from './LogDialog'
 import { TaskTreeDialog } from './TaskTreeDialog'
 import { StartTodoDialog } from './StartTodoDialog'
 import { PostponeDialog } from './PostponeDialog'
+import { PauseReasonDialog } from './PauseReasonDialog'
 import { useDialogs } from './dialogs'
 
 function ReadOnlyField({ label, children }: { label: string; children: ReactNode }) {
@@ -58,6 +59,7 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
   const [showPauses, setShowPauses] = useState(false)
   const [showPostpones, setShowPostpones] = useState(true)
   const [postponeOpen, setPostponeOpen] = useState(false)
+  const [pauseOpen, setPauseOpen] = useState(false)
 
   const project = useMemo(() => projects.find((p) => p.id === task?.projectId), [projects, task])
 
@@ -135,11 +137,7 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
     ask(message, () => withUndo(t('gantt.undoTodo', { what: task.name }), () => setTaskTodo(task.id)))
   }
 
-  const handlePause = () => {
-    ask(t('task.pauseConfirm', { name: task.name }), () =>
-      withUndo(t('gantt.undoPause', { what: task.name }), () => pauseTask(task.id)),
-    )
-  }
+  const handlePause = () => setPauseOpen(true)
 
   const handleResume = () => {
     ask(t('task.resumeConfirm', { name: task.name }), () =>
@@ -183,11 +181,10 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
       </div>
 
       <div ref={bodyRef} className="flex-1 overflow-auto p-4 space-y-4">
-        {/* Not on a parent. It grew children, so it is a folder now and its
-            progress is theirs; there is nothing here for a log to move. What
-            takes this button's place is the "still to log" list below, which is
-            the thing a parent is actually for. */}
-        {isLoggable && !hasKids && (
+        {/* A container's entry is a comment: the dialog asks a task with
+            children for no figure, because its progress is theirs. The "still
+            to log" list below stays the way to reach the children. */}
+        {isLoggable && (
           <button onClick={() => setLogOpen(true)} className="w-full h-8 inline-flex items-center justify-center gap-1.5 text-[12px] font-medium bg-accent text-on-accent rounded-[3px] hover:brightness-110">
             <NotebookText size={14} /> {t('log.write')}
           </button>
@@ -291,7 +288,7 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
           </ReadOnlyField>
         )}
 
-        {task.type !== 'long-term' && !task.isTodo && (
+        {!task.isTodo && (
           <ReadOnlyField label={t('task.progressMode')}>
             {/* A task with children takes its progress from them, so the strict
                 flag is inert on it (`isStrictLeaf` requires no children). Saying
@@ -346,6 +343,9 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
                 count: pausedDays,
               })}
             </div>
+            {task.pauseReason && (
+              <div className="mt-1.5 text-[11px] text-muted whitespace-pre-wrap">{task.pauseReason}</div>
+            )}
             <button onClick={handleResume} className="mt-2 w-full h-8 text-[12px] font-medium bg-accent text-on-accent rounded-[3px] hover:brightness-110">
               {t('task.resume')}
             </button>
@@ -358,6 +358,17 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
                 {task.type === 'long-term' ? t('common.tbd') : formatDate(task.endDate)}
               </ReadOnlyField>
             </div>
+            {/* A commitment, not a span: shown even for a rolled-up parent and
+                a long-term goal, where the schedule fields say TBD. */}
+            <ReadOnlyField label={t('task.deadline')}>
+              {task.deadline ? (
+                <span className={task.deadline < today && taskStatus !== 'completed' ? 'text-delayed' : undefined}>
+                  {formatDate(task.deadline)}
+                </span>
+              ) : (
+                t('common.none')
+              )}
+            </ReadOnlyField>
             {task.type !== 'long-term' && taskStatus !== 'completed' && (
               // Three ways of dealing with work that is not going to finish on
               // the current plan, and they are worth seeing together: postpone
@@ -400,6 +411,7 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
                 {task.pauses.map((p, i) => (
                   <div key={i} className="text-[11px] text-muted">
                     {t('task.pauseEntry', { from: formatDate(p.pauseDate), to: formatDate(p.resumeDate) })}
+                    {p.reason && <div className="text-muted whitespace-pre-wrap">{p.reason}</div>}
                   </div>
                 ))}
               </div>
@@ -430,7 +442,7 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
           </div>
         )}
 
-        {/* progress (static; long-term goals have none) */}
+        {/* progress — a goal's is read from its logs like any strict task's */}
         {effProgress != null && (
           <div>
             <div className="flex items-center justify-between mb-1">
@@ -518,6 +530,15 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
     )}
     {startTodo && <StartTodoDialog taskIds={startTodo} onClose={() => setStartTodo(null)} />}
     {postponeOpen && <PostponeDialog taskId={task.id} onClose={() => setPostponeOpen(false)} />}
+    {pauseOpen && (
+      <PauseReasonDialog
+        title={t('task.pauseConfirm', { name: task.name })}
+        onClose={() => setPauseOpen(false)}
+        onConfirm={(reason) =>
+          withUndo(t('gantt.undoPause', { what: task.name }), () => pauseTask(task.id, reason))
+        }
+      />
+    )}
     {dialogs}
     </>
   )

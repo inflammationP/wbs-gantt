@@ -121,7 +121,7 @@ try {
 
   // This is the action the Sidebar's export button calls, not a handcrafted
   // literal passed directly to the serializer.
-  seed([task('a')], {
+  seed([task('a', { deadline: '2026-10-20' })], {
     chores: [{ id: 'c', title: 'chore', note: '', date: '2026-10-13', done: false, completedDate: null }],
     habits: [{ id: 'h', title: 'habit', note: '', parentId: null, startDate: '2026-10-13', endDate: null, weekdays: [0, 1], paused: false, pauseDate: null, pauses: [], doneDays: [] }],
     notes: [{ date: '2026-10-13', body: 'note', updatedAt: '', stamps: [{ at: '12:00' }] }],
@@ -132,6 +132,10 @@ try {
       { date: '2026-10-14', taskIds: [] },
     ],
     scheduleBlocks: [{ id: 'b1', date: '2026-10-13', start: '09:00', end: '10:30', title: 'block' }],
+    stickyNotes: [
+      { id: 's1', name: '标签 1', text: 'remember', x: 100, y: 120, w: 300, h: 260, z: 3, docked: false, rich: true, createdAt: '', updatedAt: '' },
+      { id: 's2', name: '标签 2', text: '', x: 0, y: 0, z: 4, docked: false, snapped: 'left', snapAt: 120, createdAt: '', updatedAt: '' },
+    ],
   })
   const roundTrip = parseImport(state().exportData())
   assert.equal(roundTrip.todoFolders.folder, 'custom name')
@@ -141,6 +145,16 @@ try {
   assert.equal(roundTrip.dayPlans.length, 2)
   assert.deepEqual(roundTrip.dayPlans[0].hours, { a: 2.5 })
   assert.equal(roundTrip.scheduleBlocks.length, 1)
+  assert.equal(roundTrip.stickyNotes.length, 2)
+  assert.equal(roundTrip.stickyNotes[0].text, 'remember')
+  assert.equal(roundTrip.stickyNotes[0].docked, false)
+  assert.equal(roundTrip.stickyNotes[0].w, 300)
+  assert.equal(roundTrip.stickyNotes[0].h, 260)
+  assert.equal(roundTrip.stickyNotes[0].rich, true, 'the rich flag rides with the card')
+  assert.equal(roundTrip.stickyNotes[0].name, '标签 1')
+  assert.equal(roundTrip.stickyNotes[1].snapped, 'left')
+  assert.equal(roundTrip.stickyNotes[1].snapAt, 120)
+  assert.equal(roundTrip.tasks[0].deadline, '2026-10-20', 'the DDL rides through the task')
 
   const importing = (tasks, over = {}) => parseImport(JSON.stringify({ projects, tasks, logs: [], ...over }))
 
@@ -162,6 +176,15 @@ try {
       { id: 'bad', date: '2026-10-13', start: '9:00', end: '10:00', title: 'bad' },
       { id: 'empty', date: '2026-10-13', start: '09:00', end: '10:00', title: '' },
     ],
+    stickyNotes: [
+      { id: 'ok', text: 'keep', x: 10, y: 20, z: 2, docked: true, createdAt: '', updatedAt: '' },
+      { id: 'ok', text: 'duplicate', x: 0, y: 0, z: 0, docked: true },
+      { id: 'bad-coords', text: 'kept', x: 'nope', y: null, z: -5 },
+      { id: 'blank', text: '', x: 1, y: 2, w: 300, h: 260, z: 1, docked: false, rich: true },
+      { id: 'bad-size', name: 'named', text: 'kept', x: 3, y: 4, w: 'wide', h: -5, rich: 'yes', snapped: 'diagonal', snapAt: 'x' },
+      'not a row',
+      { text: 'no id' },
+    ],
   })
   assert.deepEqual(sanitized.dayPlans.map((p) => p.date), ['2026-10-13', '2026-10-16', '2026-10-17'])
   assert.deepEqual(sanitized.dayPlans[0].taskIds, [], 'last duplicate wins; [] is a rest day')
@@ -175,6 +198,22 @@ try {
   assert.equal(sanitized.dayPlans.length, 3, 'hours alone are not a plan')
   assert.deepEqual(sanitized.scheduleBlocks.map((b) => b.id), ['ok', 'dead'])
   assert.equal(sanitized.scheduleBlocks[1].end, '17:00', 'a deadline is forced to a point')
+  assert.deepEqual(sanitized.stickyNotes.map((n) => n.id), ['ok', 'bad-coords', 'blank', 'bad-size'])
+  assert.equal(sanitized.stickyNotes[1].text, 'kept', 'a bad coordinate keeps the text')
+  assert.equal(sanitized.stickyNotes[1].x, 16, 'and falls back to a visible point')
+  assert.equal(sanitized.stickyNotes[1].z, 0, 'a negative number floors at zero')
+  assert.equal(sanitized.stickyNotes[1].docked, true, 'an absent docked reads as on the board')
+  assert.equal(sanitized.stickyNotes[2].text, '', 'a blank card is still a card')
+  assert.equal(sanitized.stickyNotes[2].docked, false)
+  assert.equal(sanitized.stickyNotes[2].w, 300, 'a size rides through')
+  assert.equal(sanitized.stickyNotes[2].rich, true)
+  assert.equal(sanitized.stickyNotes[3].w, undefined, 'an unreadable size is dropped')
+  assert.equal(sanitized.stickyNotes[3].h, 120, 'a negative size is floored')
+  assert.equal(sanitized.stickyNotes[3].rich, false, 'only a real true is rich')
+  assert.equal(sanitized.stickyNotes[3].name, 'named', 'a real name is kept')
+  assert.equal(sanitized.stickyNotes[3].snapped, null, 'an unknown edge is dropped')
+  assert.equal(sanitized.stickyNotes[3].snapAt, 0)
+  assert.equal(sanitized.stickyNotes[0].name, '标签 1', 'an old note gets a numbered name')
 
   assert.throws(() => importing([task('a', { parentId: 'b' }), task('b', { parentId: 'a' })]), /cycle/)
   assert.throws(() => importing([task('a', { parentId: 'missing' })]), /parent does not exist/)
@@ -182,6 +221,28 @@ try {
   assert.throws(() => importing([task('a', { projectId: 'missing' })]), /project does not exist/)
   assert.throws(() => importing([task('a'), task('b', { projectId: 'q', parentId: 'a' })]), /another project/)
   assert.throws(() => importing([], { logs: {} }), /Invalid logs/)
+  assert.deepEqual(importing([task('a')]).stickyNotes, [], 'a save from before the corkboard has none')
+  assert.equal(importing([task('a')]).tasks[0].deadline, null, 'a save from before the DDL has none')
+  assert.equal(importing([task('a', { deadline: '2026-10-20' })]).tasks[0].deadline, '2026-10-20')
+  assert.throws(() => importing([task('a', { deadline: 42 })]), /invalid deadline/)
+  assert.equal(
+    importing([task('a', { isTodo: true, startDate: null, endDate: null, deadline: '2026-10-20' })]).tasks[0].deadline,
+    null,
+    'a to-do holds no deadline',
+  )
+  const withReason = importing([task('a', {
+    paused: true,
+    pauseDate: '2026-10-10',
+    pauseReason: 'waiting',
+    pauses: [{ pauseDate: '2026-10-01', resumeDate: '2026-10-02', reason: 'parts' }],
+  })])
+  assert.equal(withReason.tasks[0].pauseReason, 'waiting', 'an open pause keeps its reason')
+  assert.equal(withReason.tasks[0].pauses[0].reason, 'parts', 'a closed pair keeps its own')
+  assert.throws(
+    () => importing([task('a', { pauses: [{ pauseDate: '2026-10-01', resumeDate: '2026-10-02', reason: 5 }] })]),
+    /invalid pauses/,
+  )
+  assert.throws(() => importing([task('a', { paused: true, pauseReason: 5 })]), /invalid pauseReason/)
   assert.equal(importing([task('legacy', { tags: undefined, dependencies: undefined })]).tasks[0].dependencies.length, 0)
 
   const paused = task('a', { paused: true, pauseDate: '2026-10-10' })
@@ -200,6 +261,43 @@ try {
   state().addLog({ taskId: 'child', date: state().today, content: 'finished', targetProgress: 100 })
   assert.equal(state().tasks.find((t) => t.id === 'parent').endDate, state().today, 'log changes also settle dates atomically')
   assert.equal(JSON.parse(values.get('wbs-gantt.v2')).tasks.find((t) => t.id === 'parent').endDate, state().today)
+
+  // Pauses now ask for a reason. The store is the trust boundary: it trims,
+  // refuses an empty one, and closes the pair with the reason on resume.
+  seed([task('a'), task('b')])
+  state().pauseTask('a', '  waiting  ')
+  assert.equal(state().tasks.find((t) => t.id === 'a').pauseReason, 'waiting')
+  state().pauseTask('b', '   ')
+  assert.equal(state().tasks.find((t) => t.id === 'b').paused, false, 'an empty reason is refused')
+  state().resumeTask('a')
+  const closed = state().tasks.find((t) => t.id === 'a')
+  assert.equal(closed.pauseReason, null, 'resuming clears the open reason')
+  assert.deepEqual(closed.pauses.at(-1), {
+    pauseDate: state().today,
+    resumeDate: state().today,
+    reason: 'waiting',
+  })
+
+  // A pause opened before reasons existed closes without inventing one.
+  seed([task('a', { paused: true, pauseDate: '2026-09-10' })])
+  state().resumeTask('a')
+  const legacy = state().tasks.find((t) => t.id === 'a')
+  assert.equal(legacy.pauseReason, null)
+  assert.equal('reason' in legacy.pauses.at(-1), false, 'a legacy pause invents no reason')
+
+  // Default note names count up across the list, whatever their language.
+  seed([])
+  const firstSticky = state().addStickyNote({ x: 10, y: 10 })
+  assert.equal(
+    state().stickyNotes.find((n) => n.id === firstSticky).name,
+    translate(state().lang, 'sticky.defaultName', { n: 1 }),
+  )
+  const secondSticky = state().addStickyNote({ x: 20, y: 20 })
+  assert.equal(
+    state().stickyNotes.find((n) => n.id === secondSticky).name,
+    translate(state().lang, 'sticky.defaultName', { n: 2 }),
+  )
+
   console.log('data integrity: all assertions passed')
 } finally {
   await server.close()

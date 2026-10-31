@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { create } from 'zustand'
-import { AppView, Chore, ChoreSlot, DayPlan, DaySortMode, Habit, ItemLog, Note, Project, ScheduleBlock, Task, TaskLog, TaskPriority, TaskType, ViewMode } from '../types'
+import { AppView, Chore, ChoreSlot, DayPlan, DaySortMode, Habit, ItemLog, Note, Project, ScheduleBlock, StickyNote, Task, TaskLog, TaskPriority, TaskType, ViewMode } from '../types'
 import { ALL_DAYS, habitBranch, runsOn } from '../lib/habits'
 import { todaysChores } from '../lib/chores'
 import { todayISO, addDays, diffDays, pad, toDate, toISO } from '../lib/dates'
@@ -42,6 +42,7 @@ import { PROJECT_COLORS } from '../lib/ui'
 import { isLogDayOpen, logStamp, restamp } from '../lib/logs'
 import { postponePatch } from '../lib/postpone'
 import { DEFAULT_CAPACITY_HOURS, isHHMM, minutesOf } from '../lib/schedule'
+import { nextStickyNumber, nextZ } from '../lib/sticky'
 import { applyLang, Lang, translate } from '../lib/i18n'
 import { applyTheme, ThemeId } from '../lib/theme'
 import { buildSeed } from '../lib/seed'
@@ -61,6 +62,8 @@ export interface NewTaskInput {
   isTodo?: boolean
   startDate: string | null
   endDate: string | null
+  /** A hard date the work is promised for; independent of `endDate`. */
+  deadline?: string | null
   strictProgress?: boolean
   priority?: TaskPriority
   tags?: string[]
@@ -107,6 +110,8 @@ export interface StartTodoInput {
   id: string
   startDate: string
   endDate: string
+  /** A DDL can be set as the to-do becomes scheduled work; optional. */
+  deadline?: string | null
   /**
    * What the to-do turns out to be, asked here because this is the first moment
    * the question has an answer — see the note on `Task.type`.
@@ -145,9 +150,9 @@ export interface State {
   projects: Project[]
   tasks: Task[]
   logs: TaskLog[]
-  // Chores, habits, notes and the entries written about the first two live
-  // outside the three above on purpose — see `Chore`, `Habit`, `Note` and
-  // `ItemLog` in types.ts.
+  // Chores, habits, notes, item logs and sticky cards live outside the three
+  // above on purpose — see `Chore`, `Habit`, `Note`, `ItemLog` and
+  // `StickyNote` in types.ts.
   chores: Chore[]
   habits: Habit[]
   notes: Note[]
@@ -157,6 +162,8 @@ export interface State {
   /** Per-day planning and the timetable — see `DayPlan` / `ScheduleBlock`. */
   dayPlans: DayPlan[]
   scheduleBlocks: ScheduleBlock[]
+  /** The corkboard's cards — see `StickyNote` in types.ts. */
+  stickyNotes: StickyNote[]
   activeView: AppView
   // Bumped by `openGantt` and used as the Gantt page's React key, so clicking
   // the nav item remounts it rather than reusing the mounted one.
@@ -372,7 +379,8 @@ export interface State {
    */
   updateLog: (id: string, targetProgress: number | null) => void
 
-  pauseTask: (id: string) => void
+  /** Pause a task; the reason is required, like a postponement's. */
+  pauseTask: (id: string, reason: string) => void
   resumeTask: (id: string) => void
   /**
    * Push a task's end date later and write down why.
@@ -415,11 +423,28 @@ export interface State {
   skipTodayPlan: () => void
   /** A task's usual daily hours, prefilled next time it is planned; `null` clears. */
   setTaskDefaultHours: (taskId: string, hours: number | null) => void
-  /** The day's available hours; `8` (the default) removes the override. */
+  /** The day's available hours; `0` (the default — unfilled) removes the override. */
   setDayCapacity: (date: string, hours: number) => void
   addScheduleBlock: (input: Omit<ScheduleBlock, 'id'>) => string
   updateScheduleBlock: (id: string, patch: Partial<Omit<ScheduleBlock, 'id' | 'date'>>) => void
   deleteScheduleBlock: (id: string) => void
+
+  /** Pin a blank card at a viewport point; returns its id. */
+  addStickyNote: (at: { x: number; y: number }) => string
+  /**
+   * Text, position and stacking. A write that changes nothing is a no-op, which
+   * is what keeps a blur with no edit from rewriting the whole board.
+   */
+  updateStickyNote: (
+    id: string,
+    patch: Partial<
+      Pick<
+        StickyNote,
+        'name' | 'text' | 'x' | 'y' | 'w' | 'h' | 'z' | 'docked' | 'snapped' | 'snapAt' | 'rich'
+      >
+    >,
+  ) => void
+  removeStickyNote: (id: string) => void
 
   /**
    * Write a day's notebook. One action, because a day holds one box — see
@@ -810,6 +835,7 @@ export const useStore = create<State>()((rawSet, get) => {
   todoFolders: initial.todoFolders,
   dayPlans: initial.dayPlans,
   scheduleBlocks: initial.scheduleBlocks,
+  stickyNotes: initial.stickyNotes,
   lastUndo: null,
   history: EMPTY_HISTORY,
   activeView: 'gantt',
@@ -1119,7 +1145,10 @@ export const useStore = create<State>()((rawSet, get) => {
         isTodo,
         startDate: isTodo ? null : input.startDate,
         endDate: isTodo || isLT ? null : input.endDate,
-        strictProgress: isTodo || isLT ? false : (input.strictProgress ?? false),
+        deadline: isTodo ? null : (input.deadline ?? null),
+        // A long-term goal has no end to divide ticks by, so it is always
+        // log-driven; only a to-do is without progress entirely.
+        strictProgress: isTodo ? false : isLT ? true : (input.strictProgress ?? false),
         confirmedDays: [],
         paused: false,
         pauseDate: null,
@@ -1138,11 +1167,25 @@ export const useStore = create<State>()((rawSet, get) => {
     return id
   },
   updateTask: (id, patch) => {
-    const name = get().tasks.find((t) => t.id === id)?.name ?? ''
+    const prev = get().tasks.find((t) => t.id === id)
+    const name = prev?.name ?? ''
     get().withUndo(translate(get().lang, 'history.editTask', { what: name }), () =>
       set((s) => {
         const tasks = editTask(s.tasks, s.projects, id, patch)
-        return tasks ? { tasks } : {}
+        if (!tasks) return {}
+        const next = tasks.find((t) => t.id === id)
+        // A block's title is a snapshot, but one still saying the old name is
+        // the default rather than something typed, so it follows the rename —
+        // the rule `pickTask` applies when the link changes. A typed title is
+        // the block's own and stays.
+        if (!prev || !next || next.name === prev.name) return { tasks }
+        let touched = false
+        const scheduleBlocks = s.scheduleBlocks.map((b) => {
+          if (b.taskId !== id || b.title !== prev.name) return b
+          touched = true
+          return { ...b, title: next.name }
+        })
+        return touched ? { tasks, scheduleBlocks } : { tasks }
       }),
     )
   },
@@ -1379,14 +1422,23 @@ export const useStore = create<State>()((rawSet, get) => {
       }
     }),
 
-  pauseTask: (id) =>
+  pauseTask: (id, reason) => {
+    const text = reason.trim()
+    if (!text) return
     set((s) => ({
       tasks: s.tasks.map((t) =>
         t.id === id && !t.paused
-          ? { ...t, paused: true, pauseDate: todayISO(), updatedAt: new Date().toISOString() }
+          ? {
+              ...t,
+              paused: true,
+              pauseDate: todayISO(),
+              pauseReason: text,
+              updatedAt: new Date().toISOString(),
+            }
           : t,
       ),
-    })),
+    }))
+  },
   resumeTask: (id) =>
     set((s) => ({
       tasks: s.tasks.map((t) => {
@@ -1395,12 +1447,15 @@ export const useStore = create<State>()((rawSet, get) => {
         const pauseDate = t.pauseDate ?? resumeDate
         const n = t.endDate != null ? Math.max(0, diffDays(toDate(pauseDate), toDate(t.endDate))) : 0
         const endDate = t.endDate != null ? toISO(addDays(toDate(resumeDate), n)) : t.endDate
+        // A pause opened before reasons existed closes without inventing one.
+        const reason = t.pauseReason?.trim() || undefined
         return {
           ...t,
           paused: false,
           pauseDate: null,
+          pauseReason: null,
           endDate,
-          pauses: [...t.pauses, { pauseDate, resumeDate }],
+          pauses: [...t.pauses, { pauseDate, resumeDate, ...(reason ? { reason } : {}) }],
           updatedAt: new Date().toISOString(),
         }
       }),
@@ -1440,6 +1495,7 @@ export const useStore = create<State>()((rawSet, get) => {
                 isTodo: true,
                 startDate: null,
                 endDate: null,
+                deadline: null,
                 strictProgress: false,
                 priority: null,
                 // Dropped with the other scheduling fields, and for the same
@@ -1448,6 +1504,7 @@ export const useStore = create<State>()((rawSet, get) => {
                 type: null,
                 paused: false,
                 pauseDate: null,
+                pauseReason: null,
                 updatedAt: now,
               }
             : t,
@@ -1475,13 +1532,16 @@ export const useStore = create<State>()((rawSet, get) => {
             start = end
             end = tmp
           }
+          const goal = e.type === 'long-term'
           return {
             ...t,
             isTodo: false,
             type: e.type,
             startDate: start,
-            endDate: end,
-            strictProgress: e.strictProgress,
+            // A goal has no end, and no tick window either — see `addTask`.
+            endDate: goal ? null : end,
+            deadline: e.deadline ?? null,
+            strictProgress: goal ? true : e.strictProgress,
             priority: e.priority,
             updatedAt: now,
           }
@@ -1687,6 +1747,48 @@ export const useStore = create<State>()((rawSet, get) => {
 
   deleteScheduleBlock: (id) =>
     set((s) => ({ scheduleBlocks: s.scheduleBlocks.filter((b) => b.id !== id) })),
+
+  addStickyNote: (at) => {
+    const id = uid()
+    const now = new Date().toISOString()
+    set((s) => ({
+      stickyNotes: [
+        ...s.stickyNotes,
+        {
+          id,
+          name: translate(s.lang, 'sticky.defaultName', { n: nextStickyNumber(s.stickyNotes) }),
+          text: '',
+          x: at.x,
+          y: at.y,
+          z: nextZ(s.stickyNotes),
+          docked: true,
+          snapped: null,
+          snapAt: 0,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+    }))
+    return id
+  },
+
+  updateStickyNote: (id, patch) =>
+    set((s) => {
+      const existing = s.stickyNotes.find((n) => n.id === id)
+      if (!existing) return {}
+      const same = (['name', 'text', 'x', 'y', 'w', 'h', 'z', 'docked', 'snapped', 'snapAt', 'rich'] as const).every(
+        (key) => patch[key] === undefined || patch[key] === existing[key],
+      )
+      if (same) return {}
+      return {
+        stickyNotes: s.stickyNotes.map((n) =>
+          n.id === id ? { ...n, ...patch, updatedAt: new Date().toISOString() } : n,
+        ),
+      }
+    }),
+
+  removeStickyNote: (id) =>
+    set((s) => ({ stickyNotes: s.stickyNotes.filter((n) => n.id !== id) })),
 
   toggleChore: (id) =>
     set((s) => ({
@@ -1972,7 +2074,8 @@ useStore.subscribe((state, prev) => {
     state.itemLogs !== prev.itemLogs ||
     state.todoFolders !== prev.todoFolders ||
     state.dayPlans !== prev.dayPlans ||
-    state.scheduleBlocks !== prev.scheduleBlocks
+    state.scheduleBlocks !== prev.scheduleBlocks ||
+    state.stickyNotes !== prev.stickyNotes
   ) {
     if (inGesture) persistenceDirty = true
     else persistWork()

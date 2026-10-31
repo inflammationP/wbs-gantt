@@ -752,18 +752,25 @@ export function deriveStatus(statuses: TaskStatus[]): TaskStatus {
 
 // Derive a leaf task's status from its pause state, progress and dates.
 export function deriveTaskStatus(task: Task, progress: number | null, today: string): TaskStatus {
-  if (isPausedOnDay(task, today)) return 'paused'
   // Nothing scheduled at all. Reachable for a to-do that was just restored while
   // its schedule is still being filled in — without this it would read as
-  // "In progress" despite having no dates.
-  if (task.startDate == null && task.endDate == null) return 'not-started'
+  // "In progress" despite having no dates. A deadline alone still counts as
+  // something to be judged against.
+  if (task.startDate == null && task.endDate == null && task.deadline == null) return 'not-started'
+  // Finished work is finished, whatever dates it has run past.
   if (progress != null && progress >= 100) return 'completed'
+  // A hard deadline that has passed is the fact the status should carry. It
+  // comes before the pause because the date does not stop being missed while
+  // the task is on hold; the pause is still visible on the task itself.
+  if (task.deadline != null && today > task.deadline) return 'delayed'
+  if (isPausedOnDay(task, today)) return 'paused'
   if (task.startDate != null && today < task.startDate) return 'not-started'
   // Past its end date and unfinished. Used to be gated on `strictProgress`,
   // because a plain task's window elapsing *was* its completion — the calendar
   // finished it, so it could never be late. A plain task now advances only when
   // ticked off, so it can run out of window like any other. The `progress >= 100`
-  // line above still settles the finished case first.
+  // line above still settles the finished case first. Long-term goals have no
+  // end date; the deadline check above is the only late rule that can reach one.
   if (task.type !== 'long-term' && task.endDate != null && today > task.endDate) return 'delayed'
   return 'in-progress'
 }
@@ -829,12 +836,17 @@ export function effectiveStates(tasks: Task[], logs: TaskLog[]): Map<string, Eff
       const timed = es.filter((e) => e.status !== 'todo')
       const ps = timed.map((e) => e.progress).filter((p): p is number => p != null)
       const progress = ps.length ? Math.round(ps.reduce((s, p) => s + p, 0) / ps.length) : null
-      const status = deriveStatus(timed.map((e) => e.status))
+      const rolled = deriveStatus(timed.map((e) => e.status))
+      // A container can carry its own commitment; a missed one is late even
+      // while its children are on track. Work that is entirely finished wins:
+      // there is no per-child completion date to prove it missed the mark.
+      const status =
+        t.deadline != null && day > t.deadline && rolled !== 'completed' ? 'delayed' : rolled
       if (t.type === 'long-term') {
-        // Long-term goal: anchored to its own start, no resolved end, and no
-        // progress. Its status follows its own dates, not its children's, so an
-        // unstarted sub-goal can't mark the whole goal "not-started".
-        r = { start: t.startDate, end: null, progress: null, status: deriveTaskStatus(t, null, day) }
+        // A goal parent is anchored to its own start and never resolves an end,
+        // but its progress and status roll up from its children exactly as a
+        // phase parent's do.
+        r = { start: t.startDate, end: null, progress, status }
       } else {
         const starts = timed.map((e) => e.start).filter((s): s is string => s != null)
         const start = starts.length ? starts.reduce((min, s) => (s < min ? s : min), starts[0]) : t.startDate

@@ -1,4 +1,4 @@
-import { Chore, DayPlan, Habit, ItemLog, Note, Project, ScheduleBlock, Task, TaskLog } from '../types'
+import { Chore, DayPlan, Habit, ItemLog, Note, Project, ScheduleBlock, StickyNote, Task, TaskLog } from '../types'
 
 // Fresh installs start empty — no bundled demo data.
 //
@@ -16,6 +16,7 @@ export function buildSeed(): {
   todoFolders: Record<string, string>
   dayPlans: DayPlan[]
   scheduleBlocks: ScheduleBlock[]
+  stickyNotes: StickyNote[]
 } {
   return {
     projects: [],
@@ -28,5 +29,6 @@ export function buildSeed(): {
     todoFolders: {},
     dayPlans: [],
     scheduleBlocks: [],
+    stickyNotes: [],
   }
 }

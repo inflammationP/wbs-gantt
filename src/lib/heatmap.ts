@@ -25,11 +25,12 @@ import { planOn, plannedIds } from './schedule'
 /**
  * A leaf that carries a schedule of its own — the unit a day can be done for.
  *
- * Long-term goals are out for the same reason they have no progress anywhere
- * else in the app, and a to-do has no schedule to be active in.
+ * A long-term goal counts: it is active from its start with no end, and a day
+ * of it is done when that day has a log. A to-do has no schedule to be active
+ * in, so it is the one kind left out.
  */
 function isScheduledLeaf(task: Task, children: Map<string | null, Task[]>): boolean {
-  return !task.isTodo && task.type !== 'long-term' && (children.get(task.id) ?? []).length === 0
+  return !task.isTodo && (children.get(task.id) ?? []).length === 0
 }
 
 /** Leaves of `tasks` that a day's completion can be read from. */

@@ -120,6 +120,15 @@ function NoteEditor({
     onDone()
   }
 
+  // The same removal as saving a blank body, spelled out. Only when there is
+  // something stored: a delete on an empty note would be a button with nothing
+  // to do.
+  const remove = () => {
+    if (!stored) return
+    setNote(day, '')
+    onDone()
+  }
+
   if (!draft) {
     // The empty state says "none", not "write here": the invitation is the Edit
     // button in the heading above, and two ways of saying the same thing is one
@@ -150,6 +159,14 @@ function NoteEditor({
           title={t('common.date')}
           aria-label={t('common.date')}
         />
+        {stored && (
+          <button
+            onClick={remove}
+            className="h-7 px-3 text-[12px] text-delayed hover:text-fg border border-delayed/40 rounded-[3px]"
+          >
+            {t('common.delete')}
+          </button>
+        )}
         <div className="flex-1" />
         <button
           onClick={onDone}

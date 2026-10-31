@@ -183,7 +183,7 @@ export function CalendarPage() {
                         // carry that obligation. Status is deliberately absent —
                         // the ▶ / ⏹ glyph already says what the row is, and a
                         // status colour had nothing left to add.
-                        const strict = task.strictProgress && task.type === 'phase'
+                        const strict = task.strictProgress
                         return (
                           <button
                             key={task.id}

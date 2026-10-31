@@ -11,7 +11,8 @@ import { useLang, useT } from '../lib/useT'
 type Kind = 'task' | 'event' | 'deadline'
 
 export type ScheduleDraft =
-  | { kind: 'new'; date: string; start: string }
+  /** `end` is given when the new block came from a drag across several slots. */
+  | { kind: 'new'; date: string; start: string; end?: string }
   | { kind: 'edit'; block: ScheduleBlock }
 
 /**
@@ -43,7 +44,8 @@ export function ScheduleBlockDialog({ draft, onClose }: { draft: ScheduleDraft; 
   const [end, setEnd] = useState(
     existing && !existing.deadline
       ? existing.end
-      : toHHMM(Math.min(24 * 60 - 1, (minutesOf(firstStart) ?? 9 * 60) + 60)),
+      : (draft.kind === 'new' ? draft.end : undefined) ??
+          toHHMM(Math.min(24 * 60 - 1, (minutesOf(firstStart) ?? 9 * 60) + 60)),
   )
 
   const live = tasks.filter((task) => !task.isTodo && !isArchived(task))

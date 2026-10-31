@@ -266,6 +266,68 @@ body {
   }
 }
 
+/* ── Sticky notes ───────────────────────────────────────────────────────────
+   A compact 16:9 panel in the top-right corner that slides in from the right.
+   It is built from the app's own surfaces (panel, border, panel2) rather than a
+   physical corkboard: the notes are a working area, not a prop. */
+.sticky-board {
+  transition: transform 0.32s cubic-bezier(0.22, 0.8, 0.28, 1), visibility 0s;
+}
+.sticky-board[data-open='false'] {
+  transform: translateX(calc(100% + 56px));
+  visibility: hidden;
+  transition: transform 0.32s cubic-bezier(0.22, 0.8, 0.28, 1), visibility 0s linear 0.32s;
+}
+/* Docked notes travel with the board; detached ones are never given this class. */
+.sticky-card-docked {
+  transition: transform 0.32s cubic-bezier(0.22, 0.8, 0.28, 1), visibility 0s;
+}
+.sticky-card-docked[data-open='false'] {
+  visibility: hidden;
+  transition: transform 0.32s cubic-bezier(0.22, 0.8, 0.28, 1), visibility 0s linear 0.32s;
+}
+.sticky-tab {
+  background: rgb(var(--c-accent));
+  color: rgb(var(--c-on-accent));
+  border: 1px solid rgb(var(--c-accent));
+  border-right: 0;
+  border-radius: 12px 0 0 12px;
+  box-shadow:
+    -4px 0 18px rgb(var(--c-accent) / 0.4),
+    0 2px 8px rgb(0 0 0 / 0.25);
+  transition: filter 0.15s, box-shadow 0.15s;
+}
+.sticky-tab:hover {
+  filter: brightness(1.08);
+  box-shadow:
+    -4px 0 24px rgb(var(--c-accent) / 0.5),
+    0 2px 10px rgb(0 0 0 / 0.3);
+}
+.sticky-editor:empty::before {
+  content: attr(data-placeholder);
+  color: rgb(var(--c-dim));
+  pointer-events: none;
+}
+/* The formatting commands write <font size>, whose browser default is not the
+   card's scale; these are the three sizes the toolbar offers. */
+.sticky-editor font[size='2'] {
+  font-size: 11px;
+}
+.sticky-editor font[size='3'] {
+  font-size: 13px;
+}
+.sticky-editor font[size='5'] {
+  font-size: 17px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sticky-board,
+  .sticky-board[data-open='false'],
+  .sticky-card-docked,
+  .sticky-card-docked[data-open='false'] {
+    transition: none;
+  }
+}
+
 /* ── The Logs page's two modes ──────────────────────────────────────────────
    Flipping between the logs and the notes replaces the whole grid, and a
    `transition` cannot express that: it animates a value that changed, and here

@@ -1,5 +1,5 @@
 import { useT } from '../lib/useT'
-import { formatHours } from '../lib/schedule'
+import { LoadRead, formatHours } from '../lib/schedule'
 import { sig } from '../lib/ui'
 
 /**
@@ -10,68 +10,97 @@ import { sig } from '../lib/ui'
  * the mark itself is drawn, so "how far past" is a length rather than only a
  * number. Nothing here uses a status colour — over capacity is not a delayed
  * task.
+ *
+ * A day whose capacity was never filled has no bar at all. The field says so in
+ * words ("not set") and the reading says the load cannot be calculated, because
+ * a fraction of a day with no denominator is not a load. `read` is the one place
+ * that decision is made — see `loadRead` in lib/schedule.ts.
  */
 export function LoadMeter({
   used,
   capacity,
+  read,
   onCapacity,
   compact = false,
   className = '',
 }: {
   used: number
-  capacity: number
+  /** `null` means nobody has said how much time the day has. */
+  capacity: number | null
+  read: LoadRead
   /** Given means the capacity is editable here; absent means read-only. */
-  onCapacity?: (hours: number) => void
+  onCapacity?: (hours: number | null) => void
   compact?: boolean
   className?: string
 }) {
   const t = useT()
-  const over = used > capacity
-  const ratio = capacity > 0 ? used / capacity : used > 0 ? Number.POSITIVE_INFINITY : 0
-  const max = Math.max(used, capacity, 0.0001)
+  // A stored zero is the same statement as no stored value: nothing to divide
+  // by. The store already deletes a capacity that returns to the default, so
+  // this only catches a hand-edited file.
+  const filled = capacity != null && capacity > 0
+  const value = filled ? capacity : null
+  const over = read.computable && used > (value ?? 0)
+  const ratio = value != null && value > 0 ? used / value : used > 0 ? Number.POSITIVE_INFINITY : 0
+  const max = Math.max(used, value ?? 0, 0.0001)
   const usedPct = Math.min(100, (used / max) * 100)
-  const capPct = Math.min(100, (capacity / max) * 100)
+  const capPct = Math.min(100, ((value ?? 0) / max) * 100)
   // Traffic-light load: comfortable, nearly full, over. The label beside the
   // bar says the same thing in words, so colour is never the only cue.
   const tone = over ? 'delayed' : ratio >= 0.8 ? 'in-progress' : 'accent'
   const fill = tone === 'accent' ? 'rgb(var(--c-accent))' : sig(tone)
   const statusTone =
-    tone === 'delayed' ? 'text-delayed' : tone === 'in-progress' ? 'text-today' : 'text-dim'
-  const status = over
-    ? t('load.overBy', { hours: formatHours(used - capacity) })
-    : t('load.left', { hours: formatHours(capacity - used) })
+    !read.computable
+      ? 'text-dim'
+      : over
+        ? 'text-delayed'
+        : tone === 'in-progress'
+          ? 'text-today'
+          : 'text-dim'
+  const status = !read.computable
+    ? t('load.unknown')
+    : over
+      ? t('load.overBy', { hours: formatHours(used - (value ?? 0)) })
+      : t('load.left', { hours: formatHours((value ?? 0) - used) })
+  // The week's columns are too narrow for a second badge; there an "approximate"
+  // mark carries the same meaning and its hover says the word.
+  const compactStatus = read.reference ? `≈ ${status}` : status
 
-  const input = (value: number, small: boolean) =>
+  const input = (small: boolean) =>
     onCapacity ? (
       <input
-        key={value}
-        type="number"
-        min={0}
-        max={24}
-        step={0.5}
-        defaultValue={value}
+        key={value ?? 'unfilled'}
+        type="text"
+        inputMode="decimal"
+        defaultValue={value ?? ''}
+        placeholder={value == null ? t('load.unfilled') : undefined}
         aria-label={t('load.available')}
         title={t('load.available')}
         onBlur={(e) => {
           const raw = e.currentTarget.value
-          const next = Number(raw)
-          if (raw.trim() === '' || !Number.isFinite(next)) {
-            e.currentTarget.value = String(value)
+          if (raw.trim() === '') {
+            if (value != null) onCapacity(null)
             return
           }
-          onCapacity(next)
+          const next = Number(raw)
+          if (!Number.isFinite(next)) {
+            e.currentTarget.value = value == null ? '' : String(value)
+            return
+          }
+          onCapacity(Math.max(0, Math.min(24, next)))
         }}
         onKeyDown={(e) => {
           if (e.key === 'Enter') e.currentTarget.blur()
         }}
         className={
           small
-            ? 'w-7 bg-transparent text-right font-mono text-[10px] text-fg outline-none'
-            : 'w-8 rounded-md bg-panel2/70 px-1 text-right font-mono text-[11px] text-fg outline-none focus:ring-1 focus:ring-accent/40'
+            ? `${value == null ? 'w-12' : 'w-7'} bg-transparent text-right font-mono text-[10px] text-fg outline-none placeholder:text-dim`
+            : `${value == null ? 'w-14' : 'w-9'} h-5 rounded-md border border-border bg-panel2/80 px-1 text-right font-mono text-[11px] text-fg outline-none focus:border-accent/70 placeholder:text-muted`
         }
       />
     ) : (
-      <span className="font-mono text-[11px] text-fg">{formatHours(value)}</span>
+      <span className="font-mono text-[11px] text-fg">
+        {value == null ? t('load.unfilled') : formatHours(value)}
+      </span>
     )
 
   return (
@@ -80,8 +109,8 @@ export function LoadMeter({
         <div className="flex items-center justify-between gap-1 text-[9px]">
           <span className="font-mono text-[10px] text-fg">{formatHours(used)} /</span>
           <span className="inline-flex items-center gap-0.5 text-dim">
-            {input(capacity, true)}
-            <span>h</span>
+            {input(true)}
+            {value != null && <span>h</span>}
           </span>
         </div>
       ) : (
@@ -96,37 +125,49 @@ export function LoadMeter({
       <div
         className={`relative mt-1.5 w-full overflow-hidden rounded-full bg-bg/50 shadow-inner border border-border ${
           compact ? 'h-2' : 'h-2.5'
-        }`}
+        } ${read.computable ? '' : 'opacity-40 grayscale'}`}
       >
-        <div className="h-full rounded-full" style={{ width: `${usedPct}%`, background: fill }} />
-        {over && (
-          <div
-            className="absolute inset-y-0"
-            style={{
-              left: `${capPct}%`,
-              width: `${100 - capPct}%`,
-              backgroundImage:
-                'repeating-linear-gradient(45deg, rgb(var(--c-fg) / 0.5) 0 3px, transparent 3px 6px)',
-            }}
-          />
-        )}
-        {over && (
-          <div className="absolute inset-y-0 w-px bg-fg/70" style={{ left: `${capPct}%` }} />
+        {read.computable && (
+          <>
+            <div className="h-full rounded-full" style={{ width: `${usedPct}%`, background: fill }} />
+            {over && (
+              <div
+                className="absolute inset-y-0"
+                style={{
+                  left: `${capPct}%`,
+                  width: `${100 - capPct}%`,
+                  backgroundImage:
+                    'repeating-linear-gradient(45deg, rgb(var(--c-fg) / 0.5) 0 3px, transparent 3px 6px)',
+                }}
+              />
+            )}
+            {over && (
+              <div className="absolute inset-y-0 w-px bg-fg/70" style={{ left: `${capPct}%` }} />
+            )}
+          </>
         )}
       </div>
 
       <div className="mt-1 flex items-center justify-between gap-2">
         {!compact && (
-          <span className="inline-flex items-center gap-1 text-[10px] text-dim">
-            {t('load.available')}
-            {input(capacity, false)}
-            <span>h</span>
+          <span className="inline-flex items-center gap-1.5 text-[10px] text-dim">
+            <span className="uppercase tracking-wider">{t('load.available')}</span>
+            {input(false)}
+            {value != null && <span>h</span>}
           </span>
         )}
-        <span
-          className={`ml-auto text-[9px] font-medium ${statusTone} ${compact ? '' : 'text-[10px]'}`}
-        >
-          {status}
+        <span className="ml-auto inline-flex items-center gap-1.5">
+          {read.computable && read.reference && !compact && (
+            <span className="inline-flex h-4 items-center rounded-full border border-border bg-panel2 px-1.5 text-[9px] text-dim">
+              {t('load.reference')}
+            </span>
+          )}
+          <span
+            className={`text-[9px] font-medium ${statusTone} ${compact ? '' : 'text-[10px]'}`}
+            title={compact && read.reference ? t('load.reference') : undefined}
+          >
+            {compact ? compactStatus : status}
+          </span>
         </span>
       </div>
     </div>

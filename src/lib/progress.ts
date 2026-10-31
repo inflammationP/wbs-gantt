@@ -92,9 +92,9 @@ function tickProgress(task: Task, onDate: Date): number {
   return Math.min(100, Math.round((ticked.size / Math.max(1, countableDays(task, start, end))) * 100))
 }
 
-// Effective progress for a single task, or null for long-term goals (no progress).
+// Effective progress for a single task, or null when the board has none to
+// state yet (a to-do, or a task not started).
 export function taskProgress(task: Task, logs: TaskLog[], onDate: Date): number | null {
-  if (task.type === 'long-term') return null
   // A to-do has no schedule, so it has no progress. Its historical logs are
   // deliberately kept (they stay readable) — they just no longer feed this.
   if (task.isTodo) return null
@@ -147,7 +147,8 @@ export function completedOn(task: Task, logs: TaskLog[]): string | null {
   return null
 }
 
-// Average progress over the given tasks, ignoring long-term goals (which have none).
+// Average progress over the given tasks, ignoring the ones that state none
+// (to-dos and tasks that have not started).
 export function averageProgress(tasks: Task[], logs: TaskLog[]): number {
   const ps = tasks.map((t) => taskProgress(t, logs, new Date())).filter((p): p is number => p != null)
   return ps.length ? Math.round(ps.reduce((s, p) => s + p, 0) / ps.length) : 0

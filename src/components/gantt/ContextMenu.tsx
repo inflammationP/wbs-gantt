@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import type { ReactNode } from 'react'
 import { Archive, CircleDashed, CornerUpLeft, NotebookText, Pause, Pencil, Play, Plus, RotateCcw, Trash2 } from 'lucide-react'
 import { RowTask, isArchived } from '../../lib/tree'
+import type { Project } from '../../types'
 import { useT } from '../../lib/useT'
 import { useDismiss } from '../../lib/useDismiss'
 
@@ -10,6 +11,64 @@ export interface MenuState {
   x: number
   y: number
   row: RowTask
+}
+
+export interface ProjectMenuState {
+  x: number
+  y: number
+  project: Project
+}
+
+/**
+ * The menu a project line opens on right-click.
+ *
+ * A project line carries no controls on purpose (see `ProjectRow`), so these
+ * three are the project-level things a board row can start: work inside it, the
+ * form that names and colours it, and the bin. The bin confirms through the
+ * caller, like every other delete, and is one undo step.
+ */
+export function ProjectContextMenu({
+  menu,
+  onClose,
+  onNewTask,
+  onEdit,
+  onDelete,
+}: {
+  menu: ProjectMenuState
+  onClose: () => void
+  onNewTask: (project: Project) => void
+  onEdit: (project: Project) => void
+  onDelete: (project: Project) => void
+}) {
+  const t = useT()
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const w = 190
+  const left = Math.min(menu.x, window.innerWidth - w - 8)
+  const top = Math.min(menu.y, window.innerHeight - 120)
+
+  return createPortal(
+    <>
+      <div
+        className="fixed inset-0 z-[69]"
+        onMouseDown={onClose}
+        onContextMenu={(e) => { e.preventDefault(); onClose() }}
+      />
+      <div className="fixed z-[70] bg-panel border border-border rounded-[3px] shadow-2xl py-1" style={{ left, top, width: w }}>
+        <Item icon={<Plus size={13} />} label={t('task.new')} onClick={() => { onNewTask(menu.project); onClose() }} />
+        <Item icon={<Pencil size={13} />} label={t('sidebar.editProject')} onClick={() => { onEdit(menu.project); onClose() }} />
+        <div className="my-1 border-t border-line" />
+        <Item icon={<Trash2 size={13} />} label={t('common.delete')} danger onClick={() => { onDelete(menu.project); onClose() }} />
+      </div>
+    </>,
+    document.body,
+  )
 }
 
 interface Props {
@@ -140,18 +199,12 @@ export function ContextMenu({ menu, onClose, onAddChild, onAddSibling, onEdit, o
         <Item icon={<Plus size={13} />} label={t('task.addSibling')} onClick={() => { onAddSibling(menu.row); onClose() }} />
         <div className="my-1 border-t border-line" />
         <Item icon={<Pencil size={13} />} label={t('common.edit')} onClick={() => { onEdit(menu.row); onClose() }} />
-        {/* No item on a row with subtasks. Past the status gate below it would
-            open a dialog that refuses to render, so the item would do nothing
-            at all — and a menu entry that does nothing is worse than one that
-            was never there. The panel is where the reason is legible: it says
-            the progress is rolled up from the children.
-
-            Finished work is on the list, and it is the same item: the dialog
-            asks a task that is not running for no figure, so what it writes is
-            a comment — see `running` in `LogDialog`. A to-do is not on it: it
-            has no schedule, so there is no window for a day of it to be part
-            of, and `taskProgress` reads nothing back for one. */}
-        {!menu.row.hasKids && (menu.row.eff.status === 'in-progress' || menu.row.eff.status === 'delayed' || menu.row.eff.status === 'completed') ? (
+        {/* Parents included: a container's entry is a comment, because the
+            dialog asks a task with children for no figure — its progress is
+            theirs. Finished work is on the list for the same reason. A to-do
+            is not: it has no schedule, so there is no window for a day of it
+            to be part of, and `taskProgress` reads nothing back for one. */}
+        {menu.row.eff.status === 'in-progress' || menu.row.eff.status === 'delayed' || menu.row.eff.status === 'completed' ? (
           <Item icon={<NotebookText size={13} />} label={t('log.write')} onClick={() => { onWriteLog(menu.row); onClose() }} />
         ) : null}
         <Item icon={<CornerUpLeft size={13} />} label={t('gantt.moveToTopLevel')} onClick={() => { onOutdent(menu.row); onClose() }} />

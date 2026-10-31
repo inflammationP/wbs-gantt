@@ -66,7 +66,6 @@ export function PostponeDialog({ taskId, onClose }: { taskId: string; onClose: (
             className={`${inputCls} h-20 py-1.5 resize-none`}
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            placeholder={t('task.postponeReasonPlaceholder')}
           />
         </Field>
 

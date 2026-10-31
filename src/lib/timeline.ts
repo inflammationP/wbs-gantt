@@ -102,15 +102,19 @@ export function timelineRange(mode: ViewMode, tasks: Task[], todayISO: string, c
   const { unit, colWidth } = CONFIG[mode]
   const today = startOfDay(toDate(todayISO))
 
-  // 1. The data. Long-term goals have no deadline and to-dos have no dates, so
-  //    neither can extend the axis.
+  // 1. The data. A long-term goal has no end date but can carry a DDL, and a
+  //    to-do has no dates at all; either date extends the axis when present.
   let rawStart = addDays(today, -HISTORY_DAYS)
   let rawEnd = addDays(today, MIN_SPAN_DAYS - HISTORY_DAYS)
   let lastEnd: Date | null = null
   for (const t of tasks) {
-    if (t.isTodo || t.type === 'long-term' || t.endDate == null) continue
-    const e = toDate(t.endDate)
-    if (lastEnd == null || e > lastEnd) lastEnd = e
+    if (t.isTodo) continue
+    const end = t.type === 'long-term' ? null : t.endDate
+    for (const iso of [end, t.deadline]) {
+      if (iso == null) continue
+      const e = toDate(iso)
+      if (lastEnd == null || e > lastEnd) lastEnd = e
+    }
   }
   if (lastEnd != null) {
     const withTail = addDays(lastEnd, TAIL_DAYS)

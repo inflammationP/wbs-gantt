@@ -459,5 +459,41 @@ for (const s of SLOTS) {
   assert.equal(chosen.obligations.length, 1, 'a planned strict task still owes its log')
 }
 
+// ── a DDL is the date the digest talks about ───────────────────────────────
+{
+  const names = (list) => list.map((i) => i.name).sort()
+  const cats = collectDay(
+    board({
+      tasks: [
+        // DDL today, planned end later: due today, not on the end day.
+        task({ id: 'ddlToday', name: 'DDL 今天', startDate: '2026-09-01', endDate: '2026-10-20', deadline: DAY }),
+        // DDL passed while the window is still open: overdue, dated the DDL.
+        task({ id: 'ddlLate', name: 'DDL 已过', startDate: '2026-09-01', endDate: '2026-10-20', deadline: '2026-09-24' }),
+        // No DDL: the planned end still decides.
+        task({ id: 'plain', name: '原计划到期', startDate: '2026-09-01', endDate: DAY, strictProgress: false }),
+      ],
+    }),
+    DAY,
+    LEAD,
+  )
+  assert.deepEqual(names(cats.dueToday), ['DDL 今天', '原计划到期'].sort())
+  assert.ok(cats.overdue.some((i) => i.name === 'DDL 已过'), 'a missed DDL is overdue')
+  assert.equal(
+    cats.overdue.find((i) => i.name === 'DDL 已过').date,
+    '2026-09-24',
+    'and is dated the date that actually passed',
+  )
+  const soon = collectDay(
+    board({
+      tasks: [
+        task({ id: 's', name: '明天到期', startDate: '2026-09-01', endDate: '2026-10-20', deadline: '2026-09-27' }),
+      ],
+    }),
+    DAY,
+    LEAD,
+  )
+  assert.deepEqual(names(soon.dueSoon), ['明天到期'], 'a DDL inside the lead window is coming up')
+}
+
 await server.close()
 console.log('check-reminder: ok')

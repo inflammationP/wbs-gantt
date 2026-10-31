@@ -737,11 +737,6 @@ function DayRowView({
               {t('manage.overdue')}
             </span>
           )}
-          {row.pausedToday && (
-            <span className="shrink-0 px-1.5 h-4 inline-flex items-center text-[9px] font-medium rounded-full bg-paused/15 text-paused border border-paused/30">
-              {t('status.paused')}
-            </span>
-          )}
         </span>
       </div>
       {/* The bar stays mounted and animates both axes, so it genuinely grows

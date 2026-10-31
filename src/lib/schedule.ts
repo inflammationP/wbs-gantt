@@ -11,7 +11,13 @@ import { DayPlan, ScheduleBlock } from '../types'
  * guessed at.
  */
 
-export const DEFAULT_CAPACITY_HOURS = 8
+/**
+ * The hours a day is assumed to have when nobody has said.
+ *
+ * Zero, not eight: the board no longer invents a working day. Until the
+ * capacity is filled the load is unknown, which is what `loadRead` reports.
+ */
+export const DEFAULT_CAPACITY_HOURS = 0
 export const MINUTES_PER_DAY = 24 * 60
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/
@@ -69,6 +75,38 @@ export function capacityOf(plan: DayPlan | undefined): number {
   return typeof hours === 'number' && Number.isFinite(hours) && hours >= 0 && hours <= 24
     ? hours
     : DEFAULT_CAPACITY_HOURS
+}
+
+/** The share of a day's tasks that need an estimate before its load is stated. */
+export const LOAD_READY_COVERAGE = 0.6
+
+export interface LoadRead {
+  /** The capacity is filled and enough tasks carry an estimate. */
+  computable: boolean
+  /** Computed from some estimates but not all of them, so it is only a guide. */
+  reference: boolean
+}
+
+/**
+ * Whether a day's load can be stated, and how much of it is a guess.
+ *
+ * Two things have to be true. Somebody has to have said how much time the day
+ * has — the board used to assume eight — and at least three fifths of the
+ * planned tasks have to carry an hour estimate. Below that the sum would be a
+ * fraction of the day wearing a total's clothes, so the meter says it cannot be
+ * calculated instead.
+ *
+ * A figure built from some estimates and some blanks is labelled a reference;
+ * one built from every task is stated plainly. A day with nothing planned has
+ * no estimate missing — its free blocks still say what is on the clock — so it
+ * is computable as soon as the capacity is.
+ */
+export function loadRead(capacity: number, estimated: number, total: number): LoadRead {
+  if (!(capacity > 0)) return { computable: false, reference: false }
+  if (total === 0) return { computable: true, reference: false }
+  const coverage = estimated / total
+  if (coverage < LOAD_READY_COVERAGE) return { computable: false, reference: false }
+  return { computable: true, reference: coverage < 1 }
 }
 
 export interface DayLoad {
@@ -152,6 +190,20 @@ export interface BlockLane {
  * one tidy stack rather than blocks that half-overlap. Deadlines are not in
  * here: they are lines, and they draw across the full column.
  */
+/**
+ * The span a drag on the timetable picked, in minutes past midnight.
+ *
+ * `end` is null when the press and release landed in the same half-hour slot:
+ * that gesture is the old click, and the dialog's own default decides how long
+ * the block is. Dragging either way gives the same span — the release is the
+ * other end, not a direction.
+ */
+export function dragSpan(anchor: number, cursor: number): { start: number; end: number | null } {
+  const lo = Math.min(anchor, cursor)
+  const hi = Math.max(anchor, cursor)
+  return hi > lo ? { start: lo, end: hi } : { start: anchor, end: null }
+}
+
 export function packBlocks(blocks: ScheduleBlock[]): Map<string, BlockLane> {
   const timed = blocks
     .filter((b) => !b.deadline)

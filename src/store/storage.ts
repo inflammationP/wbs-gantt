@@ -1,8 +1,9 @@
-import { Chore, DayPlan, DaySortMode, Habit, ItemLog, Note, Project, ScheduleBlock, Stamp, Task, TaskLog, TaskPriority } from '../types'
+import { Chore, DayPlan, DaySortMode, Habit, ItemLog, Note, Project, ScheduleBlock, Stamp, StickyNote, Task, TaskLog, TaskPriority } from '../types'
 import { DEFAULT_LANG, isLang, Lang } from '../lib/i18n'
 import { liftTimes, paragraphs } from '../lib/logs'
 import { isArchived } from '../lib/tree'
 import { isHHMM, minutesOf } from '../lib/schedule'
+import { MIN_STICKY_H, MIN_STICKY_W } from '../lib/sticky'
 import { DEFAULT_THEME, isThemeId, ThemeId } from '../lib/theme'
 import { ALL_DAYS } from '../lib/habits'
 import { PRIORITY_ORDER } from '../lib/ui'
@@ -62,6 +63,8 @@ export interface PersistedData {
    */
   dayPlans?: DayPlan[]
   scheduleBlocks?: ScheduleBlock[]
+  /** The corkboard's cards — see `StickyNote` in types.ts. Optional like the rest. */
+  stickyNotes?: StickyNote[]
 }
 
 /**
@@ -81,6 +84,7 @@ export function workData(source: LoadedData): LoadedData {
     chores: source.chores, habits: source.habits, notes: source.notes,
     itemLogs: source.itemLogs, todoFolders: source.todoFolders,
     dayPlans: source.dayPlans, scheduleBlocks: source.scheduleBlocks,
+    stickyNotes: source.stickyNotes,
   }
 }
 
@@ -602,6 +606,69 @@ function readScheduleBlocks(value: unknown): ScheduleBlock[] {
   return out
 }
 
+/**
+ * Corkboard cards, sanitized row by row like blocks and day plans.
+ *
+ * A bad coordinate is not a reason to lose the text: the card is given a
+ * fallback point and clamped to the window at render, where the window is
+ * actually known. Only a missing or duplicate id drops a row, because that is
+ * the one thing a card cannot work without. `docked` defaults to true — a card
+ * on the board is findable, while a detached one at a guessed point might sit
+ * off-screen with the board closed.
+ */
+function readStickyNotes(value: unknown): StickyNote[] {
+  if (!Array.isArray(value)) return []
+  const seen = new Set<string>()
+  const out: StickyNote[] = []
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
+    const row = raw as Record<string, unknown>
+    const id = typeof row.id === 'string' ? row.id.trim() : ''
+    if (!id || seen.has(id)) continue
+    const coord = (v: unknown) =>
+      typeof v === 'number' && Number.isFinite(v) ? Math.max(-10_000, Math.min(10_000, v)) : 16
+    const size = (v: unknown, min: number) =>
+      typeof v === 'number' && Number.isFinite(v)
+        ? Math.max(min, Math.min(2000, Math.round(v)))
+        : undefined
+    const w = size(row.w, MIN_STICKY_W)
+    const h = size(row.h, MIN_STICKY_H)
+    const z = typeof row.z === 'number' && Number.isFinite(row.z) ? Math.floor(row.z) : 0
+    const snapped =
+      row.snapped === 'top' || row.snapped === 'left' || row.snapped === 'right'
+        ? row.snapped
+        : null
+    const snapAt =
+      typeof row.snapAt === 'number' && Number.isFinite(row.snapAt)
+        ? Math.max(0, Math.min(100_000, row.snapAt))
+        : 0
+    seen.add(id)
+    out.push({
+      id,
+      name: typeof row.name === 'string' ? row.name.slice(0, 80) : '',
+      // Rich text is HTML, so the cap is larger than the plain-text one was.
+      text: typeof row.text === 'string' ? row.text.slice(0, 50_000) : '',
+      x: coord(row.x),
+      y: coord(row.y),
+      ...(w !== undefined ? { w } : {}),
+      ...(h !== undefined ? { h } : {}),
+      z: Math.max(0, Math.min(1e9, z)),
+      docked: snapped ? false : row.docked !== false,
+      snapped,
+      snapAt,
+      rich: row.rich === true,
+      createdAt: typeof row.createdAt === 'string' ? row.createdAt : '',
+      updatedAt: typeof row.updatedAt === 'string' ? row.updatedAt : '',
+    })
+  }
+  // Notes written before names existed get the number they would have had in
+  // the list; the chip needs something to say.
+  out.forEach((n, i) => {
+    if (!n.name) n.name = `标签 ${i + 1}`
+  })
+  return out
+}
+
 // Normalize data loaded from disk or import: backfill `type`/`strictProgress`,
 // coerce missing dates to null, and default missing collections. This is also
 // the invariant repair point for to-dos — a task marked `isTodo` always comes
@@ -675,9 +742,19 @@ function normalize(data: PersistedData): LoadedData {
         isTodo,
         startDate: isTodo ? null : (t.startDate ?? null),
         endDate: isTodo || isLT ? null : (t.endDate ?? null),
-        strictProgress: isTodo ? false : (t.strictProgress ?? false),
+        // A commitment, independent of the plan's window; a to-do has no dates
+        // to promise on.
+        deadline: isTodo ? null : (t.deadline ?? null),
+        // A to-do states no progress; a long-term goal can only state it
+        // through logs, so it loads strict however it was written.
+        strictProgress: isTodo ? false : isLT ? true : (t.strictProgress ?? false),
         paused: isTodo ? false : (t.paused ?? false),
         pauseDate: isTodo ? null : (t.pauseDate ?? null),
+        // Only an open pause can have one; a closed pair keeps its own reason.
+        pauseReason:
+          !isTodo && t.paused === true && typeof t.pauseReason === 'string'
+            ? t.pauseReason
+            : null,
         pauses: Array.isArray(t.pauses) ? t.pauses : [],
         // Absent from every save written before postponements existed; the
         // record is history, so it is kept through a to-do like the rest.
@@ -727,6 +804,7 @@ function normalize(data: PersistedData): LoadedData {
       })),
     dayPlans: readDayPlans(data.dayPlans),
     scheduleBlocks: readScheduleBlocks(data.scheduleBlocks),
+    stickyNotes: readStickyNotes(data.stickyNotes),
   }
 }
 
@@ -875,6 +953,7 @@ export function exportJson(data: PersistedData): string {
       todoFolders: data.todoFolders ?? {},
       dayPlans: data.dayPlans ?? [],
       scheduleBlocks: data.scheduleBlocks ?? [],
+      stickyNotes: data.stickyNotes ?? [],
     },
     null,
     2,
@@ -903,6 +982,7 @@ export function prepareData(parsed: PersistedData): LoadedData {
     todoFolders: parsed.todoFolders ?? {},
     dayPlans: parsed.dayPlans ?? [],
     scheduleBlocks: parsed.scheduleBlocks ?? [],
+    stickyNotes: parsed.stickyNotes ?? [],
   })
 }
 
@@ -929,11 +1009,12 @@ function validateData(data: PersistedData): void {
         throw new Error(`Task ${t.id}: invalid ${key}`)
       }
     }
-    for (const key of ['startDate', 'endDate', 'pauseDate'] as const) {
+    for (const key of ['startDate', 'endDate', 'deadline', 'pauseDate', 'pauseReason'] as const) {
       if (t[key] != null && typeof t[key] !== 'string') throw new Error(`Task ${t.id}: invalid ${key}`)
     }
     if (t.pauses != null && (!Array.isArray(t.pauses) || !t.pauses.every((p) =>
-      record(p) && typeof p.pauseDate === 'string' && typeof p.resumeDate === 'string'))) {
+      record(p) && typeof p.pauseDate === 'string' && typeof p.resumeDate === 'string' &&
+      (p.reason == null || typeof p.reason === 'string')))) {
       throw new Error(`Task ${t.id}: invalid pauses`)
     }
     if (t.postponements != null && (!Array.isArray(t.postponements) || !t.postponements.every((p) =>
@@ -973,10 +1054,11 @@ function validateData(data: PersistedData): void {
       throw new Error(`Invalid ${key}: expected an array of objects`)
     }
   }
-  // `dayPlans` and `scheduleBlocks` are deliberately absent from the checks
-  // below: they are sanitized row by row in `normalize` (`readDayPlans` /
-  // `readScheduleBlocks`), so one bad row cannot keep the whole board from
-  // opening. Rejecting them here would turn a typo into an unopenable save.
+  // `dayPlans`, `scheduleBlocks` and `stickyNotes` are deliberately absent from
+  // the checks below: they are sanitized row by row in `normalize`
+  // (`readDayPlans` / `readScheduleBlocks` / `readStickyNotes`), so one bad row
+  // cannot keep the whole board from opening. Rejecting them here would turn a
+  // typo into an unopenable save.
   // Check values used directly by the UI; TypeScript cannot validate a file.
   const text = (row: object, keys: string[]) => {
     const r = row as Record<string, unknown>

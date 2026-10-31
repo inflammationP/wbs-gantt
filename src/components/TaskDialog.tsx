@@ -75,6 +75,7 @@ export function TaskForm({ onClose, existing, defaultParentId, defaultProjectId,
     isTodo: existing?.isTodo ?? defaultIsTodo ?? false,
     startDate: existing?.startDate ?? todayISO(),
     endDate: existing?.endDate ?? todayISO(),
+    deadline: existing?.deadline ?? '',
     // Logs are the default and the checkbox below is the way out of them, so a
     // task that has never been saved starts strict. An existing task keeps
     // whatever it was.
@@ -138,7 +139,10 @@ export function TaskForm({ onClose, existing, defaultParentId, defaultProjectId,
    * group of rules exists to remove.
    */
   const rollsUp = hasKids && !isLT && tasks.some((k) => k.parentId === existing!.id && !k.isTodo)
-  const isOverdueStrict = !existing && !isTodo && !isLT && form.strictProgress && !!form.endDate && form.endDate < todayISO()
+  // A hard DDL is the date this question is about when one is set; the planned
+  // end is only the fallback.
+  const dueDate = form.deadline || form.endDate
+  const isOverdueStrict = !existing && !isTodo && !isLT && form.strictProgress && !!dueDate && dueDate < todayISO()
 
   // Turning the box on forces a phase (a to-do has no start, and long-term
   // goals are anchored to one) and drops the strict flag with the rest of the
@@ -206,7 +210,8 @@ export function TaskForm({ onClose, existing, defaultParentId, defaultProjectId,
       parentId: form.parentId,
       startDate: s,
       endDate: e,
-      strictProgress: isLT ? false : form.strictProgress,
+      deadline: form.deadline || null,
+      strictProgress: isLT ? true : form.strictProgress,
       priority: form.priority,
       tags,
     }
@@ -321,6 +326,18 @@ export function TaskForm({ onClose, existing, defaultParentId, defaultProjectId,
                 </Field>
               </div>
             )}
+
+            {/* A commitment, not a span: editable even on a rolled-up parent,
+                and shown for long-term goals, whose only hard date this is. */}
+            <Field label={t('task.deadlineOptional')}>
+              <input
+                type="date"
+                className={inputCls}
+                value={form.deadline}
+                onChange={(e) => set('deadline', e.target.value)}
+              />
+              <div className="mt-1 text-[10px] leading-relaxed text-dim">{t('task.deadlineHint')}</div>
+            </Field>
 
             <Field label={t('common.priority')}>
               <select className={inputCls} value={form.priority} onChange={(e) => set('priority', e.target.value as TaskPriority)}>

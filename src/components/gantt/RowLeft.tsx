@@ -143,6 +143,8 @@ interface Props {
    */
   onToggleRow: (id: string, defaultOpen: boolean) => void
   onContext: (e: MouseEvent<HTMLDivElement>, row: RowTask) => void
+  /** A project line's right-click: the page owns that menu, as it owns this one. */
+  onProjectContext: (e: MouseEvent<HTMLDivElement>, row: RowProject) => void
 }
 
 const stop = (fn: () => void) => (e: MouseEvent) => {
@@ -150,7 +152,7 @@ const stop = (fn: () => void) => (e: MouseEvent) => {
   fn()
 }
 
-export function RowLeft({ row, todo, archived, editing, dimmed, picked, onRowClick, onAddMenu, onAddSibling, onEdit, onArchive, onToggleRow, onContext }: Props) {
+export function RowLeft({ row, todo, archived, editing, dimmed, picked, onRowClick, onAddMenu, onAddSibling, onEdit, onArchive, onToggleRow, onContext, onProjectContext }: Props) {
   const t = useT()
   const { ask, element: dialogs } = useDialogs()
   const setSelected = useStore((s) => s.setSelected)
@@ -172,6 +174,7 @@ export function RowLeft({ row, todo, archived, editing, dimmed, picked, onRowCli
         isExpanded={expandedEntry !== false}
         editing={editing}
         onToggleExpanded={(id) => onToggleRow(id, true)}
+        onContext={onProjectContext}
       />
     )
   }
@@ -618,11 +621,13 @@ function ProjectRow({
   isExpanded,
   editing,
   onToggleExpanded,
+  onContext,
 }: {
   row: RowProject
   isExpanded: boolean
   editing?: boolean
   onToggleExpanded: (id: string) => void
+  onContext: (e: MouseEvent<HTMLDivElement>, row: RowProject) => void
 }) {
   const t = useT()
   const { project } = row
@@ -638,6 +643,10 @@ function ProjectRow({
       // strong enough to read as a band and not as a hovered row.
       style={{ background: `color-mix(in srgb, ${project.color} 18%, transparent)` }}
       onClick={row.hasKids ? () => onToggleExpanded(row.id) : undefined}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        onContext(e, row)
+      }}
       title={row.hasKids ? (isExpanded ? t('common.collapse') : t('common.expand')) : undefined}
     >
       <div className="shrink-0" style={{ width: COLS.chevron }} />

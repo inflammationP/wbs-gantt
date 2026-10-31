@@ -4,7 +4,7 @@ import { useStore } from '../store/useStore'
 import { DayPlan, Task, TaskStatus } from '../types'
 import { DayRow, dayStates, daySummary } from '../lib/dayTasks'
 import { isArchived } from '../lib/tree'
-import { capacityOf, dayLoad, planOn } from '../lib/schedule'
+import { capacityOf, dayLoad, loadRead, planOn } from '../lib/schedule'
 import { STATUS_META, sig } from '../lib/ui'
 import { toDate } from '../lib/dates'
 import { formatDayMonthYear } from '../lib/i18n'
@@ -156,6 +156,11 @@ export function PlanDialog({
   // number has to move the bar before anything is written.
   const draft: DayPlan = { date: day, taskIds: pickedIds, capacityHours: capacityOf(plan), hours: pickedHours }
   const load = dayLoad(draft, scheduleBlocks, day)
+  // How many of the chosen tasks carry an estimate. The load is only stated
+  // once three fifths do; below that it is a fraction of a day pretending to be
+  // the whole of it. See `loadRead`.
+  const estimated = pickedIds.filter((id) => (hours[id] ?? 0) > 0).length
+  const read = loadRead(load.capacity, estimated, pickedIds.length)
 
   const save = () => {
     setDayPlan(day, pickedIds, pickedHours)
@@ -177,8 +182,9 @@ export function PlanDialog({
           {prompt && <div className="mb-1.5 text-[12px] font-medium text-fg">{t('plan.freeTime')}</div>}
           <LoadMeter
             used={load.used}
-            capacity={load.capacity}
-            onCapacity={prompt ? (value) => setDayCapacity(day, value) : undefined}
+            capacity={plan?.capacityHours ?? null}
+            read={read}
+            onCapacity={prompt ? (value) => setDayCapacity(day, value ?? 0) : undefined}
           />
         </div>
         <div className="text-[11px] text-dim">{t('plan.selectTasks')}</div>

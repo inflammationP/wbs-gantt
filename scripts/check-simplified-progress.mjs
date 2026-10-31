@@ -96,9 +96,15 @@ assert.equal(pct([], '2026-09-05', { pauses: [{ pauseDate: '2026-09-01', resumeD
 // The pause that is still open counts the same way as a closed one.
 assert.equal(pct([], '2026-09-05', { paused: true, pauseDate: '2026-09-02' }), 0)
 
-// Long-term goals and to-dos have no progress at all, and a task that has not
-// started reads "—" rather than 0.
-assert.equal(taskProgress(task({ type: 'long-term', endDate: null }), [], on('2026-09-05')), null)
+// A long-term goal has no end for ticks to be counted against, so it is always
+// log-driven: its number is the last figure a log stated, exactly as a strict
+// phase task reads.
+const goal = task({ type: 'long-term', endDate: null, strictProgress: true })
+assert.equal(taskProgress(goal, [], on('2026-09-05')), 0)
+assert.equal(taskProgress(goal, [log('a', '2026-09-05', 40)], on('2026-09-05')), 40)
+
+// To-dos have no progress at all, and a task that has not started reads "—"
+// rather than 0.
 assert.equal(taskProgress(task({ isTodo: true, startDate: null, endDate: null }), [], on('2026-09-05')), null)
 assert.equal(pct([], '2026-08-31'), null)
 

@@ -84,7 +84,10 @@ assert.deepEqual(owes([task({ paused: true, pauseDate: '2026-09-13' })], []), []
 // while its strict child `b` owes, being a leaf.
 assert.deepEqual(ids(owes([task({ id: 'a' }), task({ id: 'b', parentId: 'a' })], [])), ['b'])
 assert.deepEqual(owes([task({ isTodo: true, startDate: null, endDate: null })], []), [])
-assert.deepEqual(owes([task({ type: 'long-term', endDate: null })], []), [])
+// A long-term goal is strict too, with no end to run out of: it owes from its
+// start until a log states it is finished.
+assert.deepEqual(ids(owes([task({ type: 'long-term', endDate: null })], [])), ['a'])
+assert.deepEqual(owes([task({ type: 'long-term', endDate: null })], [log('a', '2026-09-14', 100)]), [])
 // A plain (non-strict) leaf owes nothing either: it has no log to write.
 assert.deepEqual(owes([task({ strictProgress: false })], []), [])
 
@@ -127,6 +130,11 @@ const list = (tasks, day = TODAY, sort = 'status') =>
   daySummary(tasks, [], PROJECTS, day, day, sort).all.map((r) => r.task.id)
 
 const rowsFor = (tasks, day = TODAY) => daySummary(tasks, [], PROJECTS, day, day).all
+
+// Paused work takes no row on a day it is off, planned or not: the skip sits
+// before the plan filter, so a plan naming it cannot bring it back.
+assert.deepEqual(list([task({ paused: true, pauseDate: '2026-09-13' })]), [])
+assert.deepEqual(list([task({ id: 'a' }), task({ id: 'b', paused: true, pauseDate: '2026-09-13' })]), ['a'])
 
 // Among siblings the ones that owe a log come first. The names are picked so
 // that the sibling without the obligation would win on WBS alone — `alpha` is

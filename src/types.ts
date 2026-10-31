@@ -38,7 +38,7 @@ export interface Postponement {
 export interface DayPlan {
   date: string // yyyy-MM-dd, one per day
   taskIds?: string[]
-  /** Hours available that day; absent = the default eight. */
+  /** Hours available that day; absent = not filled, and the load is unknown. */
   capacityHours?: number
   /**
    * How many hours each planned task is expected to take *that day*.
@@ -54,9 +54,10 @@ export interface DayPlan {
  * One block on the day timetable: a task session, a free event, or a deadline.
  *
  * `title` is a snapshot taken when the block is written, so a block whose task
- * is later deleted still reads. While the task exists the live name wins; see
- * `Timetable`. A deadline is a zero-length marker: `end === start` and
- * `deadline: true`.
+ * is later deleted still reads. It is what the timetable draws: a title the
+ * user typed is the block's own name, while the default (the task's name at the
+ * time) follows a rename — see `updateTask`. A deadline is a zero-length
+ * marker: `end === start` and `deadline: true`.
  */
 export interface ScheduleBlock {
   id: string
@@ -89,6 +90,15 @@ export interface Task {
   startDate: string | null // yyyy-MM-dd (null for long-term goals and to-dos)
   endDate: string | null // yyyy-MM-dd inclusive (null for long-term goals and to-dos)
   /**
+   * The hard date the work is promised for, or null.
+   *
+   * A commitment, not a span: it is independent of `endDate` and passing it
+   * makes the task late even while the planned window is still open. Date-only,
+   * like the dates above. Optional so saves written before it, and hand-edited
+   * files, load unchanged.
+   */
+  deadline?: string | null
+  /**
    * The window this task had of its own, put aside for as long as it is a
    * container.
    *
@@ -116,7 +126,13 @@ export interface Task {
   confirmedDays: string[] // yyyy-MM-dd
   paused: boolean
   pauseDate: string | null // yyyy-MM-dd, set while paused
-  pauses: { pauseDate: string; resumeDate: string }[]
+  /**
+   * Why the pause that is still open happened, while paused. The closed pairs
+   * below carry their own reason; this is the one place the open pause can keep
+   * one, because an open pause is not yet in `pauses`.
+   */
+  pauseReason?: string | null
+  pauses: { pauseDate: string; resumeDate: string; reason?: string }[]
   /**
    * Every time the end date was pushed back, oldest first.
    *
@@ -347,6 +363,53 @@ export interface Note {
   updatedAt: string
   /** One per paragraph of `body` — see `Stamp`. */
   stamps?: Stamp[]
+}
+
+/**
+ * A sticky note on the corkboard beside the app.
+ *
+ * Its own collection, and not a `Note`: a notebook page belongs to a day and is
+ * a record of that day, while a sticky leans on screen until it is taken down.
+ * A blank sticky is still a card the user made, so it is kept; the notebook's
+ * blank text is a deletion.
+ *
+ * Positions are viewport pixels. `docked` is membership of the board, not a
+ * coordinate system: a detached card keeps its viewport point and stays visible
+ * while the board is collapsed. `z` orders the cards among themselves; the
+ * layer they render in has one fixed z-index, so a card count cannot push them
+ * above the confirmation dialogs.
+ */
+export interface StickyNote {
+  id: string
+  /**
+   * The name shown when the note is snapped shut. Created as "标签 N" and
+   * stored; old saves are backfilled on load.
+   */
+  name?: string
+  /**
+   * The body. Plain text for notes written before formatting existed; sanitized
+   * HTML (`<b>`, `<font color size>`) once `rich` is true.
+   */
+  text: string
+  x: number // viewport px, card top-left
+  y: number
+  /** Card size in viewport px; absent means the default. */
+  w?: number
+  h?: number
+  z: number // stacking among cards; higher = nearer
+  /** Shown only while the corkboard is open. */
+  docked: boolean
+  /**
+   * Collapsed against the page: the top edge, the left edge (the sidebar's
+   * right) or the right edge. A snapped note draws as a name chip, not a card.
+   */
+  snapped?: 'top' | 'left' | 'right' | null
+  /** Where the chip sits along that edge: x on the top, y on the sides. */
+  snapAt?: number
+  /** `text` is HTML with the basic formatting commands, not plain text. */
+  rich?: boolean
+  createdAt: string
+  updatedAt: string
 }
 
 /**

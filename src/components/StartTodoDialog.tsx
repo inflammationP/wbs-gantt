@@ -10,6 +10,7 @@ import { useT, useTRich } from '../lib/useT'
 interface Form {
   startDate: string
   endDate: string
+  deadline: string
   /** The question the creation form no longer asks — see `Task.type`. */
   type: TaskType
   strictProgress: boolean
@@ -47,6 +48,7 @@ export function StartTodoDialog({ taskIds, onClose }: Props) {
         {
           startDate: todayISO(),
           endDate: todayISO(),
+          deadline: '',
           // A to-do carries no type, and older data carries a 'phase' nobody
           // chose — both land on the same starting point, which is the option
           // the rest of the app treats as the ordinary case.
@@ -87,9 +89,23 @@ export function StartTodoDialog({ taskIds, onClose }: Props) {
         // A parent's dates are derived from its children, so there is nothing
         // to ask for — it gets a placeholder day until they are restored too.
         if (tasks.some((x) => x.parentId === t.id)) {
-          return { id: t.id, startDate: todayISO(), endDate: todayISO(), strictProgress: false, priority: f.priority, type: f.type }
+          return {
+            id: t.id,
+            startDate: todayISO(),
+            endDate: todayISO(),
+            deadline: f.deadline || null,
+            strictProgress: false,
+            priority: f.priority,
+            type: f.type,
+          }
         }
-        return { id: t.id, ...f }
+        // A goal is log-driven by definition — see `addTask`.
+        return {
+          id: t.id,
+          ...f,
+          deadline: f.deadline || null,
+          strictProgress: f.type === 'long-term' ? true : f.strictProgress,
+        }
       }),
     ))
     onClose()
@@ -134,13 +150,16 @@ export function StartTodoDialog({ taskIds, onClose }: Props) {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-3">
+            <div className={`grid ${form.type === 'long-term' ? 'grid-cols-1' : 'grid-cols-2'} gap-3`}>
               <Field label={t('common.startDate')}>
                 <input type="date" className={inputCls} value={form.startDate} onChange={(e) => set({ startDate: e.target.value })} />
               </Field>
-              <Field label={t('common.endDate')}>
-                <input type="date" className={inputCls} value={form.endDate} onChange={(e) => set({ endDate: e.target.value })} />
-              </Field>
+              {/* A goal has no end to ask for — same rule as `TaskDialog`. */}
+              {form.type !== 'long-term' && (
+                <Field label={t('common.endDate')}>
+                  <input type="date" className={inputCls} value={form.endDate} onChange={(e) => set({ endDate: e.target.value })} />
+                </Field>
+              )}
             </div>
 
           </>
@@ -157,6 +176,16 @@ export function StartTodoDialog({ taskIds, onClose }: Props) {
           </select>
         </Field>
 
+        <Field label={t('task.deadlineOptional')}>
+          <input
+            type="date"
+            className={inputCls}
+            value={form.deadline}
+            onChange={(e) => set({ deadline: e.target.value })}
+          />
+          <div className="mt-1 text-[10px] leading-relaxed text-dim">{t('task.deadlineHint')}</div>
+        </Field>
+
         <Field label={t('common.priority')}>
           <select className={inputCls} value={form.priority} onChange={(e) => set({ priority: e.target.value as TaskPriority })}>
             {PRIORITY_ORDER.map((p) => <option key={p} value={p}>{t(PRIORITY_META[p].labelKey)}</option>)}
@@ -166,7 +195,7 @@ export function StartTodoDialog({ taskIds, onClose }: Props) {
         {/* Same opt-out as `TaskDialog`, in the same place at the end. A to-do
             with subtasks is skipped: its own progress is the children's average,
             so there is no log obligation to be released from. */}
-        {!activeHasKids && (
+        {!activeHasKids && form.type !== 'long-term' && (
           <div className="border-t border-line pt-3 flex items-center gap-2">
             <input
               type="checkbox"

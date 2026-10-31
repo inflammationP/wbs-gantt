@@ -330,10 +330,15 @@ export function copy(key: CopyKey, lang: Lang, overrides?: CopyOverrides, params
 // 渲染
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Same order the Gantt uses: deadlines first, then alphabetically. */
+/** The date a task is due: the DDL when it has one, else the planned end. */
+function dueDateOf(t: Task): string | null {
+  return t.deadline ?? t.endDate
+}
+
+/** Same order the Gantt uses: due dates first, then alphabetically. */
 function byDateThenName(a: Task, b: Task): number {
   return (
-    (a.endDate ?? '').localeCompare(b.endDate ?? '') ||
+    (dueDateOf(a) ?? '').localeCompare(dueDateOf(b) ?? '') ||
     a.name.localeCompare(b.name) ||
     a.id.localeCompare(b.id)
   )
@@ -365,29 +370,44 @@ export function collectDay(board: Board, day: string, leadDays: number): DayCats
 
   const date = (d: string | null) => d ?? day
   const overdues = tasks
-    .filter((x) => isLeaf(x) && states.get(x.id)?.status === 'delayed')
+    // A parent's rolled-up span is not a commitment; its own missed DDL is.
+    .filter(
+      (x) =>
+        (isLeaf(x) || (x.deadline != null && x.deadline < day)) &&
+        states.get(x.id)?.status === 'delayed',
+    )
     .sort(byDateThenName)
-    .map((x): DigestItem => ({ name: x.name, date: date(x.endDate) }))
+    .map((x): DigestItem => ({
+      name: x.name,
+      // The date that actually passed: a DDL before the day is what made it
+      // late; otherwise the planned end is.
+      date: date(x.deadline != null && x.deadline < day ? x.deadline : x.endDate),
+    }))
 
   const milestones = milestonesOnDay(tasks, states, day)
-  const dated = (list: Task[]): DigestItem[] => list.map((x) => ({ name: x.name, date: date(x.endDate) }))
+  // A starting row is dated by the due date the report has always used; a due
+  // row takes the DDL when there is one.
+  const dated = (list: Task[], at: (x: Task) => string | null): DigestItem[] =>
+    list.map((x) => ({ name: x.name, date: date(at(x)) }))
 
   // Lead-window deadlines: anything landing inside the next `leadDays` days that
   // is not already covered by `dueToday`. Excludes today deliberately — the same
   // task in both "due today" and "due soon" would read as two separate problems.
   const soon: DigestItem[] = isFinite(leadDays) && leadDays > 0
     ? tasks
-        .filter(
-          (x) =>
-            isLeaf(x) &&
-            !x.isTodo &&
-            x.endDate != null &&
-            x.endDate > day &&
-            x.endDate <= toISO(addDays(toDate(day), leadDays)) &&
-            states.get(x.id)?.status !== 'completed',
-        )
+        .filter((x) => {
+          if (x.isTodo) return false
+          if (!isLeaf(x) && x.deadline == null) return false
+          const due = dueDateOf(x)
+          return (
+            due != null &&
+            due > day &&
+            due <= toISO(addDays(toDate(day), leadDays)) &&
+            states.get(x.id)?.status !== 'completed'
+          )
+        })
         .sort(byDateThenName)
-        .map((x): DigestItem => ({ name: x.name, date: date(x.endDate) }))
+        .map((x): DigestItem => ({ name: x.name, date: date(dueDateOf(x)) }))
     : []
 
   const plain = (names: string[]): DigestItem[] => names.map((name) => ({ name, date: null }))
@@ -404,8 +424,8 @@ export function collectDay(board: Board, day: string, leadDays: number): DayCats
 
   return {
     overdue: overdues,
-    dueToday: dated(milestones.due),
-    starting: dated(milestones.starts),
+    dueToday: dated(milestones.due, dueDateOf),
+    starting: dated(milestones.starts, (x) => x.endDate),
     dueSoon: soon,
     logsOwed: plain(obligations.filter((o) => !o.logged).map((o) => o.task.name)),
     chores: plain(todaysChores(chores, day).filter((c) => !c.done).map((c) => c.title)),

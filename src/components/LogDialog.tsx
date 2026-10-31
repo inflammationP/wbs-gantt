@@ -93,26 +93,12 @@ export function LogDialog({ taskId, existing, onClose }: Props) {
 
   if (!task) return null
 
-  // A task with children is a folder, and a folder does not keep a log.
-  //
-  // A folder has no progress of its own for a log to move (`taskProgress` is
-  // only ever read off leaves), so a write here would be a number nothing reads.
-  // Every caller hides its own way in — the context menu's item, the panel's
-  // button — and this is the line that makes the rule true rather than merely
-  // well hidden. Without it the rule lives in each of those places, and the
-  // fifth one added later will not remember.
-  //
-  // Filing a task away is not the same refusal, and used to be one. A folder's
-  // log would be a figure nothing reads; a filed-away task's is a *comment* on
-  // work that is over — see `running` below — and the only thing that made it
-  // impossible was this line. What is closed about a filed-away task is its
-  // schedule, not what may be written about it.
-  if (tasks.some((x) => x.parentId === task.id)) return null
-
   const task_ = task
-  // A figure is only ever read back on a strict *leaf* (`isStrictLeaf`), so a
-  // parent would collect a number nothing reads — the same lie the detail panel
-  // used to tell about a parent's progress mode.
+  // A task with children is a container: its progress is the average of its
+  // children's, so a log written here never carries a figure — `isStrictLeaf`
+  // is false for it and the boxes stay off. What it can hold is a comment about
+  // the branch as a whole (a meeting, coordination) that belongs to no single
+  // child. That is why the entry is allowed and the figure is not.
   const strict = isStrictLeaf(task_, buildChildrenMap(tasks))
   // Whether the task is still running, which decides whether this log is a
   // *figure* or a comment.

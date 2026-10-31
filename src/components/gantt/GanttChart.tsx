@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent, PointerEvent } from 'react'
-import { Row, RowTask, buildRows, collectDescendants, isArchived, movingUnits, placeTasks, projectsInView, toggleTicked } from '../../lib/tree'
+import { Row, RowProject, RowTask, buildRows, collectDescendants, isArchived, movingUnits, placeTasks, projectsInView, toggleTicked } from '../../lib/tree'
 import { buildTimeline, dateToX, DateRange, FOCUS_OFFSET_PX } from '../../lib/timeline'
 import { startOfDay, toDate } from '../../lib/dates'
 import { useStore } from '../../store/useStore'
@@ -118,6 +118,8 @@ interface Props {
   sel: ReadonlySet<string>
   onSel: (next: Set<string>) => void
   onContext: (e: MouseEvent<HTMLDivElement>, row: RowTask) => void
+  /** A project line's right-click, with the page's own project menu behind it. */
+  onProjectContext: (e: MouseEvent<HTMLDivElement>, row: RowProject) => void
   /** A row's "+", with the corner it was pressed at: the page opens the menu. */
   onAddMenu: (row: RowTask, at: { x: number; y: number }) => void
   /** Whether the routine bubble is up — it is owned by the page, with the menus. */
@@ -137,7 +139,7 @@ interface Props {
   onArchive: (row: RowTask) => void
 }
 
-export function GanttChart({ rows, range, todo, archived, editing, todoFocus, onTodoFocus, sel, onSel, onContext, onAddMenu, onAddSibling, onEdit, onArchive, dailyOpen, choresOpen, onToggleDaily, onToggleChores }: Props) {
+export function GanttChart({ rows, range, todo, archived, editing, todoFocus, onTodoFocus, sel, onSel, onContext, onProjectContext, onAddMenu, onAddSibling, onEdit, onArchive, dailyOpen, choresOpen, onToggleDaily, onToggleChores }: Props) {
   const t = useT()
   const lang = useLang()
   const viewMode = useStore((s) => s.viewMode)
@@ -750,6 +752,7 @@ export function GanttChart({ rows, range, todo, archived, editing, todoFocus, on
                   onArchive={onArchive}
                   onToggleRow={toggleRow}
                   onContext={onContext}
+                  onProjectContext={onProjectContext}
                 />
               </div>
             )

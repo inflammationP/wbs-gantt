@@ -33,7 +33,6 @@ export interface DayRow {
   confirmedOnDay: boolean
   /** Whether the day can still be ticked — it happened, and the task was on. */
   tickable: boolean
-  pausedToday: boolean
   overdue: boolean
 }
 
@@ -151,12 +150,9 @@ export function isNonStrictLeaf(task: Task, children: Map<string | null, Task[]>
  * `strictProgress` is inert on parents — only leaves ever feed `taskProgress`.
  */
 export function isStrictLeaf(task: Task, children: Map<string | null, Task[]>): boolean {
-  return (
-    !task.isTodo &&
-    task.type === 'phase' &&
-    task.strictProgress &&
-    (children.get(task.id) ?? []).length === 0
-  )
+  // Long-term goals are strict too: they have no end to divide ticks by, so a
+  // log figure is the only progress they can state.
+  return !task.isTodo && task.strictProgress && (children.get(task.id) ?? []).length === 0
 }
 
 /**
@@ -202,10 +198,12 @@ export function dayStates(tasks: Task[], logs: TaskLog[], day: string): Map<stri
       const timed = es.filter((e) => e.status !== 'todo')
       const ps = timed.map((e) => e.progress).filter((p): p is number => p != null)
       const progress = ps.length ? Math.round(ps.reduce((s, p) => s + p, 0) / ps.length) : null
-      r =
-        t.type === 'long-term'
-          ? { progress: null, status: deriveTaskStatus(t, null, day) }
-          : { progress, status: deriveStatus(timed.map((e) => e.status)) }
+      const rolled = deriveStatus(timed.map((e) => e.status))
+      // See `effectiveStates`: a container's own deadline applies to the branch,
+      // and finished work still wins.
+      const status =
+        t.deadline != null && day > t.deadline && rolled !== 'completed' ? 'delayed' : rolled
+      r = { progress, status }
     }
     cache.set(t.id, r)
     return r
@@ -440,9 +438,15 @@ export function milestonesOnDay(
     // rule the day's own list does: a filed-away task has no name to print
     // there.
     if (isArchived(t)) continue
-    if ((children.get(t.id) ?? []).length > 0) continue
-    if (t.endDate === day) due.push(t)
-    else if (t.startDate === day) starts.push(t)
+    const isParent = (children.get(t.id) ?? []).length > 0
+    // A parent's span is its children's, so its start/end would be the same
+    // rows again. Its own deadline is not the span and still belongs here.
+    if (isParent && t.deadline == null) continue
+    // The deadline is the real due date when there is one; the planned end is
+    // only the due date of a task nobody promised a date for.
+    const dueDate = t.deadline ?? t.endDate
+    if (dueDate === day) due.push(t)
+    else if (!isParent && t.startDate === day) starts.push(t)
   }
   const rank = (t: Task) => STATUS_RANK[eff.get(t.id)?.status ?? 'not-started']
   const by = (a: Task, b: Task) =>
@@ -548,15 +552,18 @@ export function daySummary(
     const active = activeOnDay(t, day)
     const strict = isStrictLeaf(t, children)
     const plain = isNonStrictLeaf(t, children)
-    const pausedToday = isPausedOnDay(t, day)
-    // A task that ran out of window without finishing drops off its own
-    // schedule, which would hide the most urgent work of all. It is listed with
-    // an overdue badge — and, since `hasComeDue` keeps it owing a log, it is
-    // counted in the ring and marked like any other outstanding task.
-    // The two agree because they are the same question asked twice. A simplified
+    // Paused work is not the day's work, planned or not. A pause is still a
+    // schedule fact (the task keeps its window, and resumes later), but the day
+    // it is off is not a day it is due — so it takes no row here, no badge, and
+    // no tick. The task panel and the calendar's timeline still know where it
+    // sits; this list is only ever "what is owed today".
+    if (isPausedOnDay(t, day)) continue
+    // Delayed means late, whether the window closed or a hard DDL passed while
+    // it was still open. Both get the badge; the status is the one rule, and
+    // `hasComeDue` keeps a delayed task owing a log either way. A simplified
     // task gets the same treatment now that the calendar no longer finishes it
     // on its own.
-    const overdue = !active && (strict || plain) && st.status === 'delayed'
+    const overdue = (strict || plain) && st.status === 'delayed'
     if (!active && !overdue) continue
     // The plan narrows what was already the day's work; it never adds a task
     // whose window does not cover the day. Applied after the active/overdue
@@ -577,10 +584,8 @@ export function daySummary(
       hasLog: logged.has(t.id),
       confirmedOnDay: (t.confirmedDays ?? []).includes(day),
       // A day can be ticked while it is happening or after the fact — that is
-      // how a missed day gets backfilled — but never before it arrives, and
-      // never on a day the task was off.
-      tickable: plain && active && !pausedToday && day <= today,
-      pausedToday,
+      // how a missed day gets backfilled — but never before it arrives.
+      tickable: plain && active && day <= today,
       overdue,
     })
   }

@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
-import type { MouseEvent } from 'react'
+import type { MouseEvent, ReactNode } from 'react'
+import { Flag } from 'lucide-react'
 import { RowTask } from '../../lib/tree'
 import { Timeline, dateToX } from '../../lib/timeline'
 import { addDays, toDate } from '../../lib/dates'
@@ -36,26 +37,64 @@ export function TaskBar({ row, timeline, rowH }: { row: RowTask; timeline: Timel
     setSelected(row.id)
   }
 
+  // The DDL is drawn as a point at the end of its day — the same inclusive-end
+  // convention the bars use. Clamped to the canvas in case the axis has not
+  // caught up with a just-written date; `timelineRange` otherwise includes it.
+  const deadlineX = row.task.deadline
+    ? Math.min(
+        timeline.totalWidth,
+        Math.max(0, dateToX(addDays(toDate(row.task.deadline), 1), timeline)),
+      )
+    : null
+  const dueMarker = deadlineX != null && (
+    <div
+      className="pointer-events-none absolute"
+      style={{ left: deadlineX, top: 0, height: rowH, zIndex: 11 }}
+      title={t('gantt.deadlineTitle', { date: row.task.deadline ?? '' })}
+    >
+      <div className="absolute inset-y-0 w-[2px] -translate-x-px" style={{ background: sig('delayed') }} />
+      <Flag
+        size={10}
+        className="absolute top-0 -translate-x-[9px]"
+        style={{ color: sig('delayed') }}
+      />
+    </div>
+  )
+  // Every bar shape gets the flag; a row with no bar (a to-do) returns earlier.
+  const withMarker = (bar: ReactNode) => (
+    <>
+      {bar}
+      {dueMarker}
+    </>
+  )
+
   if (isGoal) {
     if (row.eff.start == null) return null
     const gLeft = Math.max(0, startX)
     const gWidth = timeline.totalWidth - gLeft
     if (gWidth <= 0) return null
-    const fadeColor = sigAlpha(meta.token, 0.3)
-    return (
+    // Same bar as a phase task, with no end to stop at: it runs to the edge of
+    // the axis and the arrow says why. The fill is the task's progress, read
+    // from its logs like any strict leaf's.
+    return withMarker(
       <div
-        className="absolute select-none"
+        className="absolute rounded-[2px] border overflow-hidden select-none"
         style={{
           left: gLeft,
           width: gWidth,
           top: 0,
           height: rowH,
-          background: `linear-gradient(to right, ${sig(meta.token)}, ${fadeColor})`,
+          background: sigAlpha(meta.token, 0.16),
+          borderColor: sig(meta.token),
           zIndex: 10,
         }}
         onClick={onClickBar}
         title={t('gantt.ongoingTitle', { wbs: row.wbs, name: row.task.name })}
       >
+        <div
+          className="absolute inset-y-0 left-0"
+          style={{ width: `${row.eff.progress ?? 0}%`, background: sig(meta.token), opacity: 0.85 }}
+        />
         {/* start marker */}
         <div className="absolute inset-y-0 left-0 w-[2px]" style={{ background: sig(meta.token) }} />
         {/* label */}
@@ -66,7 +105,7 @@ export function TaskBar({ row, timeline, rowH }: { row: RowTask; timeline: Timel
           {row.task.name}
         </div>
         {/* ongoing hint */}
-        <span className="absolute inset-y-0 right-1.5 flex items-center text-[11px] pointer-events-none" style={{ color: fadeColor }}>→</span>
+        <span className="absolute inset-y-0 right-1.5 flex items-center text-[11px] pointer-events-none" style={{ color: sigAlpha(meta.token, 0.6) }}>→</span>
       </div>
     )
   }
@@ -117,7 +156,7 @@ export function TaskBar({ row, timeline, rowH }: { row: RowTask; timeline: Timel
   // Single uninterrupted segment: the one shape that can carry its own name.
   if (segs.length === 1 && !isPaused) {
     const { left, width } = segs[0]
-    return (
+    return withMarker(
       <div
         className="absolute rounded-[2px] border overflow-hidden select-none"
         style={{ left, width, top, height: barH, background: sigAlpha(barToken, 0.16), borderColor: sig(barToken), zIndex: 10 }}
@@ -138,7 +177,7 @@ export function TaskBar({ row, timeline, rowH }: { row: RowTask; timeline: Timel
   }
 
   // Paused (single gray segment) or resumed (multiple segments): static bars.
-  return (
+  return withMarker(
     <>
       {segs.map((seg, i) => (
         <div

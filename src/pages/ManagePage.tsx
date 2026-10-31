@@ -86,12 +86,13 @@ export function ManagePage() {
       todo: byStatus('todo'),
       // Work that has not started yet but begins inside the week.
       comingSoon: leaves.filter((task) => task.startDate != null && task.startDate > today && task.startDate <= weekISO).length,
-      // Work due inside the week and not yet finished. Kept off its own card —
-      // it rides along in the Delayed card's caption instead. The two never
-      // overlap: `delayed` requires the end date to be already past.
-      dueSoon: leaves.filter(
-        (task) => task.endDate != null && task.endDate >= today && task.endDate <= weekISO && eff.get(task.id)?.status !== 'completed',
-      ).length,
+      // Work due inside the week and not yet finished; the DDL is the due date
+      // when there is one. Kept off its own card — it rides along in the
+      // Delayed card's caption instead.
+      dueSoon: leaves.filter((task) => {
+        const due = task.deadline ?? task.endDate
+        return due != null && due >= today && due <= weekISO && eff.get(task.id)?.status !== 'completed'
+      }).length,
     }
   }, [leaves, eff, today, weekISO])
 

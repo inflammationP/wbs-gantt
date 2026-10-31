@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
-import type { MouseEvent } from 'react'
+import type { MouseEvent, PointerEvent } from 'react'
 import { Flag } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import {
   blockMinutes,
   blocksOn,
+  capacityOf,
   dayLoad,
+  dragSpan,
+  loadRead,
   minutesOf,
   packBlocks,
+  plannedIds,
   planOn,
   toHHMM,
 } from '../lib/schedule'
@@ -27,9 +31,9 @@ const GUTTER = 46
  * a second one for the week would be two answers to where a block sits and how
  * a load reads. A single day gets more room per hour; the week fits seven.
  *
- * Interaction is click-to-create and click-to-edit. There is no drag: a
- * timetable that can be read and written is the feature; moving a block is a
- * later one (see the roadmap on the desktop).
+ * Interaction is press-and-drag to claim a span of the day, a plain click to
+ * start one at that half-hour, and a click on a block to edit it. Moving an
+ * existing block is still a later feature.
  */
 export function Timetable({ days, className = '' }: { days: string[]; className?: string }) {
   const lang = useLang()
@@ -44,6 +48,8 @@ export function Timetable({ days, className = '' }: { days: string[]; className?
   const [now, setNow] = useState(() => new Date())
   /** The half-hour slot under the pointer, for the hover band. */
   const [hover, setHover] = useState<{ date: string; minutes: number } | null>(null)
+  /** The span being dragged out, anchored where the press landed. */
+  const [drag, setDrag] = useState<{ date: string; anchor: number; cursor: number } | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const single = days.length === 1
@@ -73,13 +79,43 @@ export function Timetable({ days, className = '' }: { days: string[]; className?
     return Math.max(0, Math.min(23 * 60 + 30, Math.floor((ratio * 1440) / 30) * 30))
   }
 
-  const createAt = (day: string, e: MouseEvent<HTMLDivElement>) => {
-    setDraft({ kind: 'new', date: day, start: toHHMM(slotAt(e)) })
-  }
-
   const hoverAt = (day: string, e: MouseEvent<HTMLDivElement>) => {
     const minutes = slotAt(e)
     setHover((h) => (h?.date === day && h.minutes === minutes ? h : { date: day, minutes }))
+  }
+
+  // A press starts a span; the pointer is captured so the release still lands
+  // on this column even when the cursor has left it, and the dialog opens on
+  // release with the two ends the drag picked. A press and release in the same
+  // slot is the old click — one block, one hour by default.
+  const beginDrag = (day: string, e: PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return
+    // A block is its own target; a drag begun on one would open a second
+    // dialog behind the editor its click is about to open.
+    if ((e.target as HTMLElement).closest('button')) return
+    e.preventDefault()
+    e.currentTarget.setPointerCapture(e.pointerId)
+    const minutes = slotAt(e)
+    setDrag({ date: day, anchor: minutes, cursor: minutes })
+  }
+
+  const moveDrag = (day: string, e: PointerEvent<HTMLDivElement>) => {
+    hoverAt(day, e)
+    const minutes = slotAt(e)
+    setDrag((d) => (d && d.date === day && d.cursor !== minutes ? { ...d, cursor: minutes } : d))
+  }
+
+  const endDrag = (day: string, e: PointerEvent<HTMLDivElement>) => {
+    const d = drag
+    if (!d || d.date !== day) return
+    setDrag(null)
+    const span = dragSpan(d.anchor, slotAt(e))
+    setDraft({
+      kind: 'new',
+      date: day,
+      start: toHHMM(span.start),
+      ...(span.end != null ? { end: toHHMM(span.end) } : {}),
+    })
   }
 
   const nowIso = toISO(now)
@@ -112,6 +148,9 @@ export function Timetable({ days, className = '' }: { days: string[]; className?
             {days.map((day) => {
               const plan = planOn(plans, day)
               const load = dayLoad(plan, blocks, day)
+              const planned = plannedIds(plan) ?? []
+              const estimated = planned.filter((id) => (plan?.hours?.[id] ?? 0) > 0).length
+              const read = loadRead(capacityOf(plan), estimated, planned.length)
               const weekend = isWeekend(toDate(day))
               const isToday = day === today
               return (
@@ -130,8 +169,9 @@ export function Timetable({ days, className = '' }: { days: string[]; className?
                   <LoadMeter
                     className="mt-1.5"
                     used={load.used}
-                    capacity={load.capacity}
-                    onCapacity={(hours) => setDayCapacity(day, hours)}
+                    capacity={plan?.capacityHours ?? null}
+                    read={read}
+                    onCapacity={(hours) => setDayCapacity(day, hours ?? 0)}
                     compact={!single}
                   />
                 </div>
@@ -163,30 +203,50 @@ export function Timetable({ days, className = '' }: { days: string[]; className?
               return (
                 <div
                   key={day}
-                  onClick={(e) => createAt(day, e)}
-                  onMouseMove={(e) => hoverAt(day, e)}
+                  onPointerDown={(e) => beginDrag(day, e)}
+                  onPointerMove={(e) => moveDrag(day, e)}
+                  onPointerUp={(e) => endDrag(day, e)}
+                  onPointerCancel={() => setDrag(null)}
                   onMouseLeave={() => setHover((h) => (h?.date === day ? null : h))}
                   className={`relative border-l border-line/60 cursor-crosshair ${
                     isToday ? 'bg-accent/[0.035]' : weekend ? 'bg-stripe/15' : ''
                   }`}
                   style={{ height: bodyH, ...hourLines }}
                 >
-                  {/* The half-hour cell under the pointer: where a click would
-                      create the block, shown before the click. */}
-                  {hover?.date === day && (
+                  {/* The span being dragged out. It replaces the half-hour hint
+                      while the pointer is down, because that is what the release
+                      will create. */}
+                  {drag?.date === day ? (
+                    (() => {
+                      const lo = Math.min(drag.anchor, drag.cursor)
+                      const hi = Math.max(drag.anchor, drag.cursor)
+                      const span = hi > lo ? hi - lo : 30
+                      return (
+                        <div
+                          aria-hidden
+                          className="pointer-events-none absolute inset-x-1 z-[5] rounded-md border border-accent/40 bg-accent/15"
+                          style={{ top: (lo / 60) * hourH, height: (span / 60) * hourH }}
+                        />
+                      )
+                    })()
+                  ) : hover?.date === day ? (
                     <div
                       aria-hidden
                       className="pointer-events-none absolute inset-x-1 z-[5] rounded-md border-y border-accent/25 bg-accent/[0.06]"
                       style={{ top: (hover.minutes / 60) * hourH, height: hourH / 2 }}
                     />
-                  )}
+                  ) : null}
 
                   {dayBlocks.map((block) => {
                     const startMin = minutesOf(block.start) ?? 0
                     const top = (startMin / 60) * hourH
                     const task = block.taskId ? tasks.find((x) => x.id === block.taskId) : undefined
                     const project = task ? projects.find((p) => p.id === task.projectId) : undefined
-                    const label = task?.name ?? block.title
+                    // The block's own title wins; the task name is the fallback
+                    // for a row stored without one (an import, or a task deleted
+                    // before the title was filled in). A default title still
+                    // follows a rename — see `updateTask`.
+                    const label = block.title || task?.name || ''
 
                     if (block.deadline) {
                       return (

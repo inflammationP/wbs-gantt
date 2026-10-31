@@ -107,10 +107,16 @@ assert.deepEqual(
   ['2026-09-15'],
 )
 
-// A to-do and a long-term goal are neither of them things a day can be done
-// for, so a branch made only of those has no done days at all.
+// A to-do is not a thing a day can be done for, so a branch made only of one
+// has no done days at all.
 assert.deepEqual(doneOn([task({ id: 'a', isTodo: true, startDate: null, endDate: null })], []), [])
-assert.deepEqual(doneOn([task({ id: 'a', type: 'long-term', endDate: null })], []), [])
+
+// A long-term goal is active from its start with no end, and its day is done
+// when it is logged — the same rule a strict phase task follows.
+assert.deepEqual(
+  doneOn([task({ id: 'a', type: 'long-term', endDate: null, strictProgress: true })], [log('a', '2026-09-11')]),
+  ['2026-09-11'],
+)
 
 // The days asked about are the only ones answered about — the heatmap's window
 // is a slice of the task, not the whole of it.

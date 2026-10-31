@@ -2,14 +2,14 @@ import { useEffect, useMemo, useState } from 'react'
 import type { MouseEvent, ReactNode } from 'react'
 import { Check, FolderInput, FolderTree, History, Network, Plus, X } from 'lucide-react'
 import { UndoStep, useStore, useRows, useTimelineRange } from '../store/useStore'
-import { Task, TaskLog, ViewMode } from '../types'
+import { Project, Task, TaskLog, ViewMode } from '../types'
 import { addDays } from '../lib/dates'
 import { formatDateRange } from '../lib/i18n'
 import { Dict } from '../lib/i18n'
 import { useLang, useT } from '../lib/useT'
 import { Segmented } from '../components/ui'
 import { GanttChart } from '../components/gantt/GanttChart'
-import { RowTask, archiveCascade, isArchived, movingUnits, todoCascadeIds } from '../lib/tree'
+import { RowProject, RowTask, archiveCascade, isArchived, movingUnits, todoCascadeIds } from '../lib/tree'
 import { ArchiveActions, TodoActions } from '../components/gantt/RowLeft'
 import { TaskDialog } from '../components/TaskDialog'
 import { ProjectManageDialog } from '../components/ProjectManageDialog'
@@ -17,7 +17,9 @@ import { HistoryDialog } from '../components/HistoryDialog'
 import { NewDialog, NoProjectDialog } from '../components/NewDialog'
 import { LogDialog } from '../components/LogDialog'
 import { StartTodoDialog } from '../components/StartTodoDialog'
-import { AddMenu, ContextMenu, MenuState } from '../components/gantt/ContextMenu'
+import { PauseReasonDialog } from '../components/PauseReasonDialog'
+import { AddMenu, ContextMenu, MenuState, ProjectContextMenu, ProjectMenuState } from '../components/gantt/ContextMenu'
+import { ProjectDialog } from '../components/ProjectDialog'
 import { DailyBubble } from '../components/gantt/DailyBubble'
 import { BoardTreeDialog } from '../components/gantt/BoardTreeDialog'
 import { useDialogs } from '../components/dialogs'
@@ -53,6 +55,7 @@ export function GanttPage() {
   const setProjectFilter = useStore((s) => s.setProjectFilter)
   const projects = useStore((s) => s.projects)
   const deleteTask = useStore((s) => s.deleteTask)
+  const deleteProject = useStore((s) => s.deleteProject)
   const setTaskParent = useStore((s) => s.setTaskParent)
   const tasks = useStore((s) => s.tasks)
 
@@ -85,6 +88,10 @@ export function GanttPage() {
   // through `openCreate` to the task form directly.
   const [newOpen, setNewOpen] = useState(false)
   const [menu, setMenu] = useState<MenuState | null>(null)
+  // A project line's menu, and the form its "edit" item opens. Held here with
+  // the task menu: both are the same kind of thing at the pointer.
+  const [projectMenu, setProjectMenu] = useState<ProjectMenuState | null>(null)
+  const [editingProject, setEditingProject] = useState<Project | null>(null)
   // One bubble at a time, held here with the menus rather than down in the
   // chart: it is a floating thing over the board, and the Escape chain below has
   // to know it is up for the same reason it has to know about the context menu —
@@ -97,6 +104,9 @@ export function GanttPage() {
   // button rather than at the pointer, and the only one of them with a trigger
   // to be pressed again.
   const [add, setAdd] = useState<{ row: RowTask; x: number; y: number } | null>(null)
+  // Pausing asks for a reason, so the row(s) wait here while the dialog is up.
+  // `bulk` decides whether the undo step also clears the selection.
+  const [pauseRows, setPauseRows] = useState<{ rows: RowTask[]; bulk: boolean } | null>(null)
   const [logDialog, setLogDialog] = useState<string | null>(null)
   const [startTodo, setStartTodo] = useState<string[] | null>(null)
   // Shown in place of the task dialog while the board has no project — see
@@ -165,7 +175,8 @@ export function GanttPage() {
   // at the same level.
   const overlayOpen =
     menu !== null || dialog !== null || logDialog !== null || startTodo !== null || noProject ||
-    mergeOpen || historyOpen || newOpen || daily !== null || add !== null || treeOpen
+    mergeOpen || historyOpen || newOpen || daily !== null || add !== null || treeOpen ||
+    pauseRows !== null
   const hasSelection = sel.size > 0
   useEffect(() => {
     if (!editing || overlayOpen) return
@@ -197,6 +208,15 @@ export function GanttPage() {
   const handleContext = (e: MouseEvent<HTMLDivElement>, row: RowTask) => {
     e.preventDefault()
     setMenu({ x: e.clientX, y: e.clientY, row })
+  }
+
+  const handleProjectContext = (e: MouseEvent<HTMLDivElement>, row: RowProject) => {
+    e.preventDefault()
+    setProjectMenu({ x: e.clientX, y: e.clientY, project: row.project })
+  }
+
+  const handleDeleteProject = (project: Project) => {
+    ask(t('manage.deleteProject', { name: project.name }), () => deleteProject(project.id))
   }
 
   const handleDelete = (row: RowTask) => {
@@ -334,11 +354,7 @@ export function GanttPage() {
 
   const handleBulkPause = () => {
     if (toPause.length === 0) return
-    ask(t('gantt.pauseMany', { count: toPause.length }), () =>
-      afterBulk(t('gantt.undoPause', { what: whatOf(toPause) }), () => {
-        for (const r of toPause) pauseTask(r.id)
-      }),
-    )
+    setPauseRows({ rows: toPause, bulk: true })
   }
 
   const handleBulkResume = () => {
@@ -519,6 +535,7 @@ export function GanttPage() {
         sel={sel}
         onSel={setSel}
         onContext={handleContext}
+        onProjectContext={handleProjectContext}
         // Pressed twice, the same "+" puts the menu away — `useDismiss` leaves
         // that press to the button, so this is where it is answered. A press on
         // a *different* row's "+" is not a second press on this one: it moves
@@ -552,14 +569,25 @@ export function GanttPage() {
           onOutdent={(r) => setTaskParent(r.id, null)}
           onDelete={handleDelete}
           onSetTodo={handleSetTodo}
-          onPause={(r) => ask(t('task.pauseConfirm', { name: r.task.name }), () =>
-            withUndo(t('gantt.undoPause', { what: r.task.name }), () => pauseTask(r.id)))}
+          onPause={(r) => setPauseRows({ rows: [r], bulk: false })}
           onResume={(r) => ask(t('task.resumeConfirm', { name: r.task.name }), () =>
             withUndo(t('gantt.undoResume', { what: r.task.name }), () => resumeTask(r.id)))}
           onArchive={handleArchive}
           onUnarchive={handleUnarchive}
         />
       )}
+
+      {projectMenu && (
+        <ProjectContextMenu
+          menu={projectMenu}
+          onClose={() => setProjectMenu(null)}
+          onNewTask={(p) => openCreate(null, p.id)}
+          onEdit={(p) => setEditingProject(p)}
+          onDelete={handleDeleteProject}
+        />
+      )}
+
+      {editingProject && <ProjectDialog project={editingProject} onClose={() => setEditingProject(null)} />}
 
       {dialog && (
         <TaskDialog
@@ -618,6 +646,25 @@ export function GanttPage() {
       {lastUndo && <UndoStrip undo={lastUndo} onUndo={undoLast} />}
 
       {noProject && <NoProjectDialog onClose={() => setNoProject(false)} />}
+
+      {pauseRows && (
+        <PauseReasonDialog
+          title={
+            pauseRows.rows.length === 1
+              ? t('task.pauseConfirm', { name: pauseRows.rows[0].task.name })
+              : t('gantt.pauseMany', { count: pauseRows.rows.length })
+          }
+          onClose={() => setPauseRows(null)}
+          onConfirm={(reason) => {
+            const label = t('gantt.undoPause', { what: whatOf(pauseRows.rows) })
+            const run = () => {
+              for (const r of pauseRows.rows) pauseTask(r.id, reason)
+            }
+            if (pauseRows.bulk) afterBulk(label, run)
+            else withUndo(label, run)
+          }}
+        />
+      )}
 
       {dialogs}
     </div>
