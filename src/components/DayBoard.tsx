@@ -3,7 +3,7 @@ import type { FormEvent, ReactNode } from 'react'
 import { Check, ChevronDown, ChevronRight, NotebookText, Pencil, Plus, ScrollText, TriangleAlert } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { Chore, ChoreSlot, DaySortMode, Habit, ItemLog, TaskLog } from '../types'
-import { DayRow, dayRowStruck, daySummary, parentPath } from '../lib/dayTasks'
+import { DayRow, dayProgressRate, dayRowStruck, daySummary, parentPath } from '../lib/dayTasks'
 import { planOn, plannedIds } from '../lib/schedule'
 import { CHORE_SLOTS, carriedSince, choreGroups, parseChoreTime, slotOfTime } from '../lib/chores'
 import { RoutineRow, routineRows } from '../lib/habits'
@@ -177,7 +177,12 @@ export function DayBoard({
 
   const toggle = (id: string) => setExpanded((e) => ({ ...e, [id]: !e[id] }))
 
-  const { ring } = summary
+  // The ring counts the day's work, which is not only its logs: the habits that
+  // run today are ticked off too — see `dayProgressRate`.
+  const ring = useMemo(
+    () => dayProgressRate(tasks, logs, habits, day, planned),
+    [tasks, logs, habits, day, planned],
+  )
   // `strictLogRate` answers the same for a day that has not happened yet —
   // nothing is logged, so it reads as 0% and looks like a failure. A day still
   // to come has no coverage to report, so it gets its own state rather than the
@@ -185,17 +190,17 @@ export function DayBoard({
   const isFuture = day > today
   // A planned rest day is not "nothing was scheduled" by accident — it is a
   // decision, and the ring says so rather than reading like an empty window.
+  // Only when nothing else runs either: habits are the daily baseline and do not
+  // take the day off.
   const restDay = planned !== undefined && planned.length === 0
   const ringView = isFuture
     ? { fill: null, track: TRACK, icon: null, caption: t('day.notYetDue'), tone: 'text-dim' }
-    : restDay
-      ? { fill: null, track: TRACK, icon: null, caption: t('plan.restDay'), tone: 'text-dim' }
-      : // The remaining states are told apart by icon and wording as much as by
-        // colour: the ring's green and amber are only ΔE 3.8 apart under protanopia.
-        ring.total === 0
-      ? { fill: null, track: TRACK, icon: null, caption: t('day.noStrictScheduled'), tone: 'text-dim' }
+    : // The remaining states are told apart by icon and wording as much as by
+      // colour: the ring's green and amber are only ΔE 3.8 apart under protanopia.
+      ring.total === 0
+      ? { fill: null, track: TRACK, icon: null, caption: restDay ? t('plan.restDay') : t('day.noStrictScheduled'), tone: 'text-dim' }
       : ring.done === ring.total
-        ? { fill: sig('completed'), track: sigAlpha('completed', 0.16), icon: Check, caption: t('day.allLogged'), tone: 'text-completed' }
+        ? { fill: sig('completed'), track: sigAlpha('completed', 0.16), icon: Check, caption: t('day.ringAll'), tone: 'text-completed' }
         : {
             // Amber while the day still has nothing written, accent once some of
             // it is — the same pair the caption and icon already distinguish.
@@ -423,13 +428,13 @@ export function DayBoard({
 
         {layout === 'side' ? (
           <div className="flex-1 min-w-0 grid grid-cols-3 gap-3">
-            <Stat soft label={t('day.strictLogs')} value={ringValue} sub={ringView.caption} />
+            <Stat soft label={t('common.progress')} value={ringValue} sub={ringView.caption} />
             <Stat soft label={t('common.tasks')} value={String(taskCount)} sub={t('day.tasksBreakdown', { strict: summary.strict.length, other: summary.nonStrict.length })} />
             <Stat soft label={t('chore.section')} value={`${choresDone}/${dayChores.length}`} sub={choresSub} />
           </div>
         ) : (
           <div className="min-w-0">
-            <div className="text-[10px] uppercase tracking-wider text-dim mb-1">{t('day.strictLogs')}</div>
+            <div className="text-[10px] uppercase tracking-wider text-dim mb-1">{t('common.progress')}</div>
             <div className={`flex items-start gap-1 text-[12px] ${ringView.tone}`}>
               {RingIcon && <RingIcon size={13} className="shrink-0 mt-[1px]" />}
               <span>{ringView.caption}</span>

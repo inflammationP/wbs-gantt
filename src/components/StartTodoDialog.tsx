@@ -99,12 +99,10 @@ export function StartTodoDialog({ taskIds, onClose }: Props) {
             type: f.type,
           }
         }
-        // A goal is log-driven by definition — see `addTask`.
         return {
           id: t.id,
           ...f,
           deadline: f.deadline || null,
-          strictProgress: f.type === 'long-term' ? true : f.strictProgress,
         }
       }),
     ))
@@ -195,13 +193,20 @@ export function StartTodoDialog({ taskIds, onClose }: Props) {
         {/* Same opt-out as `TaskDialog`, in the same place at the end. A to-do
             with subtasks is skipped: its own progress is the children's average,
             so there is no log obligation to be released from. */}
-        {!activeHasKids && form.type !== 'long-term' && (
+        {!activeHasKids && (
           <div className="border-t border-line pt-3 flex items-center gap-2">
             <input
               type="checkbox"
               id="start-no-logs"
               checked={!form.strictProgress}
-              onChange={(e) => (e.target.checked ? setOptOutAsk(true) : set({ strictProgress: true }))}
+              // A goal's logs stay readable after this (see `logDrivenLeaf`),
+              // so the warning — no history, ticking instead — would be wrong
+              // for it. The label already says "not recommended".
+              onChange={(e) =>
+                e.target.checked
+                  ? form.type === 'long-term' ? set({ strictProgress: false }) : setOptOutAsk(true)
+                  : set({ strictProgress: true })
+              }
               className="accent-accent"
             />
             <label htmlFor="start-no-logs" className="text-[12px] text-fg cursor-pointer">

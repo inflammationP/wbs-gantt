@@ -158,6 +158,13 @@ try {
 
   const importing = (tasks, over = {}) => parseImport(JSON.stringify({ projects, tasks, logs: [], ...over }))
 
+  // A long-term goal loads strict when its save predates the toggle; an
+  // explicit "logs are optional" is a choice and survives the round trip.
+  const goalSave = (extra = {}) =>
+    importing([{ ...task('g'), type: 'long-term', startDate: '2026-10-01', endDate: null, ...extra }]).tasks[0]
+  assert.equal(goalSave().strictProgress, true)
+  assert.equal(goalSave({ strictProgress: false }).strictProgress, false)
+
   // Bad rows are dropped by `normalize`, not rejected: a typo must not make a
   // save unopenable.
   const sanitized = importing([task('a')], {

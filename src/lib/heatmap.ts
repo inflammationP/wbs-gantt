@@ -83,7 +83,9 @@ function dayTallies(
       // `day < today` — the calendar crediting every elapsed day to a task
       // nobody had touched, which flattened this whole board into one shade on
       // any board carrying a few of them.
-      const hit = t.strictProgress
+      // A long-term goal reads logs whether or not they are required: it has no
+      // tick window (see `logDrivenLeaf`).
+      const hit = t.strictProgress || t.type === 'long-term'
         ? logged.get(t.id)?.has(day) === true
         : (t.confirmedDays ?? []).includes(day)
       if (hit) done++

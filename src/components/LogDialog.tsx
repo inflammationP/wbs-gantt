@@ -4,7 +4,7 @@ import { LogTextarea } from './LogTextarea'
 import { useStore } from '../store/useStore'
 import { Task, TaskLog } from '../types'
 import { addDays, toDate, toISO } from '../lib/dates'
-import { isStrictLeaf } from '../lib/dayTasks'
+import { logDrivenLeaf } from '../lib/dayTasks'
 import { buildChildrenMap, isArchived } from '../lib/tree'
 import { countableDays, taskProgress } from '../lib/progress'
 import { isLogDayOpen, opensLogDay } from '../lib/logs'
@@ -95,11 +95,14 @@ export function LogDialog({ taskId, existing, onClose }: Props) {
 
   const task_ = task
   // A task with children is a container: its progress is the average of its
-  // children's, so a log written here never carries a figure — `isStrictLeaf`
+  // children's, so a log written here never carries a figure — `logDrivenLeaf`
   // is false for it and the boxes stay off. What it can hold is a comment about
   // the branch as a whole (a meeting, coordination) that belongs to no single
   // child. That is why the entry is allowed and the figure is not.
-  const strict = isStrictLeaf(task_, buildChildrenMap(tasks))
+  //
+  // A long-term goal with its logs turned off still gets the boxes: it has no
+  // tick window, so the figure is the only progress it can state.
+  const strict = logDrivenLeaf(task_, buildChildrenMap(tasks))
   // Whether the task is still running, which decides whether this log is a
   // *figure* or a comment.
   //

@@ -296,7 +296,11 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
                 the day ring and the Calendar, which both correctly ignore it —
                 and made a strict parent look like a task that owed a daily
                 log. */}
-            {hasKids ? t('task.modeRolledUp') : task.strictProgress ? t('task.modeStrict') : t('task.modeAuto')}
+            {hasKids
+              ? t('task.modeRolledUp')
+              : task.strictProgress || task.type === 'long-term'
+                ? t('task.modeStrict')
+                : t('task.modeAuto')}
           </ReadOnlyField>
         )}
 

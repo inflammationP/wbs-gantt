@@ -576,6 +576,19 @@ assert.equal(readPriority(undefined), 'medium')
 assert.equal(readPriority(null), 'medium')
 assert.equal(readPriority(3), 'medium')
 
+// A long-term goal still defaults to strict, but the flag is a choice there
+// now: both creation and the start-to-do path must pass an explicit false
+// through instead of forcing it back on.
+const goalStrict = addTask({ name: 'goal strict', projectId: 'p', type: 'long-term', startDate: '2026-09-05', endDate: null })
+const goalOpen = addTask({ name: 'goal open', projectId: 'p', type: 'long-term', startDate: '2026-09-05', endDate: null, strictProgress: false })
+assert.equal(find(goalStrict).strictProgress, true, 'a goal is strict unless asked otherwise')
+assert.equal(find(goalOpen).strictProgress, false, 'and the request is kept')
+
+const goalTodo = addTask({ name: 'goal todo', projectId: 'p', isTodo: true, startDate: null, endDate: null })
+startTodoTasks([{ id: goalTodo, startDate: '2026-09-05', endDate: '2026-09-06', type: 'long-term', priority: 'medium', strictProgress: false }])
+assert.equal(find(goalTodo).strictProgress, false, 'starting a to-do as a goal keeps the opt-out too')
+assert.equal(find(goalTodo).endDate, null, 'while still having no end date')
+
 // --- what a finished task's window becomes ---
 // In a block of its own so the fixture names here cannot collide with the ones
 // declared above, all of which are top level.

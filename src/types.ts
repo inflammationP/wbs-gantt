@@ -117,7 +117,10 @@ export interface Task {
    * — this is always absent.
    */
   ownWindow?: { start: string | null; end: string | null }
-  strictProgress: boolean // strict: progress accumulates only via daily logs
+  // strict: daily logs are required and drive progress. A long-term goal always
+  // reads its progress from logs; turning this off there only drops the
+  // requirement, because it has no tick window to fall back on.
+  strictProgress: boolean
   // The days a simplified task (`strictProgress: false`) was ticked off, which
   // is the whole of its progress. Dates and nothing else: the point of the
   // simplified rule is that the tick says whether you did the day's work, and no

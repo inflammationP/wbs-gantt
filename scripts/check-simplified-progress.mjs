@@ -103,6 +103,13 @@ const goal = task({ type: 'long-term', endDate: null, strictProgress: true })
 assert.equal(taskProgress(goal, [], on('2026-09-05')), 0)
 assert.equal(taskProgress(goal, [log('a', '2026-09-05', 40)], on('2026-09-05')), 40)
 
+// Turning the daily requirement off does not change where a goal's number comes
+// from: it still reads logs, because it has no tick window to fall back on.
+const goalOff = task({ type: 'long-term', endDate: null, strictProgress: false })
+assert.equal(taskProgress(goalOff, [], on('2026-09-05')), 0)
+assert.equal(taskProgress(goalOff, [log('a', '2026-09-05', 40)], on('2026-09-05')), 40)
+assert.equal(completedOn(goalOff, [log('a', '2026-09-03', 100)]), '2026-09-03')
+
 // To-dos have no progress at all, and a task that has not started reads "—"
 // rather than 0.
 assert.equal(taskProgress(task({ isTodo: true, startDate: null, endDate: null }), [], on('2026-09-05')), null)

@@ -89,9 +89,8 @@ export function TaskForm({ onClose, existing, defaultParentId, defaultProjectId,
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }))
 
   const setType = (type: TaskType) => {
-    // `strictProgress` is left alone here — the payload forces it false for a
-    // long-term goal anyway, and clearing it on the way through would silently
-    // turn a task back to simplified for anyone who toggled the type and back.
+    // `strictProgress` is left alone here — clearing it on the way through would
+    // silently turn a task's logs off for anyone who toggled the type and back.
     if (type === 'long-term') {
       setForm((f) => ({ ...f, type, startDate: f.startDate || todayISO(), endDate: '' }))
     } else {
@@ -124,8 +123,8 @@ export function TaskForm({ onClose, existing, defaultParentId, defaultProjectId,
   const isTodo = form.isTodo
   // `!isTodo` and not just the field: with the type select off screen a to-do
   // can still be carrying 'long-term' in the form from before the box was
-  // ticked, and every long-term rule below (no end date, no strict flag) would
-  // then apply to a task that has no type at all.
+  // ticked, and every long-term rule below (no end date) would then apply to a
+  // task that has no type at all.
   const isLT = !isTodo && form.type === 'long-term'
   const hasKids = existing ? tasks.some((t) => t.parentId === existing.id) : false
   /**
@@ -139,6 +138,11 @@ export function TaskForm({ onClose, existing, defaultParentId, defaultProjectId,
    * group of rules exists to remove.
    */
   const rollsUp = hasKids && !isLT && tasks.some((k) => k.parentId === existing!.id && !k.isTodo)
+  // Whether turning logs off would be a flag nothing reads. The same test as
+  // `rollsUp` without the long-term exemption: a goal's own dates are not
+  // derived, but its progress does roll up from a timed child, so the log flag
+  // is inert there too.
+  const strictInert = hasKids && tasks.some((k) => k.parentId === existing!.id && !k.isTodo)
   // A hard DDL is the date this question is about when one is set; the planned
   // end is only the fallback.
   const dueDate = form.deadline || form.endDate
@@ -211,7 +215,7 @@ export function TaskForm({ onClose, existing, defaultParentId, defaultProjectId,
       startDate: s,
       endDate: e,
       deadline: form.deadline || null,
-      strictProgress: isLT ? true : form.strictProgress,
+      strictProgress: form.strictProgress,
       priority: form.priority,
       tags,
     }
@@ -369,13 +373,20 @@ export function TaskForm({ onClose, existing, defaultParentId, defaultProjectId,
             on the spot: it opens a dialog that says what the task gives up, and
             the flag only moves if that dialog is answered. Unticking needs no
             such ceremony — that direction is the recommendation. */}
-        {!isTodo && !isLT && (
+        {!isTodo && (
           <div className="border-t border-line pt-3 flex items-center gap-2">
             <input
               type="checkbox"
               id="no-logs"
               checked={!form.strictProgress}
-              onChange={(e) => (e.target.checked ? setOptOutAsk(true) : set('strictProgress', true))}
+              // A goal's logs stay readable after this (see `logDrivenLeaf`),
+              // so the warning — no history, ticking instead — would be wrong
+              // for it. The label already says "not recommended".
+              onChange={(e) =>
+                e.target.checked
+                  ? isLT ? set('strictProgress', false) : setOptOutAsk(true)
+                  : set('strictProgress', true)
+              }
               className="accent-accent"
               // Inert on a parent: its progress is its subtasks' average, so
               // `taskProgress` is never called for it and this flag decides
@@ -383,12 +394,12 @@ export function TaskForm({ onClose, existing, defaultParentId, defaultProjectId,
               // prints `task.modeRolledUp` in place of the mode — and the dialog
               // offering to set a flag that does nothing is the other half of
               // the same sentence.
-              disabled={rollsUp}
+              disabled={strictInert}
             />
             <label
               htmlFor="no-logs"
-              className={`text-[12px] cursor-pointer ${rollsUp ? 'text-dim cursor-help' : 'text-fg'}`}
-              title={rollsUp ? t('task.modeRolledUp') : undefined}
+              className={`text-[12px] cursor-pointer ${strictInert ? 'text-dim cursor-help' : 'text-fg'}`}
+              title={strictInert ? t('task.modeRolledUp') : undefined}
             >
               {t('task.strictProgress')}
             </label>

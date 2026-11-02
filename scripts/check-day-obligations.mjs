@@ -19,7 +19,7 @@ import assert from 'node:assert/strict'
 import { createServer } from 'vite'
 
 const server = await createServer({ server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' })
-const { strictLogObligations, daySummary, dayRowStruck, pendingLogsUnder, plannedStrictLeafUnder } = await server.ssrLoadModule('/src/lib/dayTasks.ts')
+const { strictLogObligations, daySummary, dayRowStruck, dayProgressRate, pendingLogsUnder, plannedStrictLeafUnder } = await server.ssrLoadModule('/src/lib/dayTasks.ts')
 const { taskProgress } = await server.ssrLoadModule('/src/lib/progress.ts')
 
 const TODAY = '2026-09-15'
@@ -88,6 +88,9 @@ assert.deepEqual(owes([task({ isTodo: true, startDate: null, endDate: null })], 
 // start until a log states it is finished.
 assert.deepEqual(ids(owes([task({ type: 'long-term', endDate: null })], [])), ['a'])
 assert.deepEqual(owes([task({ type: 'long-term', endDate: null })], [log('a', '2026-09-14', 100)]), [])
+// Turning that requirement off releases the obligation — the logs become
+// optional, though the goal still reads its number from them (`logDrivenLeaf`).
+assert.deepEqual(owes([task({ type: 'long-term', endDate: null, strictProgress: false })], []), [])
 // A plain (non-strict) leaf owes nothing either: it has no log to write.
 assert.deepEqual(owes([task({ strictProgress: false })], []), [])
 
@@ -315,6 +318,47 @@ assert.deepEqual(pendingLogsUnder(branch, [], TODAY, 'p', ['p']).map((t) => t.id
 assert.deepEqual(pendingLogsUnder(branch, [], TODAY, 'p', []), [])
 assert.equal(plannedStrictLeafUnder(branch, 'p', new Set(['p', 'c'])), true)
 assert.equal(plannedStrictLeafUnder(branch, 'p', new Set(['p'])), false)
+
+// --- the day's ring: logs plus the routines that run that day ---
+//
+// The ring widens `strictLogRate` by exactly the routine leaves on the day. The
+// Calendar and the report's recap keep the log-only reading, so this is the one
+// place the two numbers are allowed to differ — and the difference is the whole
+// point of the widening.
+const habit = (over) => ({
+  id: 'h', title: 'h', note: '', parentId: null,
+  startDate: '2026-09-01', endDate: null,
+  weekdays: [0, 1, 2, 3, 4, 5, 6],
+  paused: false, pauseDate: null, pauses: [], doneDays: [],
+  createdAt: '', updatedAt: '',
+  ...over,
+})
+
+// TODAY, 2026-09-15, is a Tuesday (weekday index 1).
+assert.deepEqual(
+  dayProgressRate([], [], [habit({ doneDays: [TODAY] }), habit({ id: 'h2' })], TODAY),
+  { done: 1, total: 2, pct: 50 },
+)
+// A heading is not a line to tick: only the leaf under it counts.
+assert.deepEqual(
+  dayProgressRate([], [], [habit({ id: 'p' }), habit({ id: 'c', parentId: 'p', doneDays: [TODAY] })], TODAY),
+  { done: 1, total: 1, pct: 100 },
+)
+// Off its weekday, a routine is not on the day at all.
+assert.deepEqual(
+  dayProgressRate([], [], [habit({ weekdays: [0] })], TODAY),
+  { done: 0, total: 0, pct: 0 },
+)
+// The log half is unchanged, and the two are added together.
+assert.deepEqual(
+  dayProgressRate([task({})], [], [habit({ doneDays: [TODAY] })], TODAY),
+  { done: 1, total: 2, pct: 50 },
+)
+// A plan narrows the tasks only — the routine is not on the plan and still runs.
+assert.deepEqual(
+  dayProgressRate([task({ id: 'a' }), task({ id: 'b' })], [], [habit({ doneDays: [TODAY] })], TODAY, ['a']),
+  { done: 1, total: 2, pct: 50 },
+)
 
 await server.close()
 console.log('day obligations: ok')

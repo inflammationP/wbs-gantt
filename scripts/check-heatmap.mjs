@@ -117,6 +117,12 @@ assert.deepEqual(
   doneOn([task({ id: 'a', type: 'long-term', endDate: null, strictProgress: true })], [log('a', '2026-09-11')]),
   ['2026-09-11'],
 )
+// Turning the daily requirement off does not change that: a goal has no tick
+// window, so the log is still the only way a day of it can be done.
+assert.deepEqual(
+  doneOn([task({ id: 'a', type: 'long-term', endDate: null, strictProgress: false })], [log('a', '2026-09-11')]),
+  ['2026-09-11'],
+)
 
 // The days asked about are the only ones answered about — the heatmap's window
 // is a slice of the task, not the whole of it.

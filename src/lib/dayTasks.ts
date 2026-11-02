@@ -1,6 +1,7 @@
-import { DaySortMode, Project, Task, TaskLog, TaskPriority, TaskStatus } from '../types'
+import { DaySortMode, Habit, Project, Task, TaskLog, TaskPriority, TaskStatus } from '../types'
 import { ancestorNames, buildChildrenMap, collectDescendants, computeProjectWbs, deriveStatus, deriveTaskStatus, isArchived, liveTasks } from './tree'
 import { isPausedOnDay, taskProgress } from './progress'
+import { routineRows } from './habits'
 import { addDays, toDate, toISO } from './dates'
 
 export interface DayEffState {
@@ -142,17 +143,35 @@ export function isNonStrictLeaf(task: Task, children: Map<string | null, Task[]>
 }
 
 /**
+ * Whether a task's progress comes from its logs.
+ *
+ * Wider than `isStrictLeaf` by exactly one case: a long-term goal whose daily
+ * requirement has been turned off. It has no end date, so there is no tick
+ * window to fall back on (`isNonStrictLeaf` is phase-only) — logs remain the
+ * only place its number can come from, and the flag now says they are optional
+ * rather than ignored.
+ *
+ * `strictProgress` is inert on parents — only leaves ever feed `taskProgress`.
+ */
+export function logDrivenLeaf(task: Task, children: Map<string | null, Task[]>): boolean {
+  return (
+    !task.isTodo &&
+    (task.strictProgress || task.type === 'long-term') &&
+    (children.get(task.id) ?? []).length === 0
+  )
+}
+
+/**
  * The tasks a log's progress field means something on. Exported because
  * `LogDialog` has to ask the same question before it offers the field — a
  * mandatory field on a task whose value nothing reads is the worst version of
  * this duplication.
  *
- * `strictProgress` is inert on parents — only leaves ever feed `taskProgress`.
+ * Strict *and* a leaf: a long-term goal with its logs turned off reads them
+ * (see `logDrivenLeaf`) but owes none.
  */
 export function isStrictLeaf(task: Task, children: Map<string | null, Task[]>): boolean {
-  // Long-term goals are strict too: they have no end to divide ticks by, so a
-  // log figure is the only progress they can state.
-  return !task.isTodo && task.strictProgress && (children.get(task.id) ?? []).length === 0
+  return task.strictProgress && logDrivenLeaf(task, children)
 }
 
 /**
@@ -327,6 +346,34 @@ export function strictLogRate(
   const owed = strictLogObligations(tasks, logs, day, planned)
   const total = owed.length
   const done = owed.filter((o) => o.logged).length
+  return { done, total, pct: total ? Math.round((done / total) * 100) : 0 }
+}
+
+/**
+ * The day's ring: its strict-log obligations plus the routine leaves that run
+ * on it.
+ *
+ * Leaves only, for the reason `routineLeftOn` gives — a heading's tick is its
+ * children's, so counting one would report the same undone line twice. The
+ * fold state is deliberately not a parameter: folding is how the list is drawn,
+ * not a fact about the day.
+ *
+ * The log-only reading is `strictLogRate`, and the Calendar and the report's
+ * yesterday recap keep using that one: they answer "how much of the day's
+ * logging is done", which is a smaller question than "how much of the day's
+ * work is done".
+ */
+export function dayProgressRate(
+  tasks: Task[],
+  logs: TaskLog[],
+  habits: Habit[],
+  day: string,
+  planned?: readonly string[],
+): StrictLogRate {
+  const logged = strictLogRate(tasks, logs, day, planned)
+  const leaves = routineRows(habits, day).filter((r) => !r.hasKids)
+  const total = logged.total + leaves.length
+  const done = logged.done + leaves.filter((r) => r.done).length
   return { done, total, pct: total ? Math.round((done / total) * 100) : 0 }
 }
 

@@ -100,7 +100,10 @@ export function taskProgress(task: Task, logs: TaskLog[], onDate: Date): number 
   if (task.isTodo) return null
   // Not started yet → no progress (renders as "—").
   if (task.startDate != null && diffDays(toDate(task.startDate), onDate) < 0) return null
-  if (!task.strictProgress) return tickProgress(task, onDate)
+  // A long-term goal has no end date, so a turned-off log requirement makes
+  // the logs optional — it does not hand it a tick window. Its number still
+  // comes from them.
+  if (!task.strictProgress && task.type !== 'long-term') return tickProgress(task, onDate)
   const upto = toISO(onDate)
   const own = logsFor(logs, task.id).filter((l) => l.date <= upto)
   if (own.length === 0) return 0

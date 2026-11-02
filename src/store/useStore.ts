@@ -1146,9 +1146,9 @@ export const useStore = create<State>()((rawSet, get) => {
         startDate: isTodo ? null : input.startDate,
         endDate: isTodo || isLT ? null : input.endDate,
         deadline: isTodo ? null : (input.deadline ?? null),
-        // A long-term goal has no end to divide ticks by, so it is always
+        // A long-term goal has no end to divide ticks by, so it defaults to
         // log-driven; only a to-do is without progress entirely.
-        strictProgress: isTodo ? false : isLT ? true : (input.strictProgress ?? false),
+        strictProgress: isTodo ? false : (input.strictProgress ?? isLT),
         confirmedDays: [],
         paused: false,
         pauseDate: null,
@@ -1541,7 +1541,7 @@ export const useStore = create<State>()((rawSet, get) => {
             // A goal has no end, and no tick window either — see `addTask`.
             endDate: goal ? null : end,
             deadline: e.deadline ?? null,
-            strictProgress: goal ? true : e.strictProgress,
+            strictProgress: e.strictProgress,
             priority: e.priority,
             updatedAt: now,
           }

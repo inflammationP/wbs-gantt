@@ -745,9 +745,10 @@ function normalize(data: PersistedData): LoadedData {
         // A commitment, independent of the plan's window; a to-do has no dates
         // to promise on.
         deadline: isTodo ? null : (t.deadline ?? null),
-        // A to-do states no progress; a long-term goal can only state it
-        // through logs, so it loads strict however it was written.
-        strictProgress: isTodo ? false : isLT ? true : (t.strictProgress ?? false),
+        // A to-do states no progress. A long-term goal can only state it
+        // through logs, so it defaults to strict when the field predates the
+        // toggle — an explicit false is kept, because that is a user's choice.
+        strictProgress: isTodo ? false : isLT ? (t.strictProgress ?? true) : (t.strictProgress ?? false),
         paused: isTodo ? false : (t.paused ?? false),
         pauseDate: isTodo ? null : (t.pauseDate ?? null),
         // Only an open pause can have one; a closed pair keeps its own reason.
