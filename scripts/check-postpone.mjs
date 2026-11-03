@@ -4,9 +4,9 @@
  *
  * `postponePatch` is the only door the record comes through, so the rules that
  * matter are pinned here rather than in the dialog that calls it: the end date
- * only ever moves later, a reason is required, and the record it writes names
- * the window it moved. A dialog can be dismissed or replaced; a wrong patch
- * would write a reason against a date the task never had.
+ * only ever moves later, and the record it writes names the window it moved.
+ * The reason is an optional memo. A dialog can be dismissed or replaced; a wrong
+ * patch would write a record against a date the task never had.
  *
  * The clock is an argument, not the wall's: `today` is passed in, so none of
  * these assertions depends on the day the check runs.
@@ -15,7 +15,7 @@ import assert from 'node:assert/strict'
 import { createServer } from 'vite'
 
 const server = await createServer({ server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' })
-const { postponePatch } = await server.ssrLoadModule('/src/lib/postpone.ts')
+const { editPostponePatch, postponePatch } = await server.ssrLoadModule('/src/lib/postpone.ts')
 
 const TODAY = '2026-09-10'
 
@@ -68,14 +68,66 @@ assert.equal(original.postponements.length, 0)
 assert.equal(postponePatch(task(), '2026-09-05', '改短一点', TODAY), null)
 assert.equal(postponePatch(task(), '2026-09-01', '改短一点', TODAY), null)
 
-// No reason, no record — the reason is the point of the feature.
-assert.equal(postponePatch(task(), '2026-09-12', '', TODAY), null)
-assert.equal(postponePatch(task(), '2026-09-12', '   \n  ', TODAY), null)
+// The reason is a memo, so an empty one still records the move.
+const noReason = postponePatch(task(), '2026-09-12', '   \n  ', TODAY)
+assert.equal(noReason.endDate, '2026-09-12')
+assert.deepEqual(noReason.postponements, [
+  { date: TODAY, from: '2026-09-05', to: '2026-09-12', reason: '' },
+])
 
 // The kinds that have no end date of their own never get one written.
 assert.equal(postponePatch(task({ isTodo: true, endDate: null }), '2026-09-12', 'x', TODAY), null)
 assert.equal(postponePatch(task({ type: 'long-term', endDate: null }), '2026-09-12', 'x', TODAY), null)
 assert.equal(postponePatch(task({ endDate: null }), '2026-09-12', 'x', TODAY), null)
+
+// --- the latest record can be rewritten, and the task follows it ------------
+
+const first = { date: '2026-09-02', from: '2026-09-01', to: '2026-09-05', reason: '排期冲突' }
+const latest = { date: '2026-09-10', from: '2026-09-05', to: '2026-09-12', reason: '甲方改需求' }
+
+const edited = editPostponePatch(
+  task({ endDate: '2026-09-12', postponements: [first, latest] }),
+  { date: '2026-09-11', from: '2026-09-06', to: '2026-09-15', reason: '  联调延期  ' },
+)
+assert.equal(edited.endDate, '2026-09-15')
+assert.deepEqual(edited.postponements, [
+  first,
+  { date: '2026-09-11', from: '2026-09-06', to: '2026-09-15', reason: '联调延期' },
+])
+
+// A pause after the postponement moved the current end; rewriting the record
+// moves only its own share, so the pause is not lost.
+const afterPause = editPostponePatch(
+  task({ endDate: '2026-09-20', postponements: [first, latest] }),
+  { date: '2026-09-10', from: '2026-09-05', to: '2026-09-15', reason: '甲方改需求' },
+)
+assert.equal(afterPause.endDate, '2026-09-23')
+
+// --- and it can be taken back ----------------------------------------------
+
+const revoked = editPostponePatch(
+  task({ endDate: '2026-09-20', postponements: [first, latest] }),
+  null,
+)
+assert.deepEqual(revoked.postponements, [first])
+assert.equal(revoked.endDate, '2026-09-13', 'the shift the record added comes back out')
+
+// --- the guards ------------------------------------------------------------
+
+// Nothing to rewrite, and nothing to take back.
+assert.equal(editPostponePatch(task(), latest), null)
+assert.equal(editPostponePatch(task(), null), null)
+// A recorded day is required; the reason is a memo and may be blank.
+assert.equal(
+  editPostponePatch(task({ postponements: [latest] }), { ...latest, reason: '  ' }).postponements.at(-1).reason,
+  '',
+)
+assert.equal(editPostponePatch(task({ postponements: [latest] }), { ...latest, date: '' }), null)
+// A rewritten window that shrinks is not a postponement either.
+assert.equal(editPostponePatch(task({ postponements: [latest] }), { ...latest, from: '2026-09-12' }), null)
+assert.equal(editPostponePatch(task({ isTodo: true, postponements: [latest] }), latest), null)
+assert.equal(editPostponePatch(task({ type: 'long-term', endDate: null, postponements: [latest] }), latest), null)
+assert.equal(editPostponePatch(task({ endDate: null, postponements: [latest] }), null), null)
 
 console.log('check-postpone: ok')
 await server.close()

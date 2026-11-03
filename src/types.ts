@@ -177,6 +177,11 @@ export interface Task {
    * task nothing can draw and nothing can reach. See `archiveTasks`.
    */
   archivedAt?: string
+  /**
+   * The note the user left while filing the task away. Optional: it is a memo,
+   * not a record of the decision, and it is cleared when the task comes back.
+   */
+  archiveReason?: string | null
   tags: string[]
   dependencies: string[] // task ids
   createdAt: string
@@ -411,6 +416,18 @@ export interface StickyNote {
   snapAt?: number
   /** `text` is HTML with the basic formatting commands, not plain text. */
   rich?: boolean
+  /**
+   * The card's paper colour, `#rrggbb`. It is a tint over the theme's panel
+   * colour rather than a fill of its own, so the text stays readable in every
+   * theme. Absent means the ordinary panel.
+   */
+  color?: string | null
+  /**
+   * Folded down to its title bar, still floating where the card was. Distinct
+   * from `snapped`, which is a chip on a page edge: this one keeps its free
+   * position on the canvas.
+   */
+  collapsed?: boolean
   createdAt: string
   updatedAt: string
 }

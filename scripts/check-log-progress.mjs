@@ -106,6 +106,8 @@ assert.equal(taskProgress(T, [OPENING, log('a', DAY)], on(DAY)), 40)
 assert.equal(taskProgress(T, [OPENING, log('a', DAY)], on('2026-09-03')), 40)
 // A later day's stated number is a later number, whatever the middle entries say.
 assert.equal(taskProgress(T, [OPENING, log('a', DAY), log('a', '2026-09-03', 65)], on('2026-09-03')), 65)
+// A later figure may be lower: progress is a record that can be corrected down.
+assert.equal(taskProgress(T, [OPENING, log('a', '2026-09-03', 25)], on('2026-09-03')), 25)
 // An entry carrying a figure is what closes a day for the purposes of the
 // question, but not for this one: what matters is that there is an entry.
 assert.equal(opensLogDay([log('a', DAY, 40)], 'a', DAY), false)

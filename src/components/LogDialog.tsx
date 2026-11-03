@@ -179,7 +179,7 @@ function LogForm({
   const t = useT()
 
   const [content, setContent] = useState(existing?.content ?? '')
-  const [error, setError] = useState<'missing' | 'backward' | null>(null)
+  const [error, setError] = useState<'missing' | null>(null)
 
   // Whether this dialog is the one that states where the day left the task.
   //
@@ -282,12 +282,6 @@ function LogForm({
       setError('missing')
       return
     }
-    // A retreat is not a typo to be clamped away — the figure is a record of
-    // work done, and lowering it rewrites history rather than reporting it.
-    if (absolute < base) {
-      setError('backward')
-      return
-    }
     onSave(content, absolute)
   }
 
@@ -352,11 +346,9 @@ function LogForm({
           </div>
           <div className="flex items-start justify-between gap-2 mt-1">
             <div className={`text-[11px] ${error ? 'text-delayed' : 'text-dim'}`}>
-              {error === 'backward'
-                ? t('log.progressBackward')
-                : error === 'missing'
-                  ? t('log.progressRequired', { add: t('log.progressAdd') })
-                  : t('log.currentProgress', { percent: base })}
+              {error === 'missing'
+                ? t('log.progressRequired', { add: t('log.progressAdd') })
+                : t('log.currentProgress', { percent: base })}
             </div>
             {/* Splits the span across the window's days, and calls a remainder
                 below a fifth of one a completion. Right of the line rather than

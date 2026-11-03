@@ -3,36 +3,34 @@ import { Modal, Field, inputCls } from './ui'
 import { useT } from '../lib/useT'
 
 /**
- * Pause one task — or one selection of tasks — and write down why.
+ * Ask for a memo before an action that keeps one — pausing a task, filing it
+ * away.
  *
- * The same shape as `PostponeDialog` without the date: pausing already knows
- * when it starts, and only the reason is the user's to give. Bulk pausing uses
- * one dialog and one reason for the whole selection, because it is one decision;
- * a reason per row would turn the bulk action into a row of dialogs.
+ * Optional on purpose: the reason is the user's note, not a gate. An empty box
+ * submits, and the action simply carries no reason. Bulk pausing and bulk
+ * archiving use one dialog and one memo for the whole selection, because it is
+ * one decision; a memo per row would turn the bulk action into a row of dialogs.
  */
-export function PauseReasonDialog({
+export function ReasonDialog({
   title,
+  label,
+  confirmLabel,
   onClose,
   onConfirm,
 }: {
   title: string
+  label: string
+  confirmLabel: string
   onClose: () => void
   onConfirm: (reason: string) => void
 }) {
   const t = useT()
   const [reason, setReason] = useState('')
-  const valid = reason.trim() !== ''
-
-  const submit = () => {
-    if (!valid) return
-    onConfirm(reason.trim())
-    onClose()
-  }
 
   return (
     <Modal title={title} onClose={onClose} width={440}>
       <div className="space-y-3">
-        <Field label={t('task.pauseReason')}>
+        <Field label={label}>
           <textarea
             autoFocus
             className={`${inputCls} h-20 resize-none py-1.5`}
@@ -46,11 +44,13 @@ export function PauseReasonDialog({
             {t('common.cancel')}
           </button>
           <button
-            onClick={submit}
-            disabled={!valid}
-            className="h-8 px-4 text-[12px] font-medium bg-accent text-on-accent disabled:opacity-40 rounded-[3px]"
+            onClick={() => {
+              onConfirm(reason.trim())
+              onClose()
+            }}
+            className="h-8 px-4 text-[12px] font-medium bg-accent text-on-accent rounded-[3px]"
           >
-            {t('task.pause')}
+            {confirmLabel}
           </button>
         </div>
       </div>

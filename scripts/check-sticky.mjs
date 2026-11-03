@@ -29,6 +29,9 @@ const {
   snapAtForRect,
   SNAP_ZONE,
   CHIP_SPAN,
+  hexColor,
+  hslHex,
+  lightPaper,
 } = await server.ssrLoadModule('/src/lib/sticky.ts')
 
 // --- inside the window ----------------------------------------------------
@@ -101,6 +104,26 @@ assert.equal(snapAtForRect('top', box(400, 0, 640, 200), 1200, 800, PAGE), 520 -
 assert.equal(snapAtForRect('right', box(960, 300, 1200, 500), 1200, 800, PAGE), 400 - CHIP_SPAN / 2)
 // SNAP_ZONE is the strip width the hint uses.
 assert.equal(SNAP_ZONE, 28)
+
+// --- the toolbar reads colours two ways -----------------------------------
+
+assert.equal(hexColor('rgb(217, 83, 79)'), '#d9534f')
+assert.equal(hexColor('rgba(217, 83, 79, 0.5)'), '#d9534f')
+assert.equal(hexColor('#D9534F'), '#d9534f')
+assert.equal(hexColor('red'), null, 'a colour name is not what the editor stores')
+
+// The hue strip's stops are the primary hues, and its value is what the editor
+// stores: an opaque #rrggbb.
+assert.equal(hslHex(0), '#dd3c3c')
+assert.equal(hslHex(120), '#3cdd3c')
+assert.equal(hslHex(240), '#3c3cdd')
+assert.equal(hslHex(360), '#dd3c3c', 'a full turn is the start again')
+
+// The paper colour picks the ink: dark paper takes light text and vice versa.
+assert.equal(lightPaper('#ffffff'), true)
+assert.equal(lightPaper('#000000'), false)
+assert.equal(lightPaper('#c9a227'), true)
+assert.equal(lightPaper('#5b6470'), false)
 
 console.log('check-sticky: ok')
 await server.close()

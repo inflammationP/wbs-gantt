@@ -657,6 +657,11 @@ function readStickyNotes(value: unknown): StickyNote[] {
       snapped,
       snapAt,
       rich: row.rich === true,
+      collapsed: row.collapsed === true,
+      // A hand-edited file can put anything here; only a plain hex survives.
+      ...(typeof row.color === 'string' && /^#[0-9a-f]{6}$/i.test(row.color)
+        ? { color: row.color }
+        : {}),
       createdAt: typeof row.createdAt === 'string' ? row.createdAt : '',
       updatedAt: typeof row.updatedAt === 'string' ? row.updatedAt : '',
     })
@@ -774,6 +779,11 @@ function normalize(data: PersistedData): LoadedData {
         // also written straight back to disk on the next save, so a value that
         // is not one the app wrote has to be dropped here rather than carried.
         archivedAt: isInstant(t.archivedAt) ? t.archivedAt : undefined,
+        // Only a filed task can have one; a stale note on a live task is not
+        // something the app writes, and clearing it here keeps the panel from
+        // showing a memo about a decision that was taken back.
+        archiveReason:
+          isInstant(t.archivedAt) && typeof t.archiveReason === 'string' ? t.archiveReason : null,
         // A put-aside window is two dates or nothing, and it is about to be
         // written *onto* the task as its own dates — so a shape this module
         // cannot read is dropped here rather than carried into `syncParentDates`

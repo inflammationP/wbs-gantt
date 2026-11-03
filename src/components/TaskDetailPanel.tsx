@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { FolderTree, NotebookText, Pencil, X } from 'lucide-react'
-import { Task, TaskLog } from '../types'
+import { Postponement, Task, TaskLog } from '../types'
 import { useStore } from '../store/useStore'
 import { computeWbs, effectiveStates, isArchived, nameQualifiers, todoCascadeIds } from '../lib/tree'
 import { isLogDayOpen, logsForTask } from '../lib/logs'
@@ -17,7 +17,7 @@ import { LogDialog } from './LogDialog'
 import { TaskTreeDialog } from './TaskTreeDialog'
 import { StartTodoDialog } from './StartTodoDialog'
 import { PostponeDialog } from './PostponeDialog'
-import { PauseReasonDialog } from './PauseReasonDialog'
+import { ReasonDialog } from './ReasonDialog'
 import { useDialogs } from './dialogs'
 
 function ReadOnlyField({ label, children }: { label: string; children: ReactNode }) {
@@ -59,6 +59,7 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
   const [showPauses, setShowPauses] = useState(false)
   const [showPostpones, setShowPostpones] = useState(true)
   const [postponeOpen, setPostponeOpen] = useState(false)
+  const [editPostpone, setEditPostpone] = useState<Postponement | null>(null)
   const [pauseOpen, setPauseOpen] = useState(false)
 
   const project = useMemo(() => projects.find((p) => p.id === task?.projectId), [projects, task])
@@ -319,18 +320,24 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
         </div>
 
         {/* The schedule block, or whatever has taken its place: for a to-do the
-            one button there is to press, for a filed-away task the way back and
-            nothing else — not even a line saying so, because the button is the
-            whole of it. There used to be a note above the to-do button
-            explaining that it had no schedule yet and listing what it would be
-            asked for when it started; the button says both. */}
+            one button there is to press, for a filed-away task its memo and the
+            way back. There used to be a note above the to-do button explaining
+            that it had no schedule yet and listing what it would be asked for
+            when it started; the button says both. */}
         {filed ? (
-          <button
-            onClick={handleUnarchive}
-            className="w-full h-8 text-[12px] font-medium bg-accent text-on-accent rounded-[3px] hover:brightness-110"
-          >
-            {t('task.unarchive')}
-          </button>
+          <div>
+            {/* The memo written when the task was filed away — the one thing
+                about it that is not the way back. */}
+            {task.archiveReason && (
+              <div className="mb-2 text-[11px] text-muted whitespace-pre-wrap">{task.archiveReason}</div>
+            )}
+            <button
+              onClick={handleUnarchive}
+              className="w-full h-8 text-[12px] font-medium bg-accent text-on-accent rounded-[3px] hover:brightness-110"
+            >
+              {t('task.unarchive')}
+            </button>
+          </div>
         ) : task.isTodo ? (
           <button
             onClick={() => setStartTodo([task.id])}
@@ -437,6 +444,18 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
                     <div className="flex items-center gap-1.5 text-muted">
                       <span className="font-mono text-dim">{formatDate(p.date)}</span>
                       <span>{formatDate(p.from)} → {formatDate(p.to)}</span>
+                      {/* Earlier records are settled history: their `to` is the
+                          next record's `from`, so only the latest can move. */}
+                      {!filed && !rollsUp && i === task.postponements.length - 1 && (
+                        <button
+                          onClick={() => setEditPostpone(p)}
+                          title={t('common.edit')}
+                          aria-label={t('common.edit')}
+                          className="text-dim hover:text-fg"
+                        >
+                          <Pencil size={11} />
+                        </button>
+                      )}
                     </div>
                     <div className="text-muted whitespace-pre-wrap">{p.reason}</div>
                   </div>
@@ -534,9 +553,14 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
     )}
     {startTodo && <StartTodoDialog taskIds={startTodo} onClose={() => setStartTodo(null)} />}
     {postponeOpen && <PostponeDialog taskId={task.id} onClose={() => setPostponeOpen(false)} />}
+    {editPostpone && (
+      <PostponeDialog taskId={task.id} existing={editPostpone} onClose={() => setEditPostpone(null)} />
+    )}
     {pauseOpen && (
-      <PauseReasonDialog
+      <ReasonDialog
         title={t('task.pauseConfirm', { name: task.name })}
+        label={t('task.pauseReason')}
+        confirmLabel={t('task.pause')}
         onClose={() => setPauseOpen(false)}
         onConfirm={(reason) =>
           withUndo(t('gantt.undoPause', { what: task.name }), () => pauseTask(task.id, reason))

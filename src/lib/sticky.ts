@@ -14,6 +14,8 @@ export const MIN_STICKY_W = 200
 export const MIN_STICKY_H = 120
 /** Height of a card's own grip strip, above the text. */
 export const STICKY_HEADER = 24
+/** Height of a card folded down to its title bar. */
+export const COLLAPSED_H = 30
 /** The gap a card keeps from any edge it is clamped against. */
 export const STICKY_MARGIN = 8
 /** What the board's own header takes off the top of its interior. */
@@ -158,6 +160,49 @@ export function snapAtForRect(
   return clampSnapAt(side, center - CHIP_SPAN / 2, viewportW, viewportH, pageLeft)
 }
 
+/**
+ * A colour out of `queryCommandValue('foreColor')`.
+ *
+ * Chromium answers in `rgb()`, the sanitized HTML carries `#rrggbb`, and the
+ * toolbar compares the two; anything else is not a colour this card can show.
+ */
+export function hexColor(value: string): string | null {
+  const rgb = /^rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(value)
+  if (rgb) {
+    return '#' + [1, 2, 3].map((i) => Number(rgb[i]).toString(16).padStart(2, '0')).join('')
+  }
+  return /^#[0-9a-f]{6}$/i.test(value) ? value.toLowerCase() : null
+}
+
+/**
+ * Whether a paper colour needs dark ink. Rec. 601 luma, the same rough test a
+ * readable foreground has always used; the paper can be any colour the user
+ * picks, and the writing area has to stay readable on it.
+ */
+export function lightPaper(color: string): boolean {
+  const n = parseInt(color.slice(1), 16)
+  const r = (n >> 16) & 0xff
+  const g = (n >> 8) & 0xff
+  const b = n & 0xff
+  return 0.299 * r + 0.587 * g + 0.114 * b > 150
+}
+
+/**
+ * A hue as the `#rrggbb` the formatting stores.
+ *
+ * Fixed saturation and lightness: the strip offers every hue at a weight that
+ * reads as text on both dark and light themes, and the presets cover the rest.
+ */
+export function hslHex(hue: number, saturation = 0.7, lightness = 0.55): string {
+  const a = saturation * Math.min(lightness, 1 - lightness)
+  const channel = (n: number) => {
+    const k = (n + hue / 30) % 12
+    const value = lightness - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))
+    return Math.round(255 * value).toString(16).padStart(2, '0')
+  }
+  return `#${channel(0)}${channel(8)}${channel(4)}`
+}
+
 /** Plain text as HTML — what a note written before formatting needs. */
 export function escapeNoteHtml(text: string): string {
   return text
@@ -177,9 +222,11 @@ const NOTE_TAGS = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'BR', 'DIV', 'P', 'SPA
  *
  * Rich notes store the editor's HTML, and a hand-edited board file can contain
  * anything; `innerHTML` is the trust boundary. Only the tags the toolbar can
- * produce survive, and only a font's `color`/`size` attributes — everything
- * else is unwrapped to its text or stripped. Pasted content is inserted as
- * plain text beside this, so the editor itself never introduces a wider set.
+ * produce survive; a font keeps its `color`/`size`, and a span keeps only a
+ * `font-weight` — the one style the bold toggle writes when it has to turn off
+ * part of a bold run. Everything else is unwrapped to its text or stripped.
+ * Pasted content is inserted as plain text beside this, so the editor itself
+ * never introduces a wider set.
  */
 export function sanitizeNoteHtml(html: string): string {
   if (typeof document === 'undefined') return escapeNoteHtml(html)
@@ -206,7 +253,15 @@ export function sanitizeNoteHtml(html: string): string {
       for (const attr of Array.from(el.attributes)) {
         const name = attr.name.toLowerCase()
         if (tag === 'FONT' && (name === 'color' || name === 'size')) continue
+        if (tag === 'SPAN' && name === 'style') continue
         el.removeAttribute(attr.name)
+      }
+      if (tag === 'SPAN') {
+        const weight = /^font-weight:\s*(normal|bold|400|700);?$/i.exec(
+          el.getAttribute('style') ?? '',
+        )?.[1]
+        if (weight) el.setAttribute('style', `font-weight: ${weight.toLowerCase()}`)
+        else el.removeAttribute('style')
       }
       if (tag === 'FONT') {
         const size = el.getAttribute('size')
@@ -217,6 +272,19 @@ export function sanitizeNoteHtml(html: string): string {
     }
   }
   walk(tpl.content)
+  // Zero-width carriers are typing state, not content. Once the note is saved
+  // and read back there is no caret inside them; a stale carrier with a large
+  // size would keep its line box tall forever.
+  let again = true
+  while (again) {
+    again = false
+    tpl.content.querySelectorAll('b, strong, i, em, u, span, font').forEach((el) => {
+      if ((el.textContent ?? '').replace(/​/g, '') === '' && !el.querySelector('br, img')) {
+        el.remove()
+        again = true
+      }
+    })
+  }
   return tpl.innerHTML
 }
 

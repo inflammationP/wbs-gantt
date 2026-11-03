@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { create } from 'zustand'
-import { AppView, Chore, ChoreSlot, DayPlan, DaySortMode, Habit, ItemLog, Note, Project, ScheduleBlock, StickyNote, Task, TaskLog, TaskPriority, TaskType, ViewMode } from '../types'
+import { AppView, Chore, ChoreSlot, DayPlan, DaySortMode, Habit, ItemLog, Note, Postponement, Project, ScheduleBlock, StickyNote, Task, TaskLog, TaskPriority, TaskType, ViewMode } from '../types'
 import { ALL_DAYS, habitBranch, runsOn } from '../lib/habits'
 import { todaysChores } from '../lib/chores'
 import { todayISO, addDays, diffDays, pad, toDate, toISO } from '../lib/dates'
@@ -40,7 +40,7 @@ import {
 import { loadData, saveData, loadPrefs, savePrefs, backupStoredData, workData, exportJson, prepareData, PersistedData, Prefs } from './storage'
 import { PROJECT_COLORS } from '../lib/ui'
 import { isLogDayOpen, logStamp, restamp } from '../lib/logs'
-import { postponePatch } from '../lib/postpone'
+import { editPostponePatch, postponePatch } from '../lib/postpone'
 import { DEFAULT_CAPACITY_HOURS, isHHMM, minutesOf } from '../lib/schedule'
 import { nextStickyNumber, nextZ } from '../lib/sticky'
 import { applyLang, Lang, translate } from '../lib/i18n'
@@ -379,7 +379,7 @@ export interface State {
    */
   updateLog: (id: string, targetProgress: number | null) => void
 
-  /** Pause a task; the reason is required, like a postponement's. */
+  /** Pause a task, with an optional memo — see `ReasonDialog`. */
   pauseTask: (id: string, reason: string) => void
   resumeTask: (id: string) => void
   /**
@@ -390,6 +390,13 @@ export interface State {
    * as a postponement that never happened.
    */
   postponeTask: (id: string, newEnd: string, reason: string) => void
+  /**
+   * Rewrite the latest postponement record, or drop it when `record` is null.
+   *
+   * Same guards as `postponeTask`: only a scheduled task with its own window,
+   * and only one that is not filed away. The patch itself is `editPostponePatch`.
+   */
+  editPostponement: (id: string, record: Postponement | null) => void
 
   setTaskTodo: (id: string) => void
   startTodoTasks: (entries: StartTodoInput[]) => void
@@ -404,7 +411,7 @@ export interface State {
    * four places to forget, and the failure of forgetting is silent: a live child
    * under a filed-away parent is a task no screen draws.
    */
-  archiveTasks: (ids: string[]) => void
+  archiveTasks: (ids: string[], reason?: string) => void
   unarchiveTasks: (ids: string[]) => void
 
   addChore: (title: string, date: string, slot?: ChoreSlot | null) => void
@@ -440,7 +447,7 @@ export interface State {
     patch: Partial<
       Pick<
         StickyNote,
-        'name' | 'text' | 'x' | 'y' | 'w' | 'h' | 'z' | 'docked' | 'snapped' | 'snapAt' | 'rich'
+        'name' | 'text' | 'x' | 'y' | 'w' | 'h' | 'z' | 'docked' | 'snapped' | 'snapAt' | 'rich' | 'color' | 'collapsed'
       >
     >,
   ) => void
@@ -1424,7 +1431,6 @@ export const useStore = create<State>()((rawSet, get) => {
 
   pauseTask: (id, reason) => {
     const text = reason.trim()
-    if (!text) return
     set((s) => ({
       tasks: s.tasks.map((t) =>
         t.id === id && !t.paused
@@ -1432,7 +1438,7 @@ export const useStore = create<State>()((rawSet, get) => {
               ...t,
               paused: true,
               pauseDate: todayISO(),
-              pauseReason: text,
+              pauseReason: text || null,
               updatedAt: new Date().toISOString(),
             }
           : t,
@@ -1455,7 +1461,10 @@ export const useStore = create<State>()((rawSet, get) => {
           pauseDate: null,
           pauseReason: null,
           endDate,
-          pauses: [...t.pauses, { pauseDate, resumeDate, ...(reason ? { reason } : {}) }],
+          // Paused and resumed the same day is not a pause to record.
+          pauses: pauseDate === resumeDate
+            ? t.pauses
+            : [...t.pauses, { pauseDate, resumeDate, ...(reason ? { reason } : {}) }],
           updatedAt: new Date().toISOString(),
         }
       }),
@@ -1470,6 +1479,19 @@ export const useStore = create<State>()((rawSet, get) => {
     // schedule never kept.
     if (s.tasks.some((t) => t.parentId === id && !t.isTodo)) return
     const patch = postponePatch(task, newEnd, reason, s.today)
+    if (!patch) return
+    set((state) => {
+      const tasks = editTask(state.tasks, state.projects, id, patch)
+      return tasks ? { tasks } : {}
+    })
+  },
+
+  editPostponement: (id, record) => {
+    const s = get()
+    const task = s.tasks.find((t) => t.id === id)
+    if (!task || isArchived(task)) return
+    if (s.tasks.some((t) => t.parentId === id && !t.isTodo)) return
+    const patch = editPostponePatch(task, record)
     if (!patch) return
     set((state) => {
       const tasks = editTask(state.tasks, state.projects, id, patch)
@@ -1590,13 +1612,18 @@ export const useStore = create<State>()((rawSet, get) => {
   // Nothing here checks that the tasks are finished: the callers do that, and
   // this action is also what the invariant repair in `normalize` leans on. What
   // it does own is the cascade, and that is deliberate — see the interface.
-  archiveTasks: (ids) =>
+  archiveTasks: (ids, reason) =>
     set((s) => {
       const take = new Set(archiveCascade(s.tasks, ids))
       if (take.size === 0) return {}
       const now = new Date().toISOString()
+      const memo = reason?.trim() || null
       return {
-        tasks: s.tasks.map((t) => (take.has(t.id) && !isArchived(t) ? { ...t, archivedAt: now, updatedAt: now } : t)),
+        tasks: s.tasks.map((t) =>
+          take.has(t.id) && !isArchived(t)
+            ? { ...t, archivedAt: now, archiveReason: memo, updatedAt: now }
+            : t,
+        ),
       }
     }),
 
@@ -1624,7 +1651,11 @@ export const useStore = create<State>()((rawSet, get) => {
       if (give.size === 0) return {}
       const now = new Date().toISOString()
       return {
-        tasks: s.tasks.map((t) => (give.has(t.id) && isArchived(t) ? { ...t, archivedAt: undefined, updatedAt: now } : t)),
+        tasks: s.tasks.map((t) =>
+          give.has(t.id) && isArchived(t)
+            ? { ...t, archivedAt: undefined, archiveReason: null, updatedAt: now }
+            : t,
+        ),
       }
     }),
 
@@ -1776,7 +1807,7 @@ export const useStore = create<State>()((rawSet, get) => {
     set((s) => {
       const existing = s.stickyNotes.find((n) => n.id === id)
       if (!existing) return {}
-      const same = (['name', 'text', 'x', 'y', 'w', 'h', 'z', 'docked', 'snapped', 'snapAt', 'rich'] as const).every(
+      const same = (['name', 'text', 'x', 'y', 'w', 'h', 'z', 'docked', 'snapped', 'snapAt', 'rich', 'color', 'collapsed'] as const).every(
         (key) => patch[key] === undefined || patch[key] === existing[key],
       )
       if (same) return {}

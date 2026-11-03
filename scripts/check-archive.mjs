@@ -307,6 +307,15 @@ startTodoTasks([{ id: todo, startDate: '2026-10-01', endDate: '2026-10-05', type
 assert.equal(byId(todo).isTodo, true, 'an archived to-do is not started')
 unarchiveTasks([phase])
 
+// --- the optional memo -----------------------------------------------------
+
+// One write, one reason for the whole branch, and the way back takes it with it.
+archiveTasks([phase], '  等下一期再做  ')
+assert.equal(byId(phase).archiveReason, '等下一期再做')
+assert.equal(byId(todo).archiveReason, '等下一期再做', 'the branch shares the memo')
+unarchiveTasks([phase])
+assert.equal(byId(phase).archiveReason, null, 'restoring clears it')
+
 // --- undo ------------------------------------------------------------------
 
 clearUndo()
@@ -348,6 +357,10 @@ const parse = (tasks, extra = {}) =>
 assert.equal(parse([task({ id: 'x', archivedAt: 'last tuesday' })])[0].archivedAt, undefined)
 const kept = parse([task({ id: 'x', archivedAt: '2026-09-30T10:00:00.000Z' })])[0]
 assert.equal(kept.archivedAt, '2026-09-30T10:00:00.000Z')
+// The memo is optional and only belongs to a filed-away task.
+assert.equal(parse([task({ id: 'x', archivedAt: '2026-09-30T10:00:00.000Z', archiveReason: 'memo' })])[0].archiveReason, 'memo')
+assert.equal(parse([task({ id: 'x', archivedAt: '2026-09-30T10:00:00.000Z', archiveReason: 5 })])[0].archiveReason, null, 'only a string is a memo')
+assert.equal(parse([task({ id: 'x', archiveReason: 'stale' })])[0].archiveReason, null, 'a live task keeps none')
 
 // The invariant the app keeps, repaired on the way in: a hand-edited file can
 // hold a live task under a filed-away parent, and the tree only walks down from

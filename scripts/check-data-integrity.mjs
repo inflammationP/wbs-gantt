@@ -269,24 +269,32 @@ try {
   assert.equal(state().tasks.find((t) => t.id === 'parent').endDate, state().today, 'log changes also settle dates atomically')
   assert.equal(JSON.parse(values.get('wbs-gantt.v2')).tasks.find((t) => t.id === 'parent').endDate, state().today)
 
-  // Pauses now ask for a reason. The store is the trust boundary: it trims,
-  // refuses an empty one, and closes the pair with the reason on resume.
+  // Pauses take an optional memo. The store is the trust boundary: it trims,
+  // accepts an empty one, and closes the pair with the reason on resume.
   seed([task('a'), task('b')])
   state().pauseTask('a', '  waiting  ')
   assert.equal(state().tasks.find((t) => t.id === 'a').pauseReason, 'waiting')
   state().pauseTask('b', '   ')
-  assert.equal(state().tasks.find((t) => t.id === 'b').paused, false, 'an empty reason is refused')
+  assert.equal(state().tasks.find((t) => t.id === 'b').paused, true, 'an empty reason is allowed')
+  assert.equal(state().tasks.find((t) => t.id === 'b').pauseReason, null, 'and is stored as no reason')
+  // Paused and resumed the same day is not a pause to record.
   state().resumeTask('a')
   const closed = state().tasks.find((t) => t.id === 'a')
   assert.equal(closed.pauseReason, null, 'resuming clears the open reason')
-  assert.deepEqual(closed.pauses.at(-1), {
-    pauseDate: state().today,
+  assert.equal(closed.pauses.length, 0, 'a same-day pause leaves no record')
+
+  // A pause that lasted past its own day closes the pair, reason and all.
+  seed([task('a', { paused: true, pauseDate: '2000-01-01', pauseReason: 'waiting' })])
+  state().resumeTask('a')
+  const closedPair = state().tasks.find((t) => t.id === 'a')
+  assert.deepEqual(closedPair.pauses.at(-1), {
+    pauseDate: '2000-01-01',
     resumeDate: state().today,
     reason: 'waiting',
   })
 
   // A pause opened before reasons existed closes without inventing one.
-  seed([task('a', { paused: true, pauseDate: '2026-09-10' })])
+  seed([task('a', { paused: true, pauseDate: '2000-01-01' })])
   state().resumeTask('a')
   const legacy = state().tasks.find((t) => t.id === 'a')
   assert.equal(legacy.pauseReason, null)
@@ -304,6 +312,20 @@ try {
     state().stickyNotes.find((n) => n.id === secondSticky).name,
     translate(state().lang, 'sticky.defaultName', { n: 2 }),
   )
+
+  // A note's paper colour survives a save; a hand-edited value that is not a
+  // plain hex is dropped rather than painted.
+  seed([], {
+    stickyNotes: [
+      { id: 'tinted', name: 'tinted', text: '', x: 0, y: 0, z: 0, docked: true, color: '#aabbcc', collapsed: true, createdAt: '', updatedAt: '' },
+      { id: 'bad', name: 'bad', text: '', x: 0, y: 0, z: 0, docked: true, color: 'red', createdAt: '', updatedAt: '' },
+    ],
+  })
+  assert.equal(state().stickyNotes.find((n) => n.id === 'tinted').color, '#aabbcc')
+  assert.equal(state().stickyNotes.find((n) => n.id === 'tinted').collapsed, true)
+  assert.equal('color' in state().stickyNotes.find((n) => n.id === 'bad'), false, 'a non-hex colour is dropped')
+  state().updateStickyNote('tinted', { color: null })
+  assert.equal(state().stickyNotes.find((n) => n.id === 'tinted').color, null)
 
   console.log('data integrity: all assertions passed')
 } finally {

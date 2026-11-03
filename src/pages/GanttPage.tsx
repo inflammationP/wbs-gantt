@@ -17,7 +17,7 @@ import { HistoryDialog } from '../components/HistoryDialog'
 import { NewDialog, NoProjectDialog } from '../components/NewDialog'
 import { LogDialog } from '../components/LogDialog'
 import { StartTodoDialog } from '../components/StartTodoDialog'
-import { PauseReasonDialog } from '../components/PauseReasonDialog'
+import { ReasonDialog } from '../components/ReasonDialog'
 import { AddMenu, ContextMenu, MenuState, ProjectContextMenu, ProjectMenuState } from '../components/gantt/ContextMenu'
 import { ProjectDialog } from '../components/ProjectDialog'
 import { DailyBubble } from '../components/gantt/DailyBubble'
@@ -104,9 +104,12 @@ export function GanttPage() {
   // button rather than at the pointer, and the only one of them with a trigger
   // to be pressed again.
   const [add, setAdd] = useState<{ row: RowTask; x: number; y: number } | null>(null)
-  // Pausing asks for a reason, so the row(s) wait here while the dialog is up.
-  // `bulk` decides whether the undo step also clears the selection.
+  // Pausing takes an optional memo, so the row(s) wait here while the dialog is
+  // up. `bulk` decides whether the undo step also clears the selection.
   const [pauseRows, setPauseRows] = useState<{ rows: RowTask[]; bulk: boolean } | null>(null)
+  // Filing away also takes an optional memo, so the row(s) wait here while the
+  // dialog is up for the same reason pausing's do.
+  const [archiveRows, setArchiveRows] = useState<{ rows: RowTask[]; bulk: boolean } | null>(null)
   const [logDialog, setLogDialog] = useState<string | null>(null)
   const [startTodo, setStartTodo] = useState<string[] | null>(null)
   // Shown in place of the task dialog while the board has no project — see
@@ -176,7 +179,7 @@ export function GanttPage() {
   const overlayOpen =
     menu !== null || dialog !== null || logDialog !== null || startTodo !== null || noProject ||
     mergeOpen || historyOpen || newOpen || daily !== null || add !== null || treeOpen ||
-    pauseRows !== null
+    pauseRows !== null || archiveRows !== null
   const hasSelection = sel.size > 0
   useEffect(() => {
     if (!editing || overlayOpen) return
@@ -334,16 +337,13 @@ export function GanttPage() {
   // the one thing it must not do.
   const takesMore = (ids: string[]) => archiveCascade(tasks, ids).length > ids.length
 
-  // Every archive asks first, and the confirmation is the same three sentences at
-  // all three entry points: what goes, what goes with it, and where it can be
-  // found again. The number it gives up is the reason — filing a row away
-  // renumbers everything below it, so a press made by accident leaves a board
-  // that has to be read to be put back.
+  // Every archive asks first, and the dialog is the same at all three entry
+  // points: what goes, what goes with it, and where it can be found again. The
+  // number it gives up is the reason — filing a row away renumbers everything
+  // below it, so a press made by accident leaves a board that has to be read to
+  // be put back. The memo under it is optional.
   const handleArchive = (row: RowTask) => {
-    ask(
-      t(takesMore([row.id]) ? 'task.archiveWithSubtasks' : 'task.archiveConfirm', { name: row.task.name }),
-      () => withUndo(t('gantt.undoArchive', { what: row.task.name }), () => archiveTasks([row.id])),
-    )
+    setArchiveRows({ rows: [row], bulk: false })
   }
 
   // The way back needs no confirmation: it undoes the thing that was asked
@@ -367,12 +367,8 @@ export function GanttPage() {
   }
 
   const handleBulkArchive = () => {
-    const ids = picked.map((r) => r.id)
-    if (ids.length === 0) return
-    ask(
-      t(takesMore(ids) ? 'gantt.archiveManyWithSubtasks' : 'gantt.archiveMany', { count: ids.length }),
-      () => afterBulk(t('gantt.undoArchive', { what: whatOf(picked) }), () => archiveTasks(ids)),
-    )
+    if (picked.length === 0) return
+    setArchiveRows({ rows: picked, bulk: true })
   }
 
   // The way back out of the archive, for the group's own button and for a row's.
@@ -648,12 +644,14 @@ export function GanttPage() {
       {noProject && <NoProjectDialog onClose={() => setNoProject(false)} />}
 
       {pauseRows && (
-        <PauseReasonDialog
+        <ReasonDialog
           title={
             pauseRows.rows.length === 1
               ? t('task.pauseConfirm', { name: pauseRows.rows[0].task.name })
               : t('gantt.pauseMany', { count: pauseRows.rows.length })
           }
+          label={t('task.pauseReason')}
+          confirmLabel={t('task.pause')}
           onClose={() => setPauseRows(null)}
           onConfirm={(reason) => {
             const label = t('gantt.undoPause', { what: whatOf(pauseRows.rows) })
@@ -661,6 +659,30 @@ export function GanttPage() {
               for (const r of pauseRows.rows) pauseTask(r.id, reason)
             }
             if (pauseRows.bulk) afterBulk(label, run)
+            else withUndo(label, run)
+          }}
+        />
+      )}
+
+      {archiveRows && (
+        <ReasonDialog
+          title={
+            archiveRows.rows.length === 1
+              ? t(takesMore([archiveRows.rows[0].id]) ? 'task.archiveWithSubtasks' : 'task.archiveConfirm', {
+                  name: archiveRows.rows[0].task.name,
+                })
+              : t(takesMore(archiveRows.rows.map((r) => r.id)) ? 'gantt.archiveManyWithSubtasks' : 'gantt.archiveMany', {
+                  count: archiveRows.rows.length,
+                })
+          }
+          label={t('task.archiveReason')}
+          confirmLabel={t('task.archive')}
+          onClose={() => setArchiveRows(null)}
+          onConfirm={(reason) => {
+            const ids = archiveRows.rows.map((r) => r.id)
+            const label = t('gantt.undoArchive', { what: whatOf(archiveRows.rows) })
+            const run = () => archiveTasks(ids, reason)
+            if (archiveRows.bulk) afterBulk(label, run)
             else withUndo(label, run)
           }}
         />

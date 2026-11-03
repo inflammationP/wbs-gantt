@@ -482,7 +482,7 @@ assert.equal(useStore.getState().history.steps.length, offGantt + 1, 'and it is 
 useStore.setState({ activeView: 'gantt' })
 withUndo('resumed one', () => resumeTask(g1))
 assert.equal(find(g1).pauseReason, null, 'resuming clears the open reason')
-assert.equal(find(g1).pauses.at(-1).reason, 'off the board', 'and closes the pair with it')
+assert.equal(find(g1).pauses.length, 0, 'a pause and a resume on one day leave no record')
 assert.ok(lastUndo(), 'the same step is offered on the board')
 undoLast()
 

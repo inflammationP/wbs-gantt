@@ -305,19 +305,33 @@ body {
 }
 .sticky-editor:empty::before {
   content: attr(data-placeholder);
-  color: rgb(var(--c-dim));
+  /* Follows the paper's ink, so the hint is legible on a custom fill too. */
+  color: currentColor;
+  opacity: 0.45;
   pointer-events: none;
 }
 /* The formatting commands write <font size>, whose browser default is not the
-   card's scale; these are the three sizes the toolbar offers. */
+   card's scale. One point on the 1–7 scale is one step in the toolbar. */
+.sticky-editor font[size='1'] {
+  font-size: 10px;
+}
 .sticky-editor font[size='2'] {
   font-size: 11px;
 }
 .sticky-editor font[size='3'] {
   font-size: 13px;
 }
+.sticky-editor font[size='4'] {
+  font-size: 15px;
+}
 .sticky-editor font[size='5'] {
   font-size: 17px;
+}
+.sticky-editor font[size='6'] {
+  font-size: 20px;
+}
+.sticky-editor font[size='7'] {
+  font-size: 24px;
 }
 @media (prefers-reduced-motion: reduce) {
   .sticky-board,
