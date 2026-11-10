@@ -27,6 +27,8 @@ const {
   packBlocks,
   dragSpan,
   loadRead,
+  nextFreeStart,
+  resizeEdge,
 } = await server.ssrLoadModule('/src/lib/schedule.ts')
 
 // --- stored times are strict, unlike typed chore times --------------------
@@ -127,12 +129,16 @@ assert.equal(dayLoad(undefined, mixed, day).used, 5, 'no plan: the sum of every 
 
 // --- the start-of-day prompt ---------------------------------------------
 
-assert.equal(promptDue(undefined, null, day), true)
-assert.equal(promptDue({ date: day, capacityHours: 6 }, null, day), true, 'a capacity-only row is still unplanned')
-assert.equal(promptDue({ date: day, taskIds: [] }, null, day), false, 'a rest day is a plan')
-assert.equal(promptDue({ date: day, taskIds: ['a'] }, null, day), false)
-assert.equal(promptDue(undefined, day, day), false, 'put off today')
-assert.equal(promptDue(undefined, '2026-10-26', day), true, 'yesterday’s skip has expired')
+assert.equal(promptDue(undefined, null, day, true), true)
+assert.equal(promptDue({ date: day, capacityHours: 6 }, null, day, true), true, 'a capacity-only row is still unplanned')
+assert.equal(promptDue({ date: day, taskIds: [] }, null, day, true), false, 'a rest day is a plan')
+assert.equal(promptDue({ date: day, taskIds: ['a'] }, null, day, true), false)
+assert.equal(promptDue(undefined, day, day, true), false, 'put off today')
+assert.equal(promptDue(undefined, '2026-10-26', day, true), true, 'yesterday’s skip has expired')
+// An empty board is asked nothing, however the plan looks — a fresh install has
+// nothing to choose from.
+assert.equal(promptDue(undefined, null, day, false), false, 'empty board')
+assert.equal(promptDue(undefined, '2026-10-26', day, false), false, 'empty board stays quiet')
 
 // --- plans: absent, rest day, chosen --------------------------------------
 
@@ -168,6 +174,58 @@ const apart = packBlocks([
 ])
 assert.deepEqual(apart.get('a'), { lane: 0, lanes: 1 })
 assert.deepEqual(apart.get('b'), { lane: 0, lanes: 1 })
+
+// Same start: the longer block is left by default.
+const sameStart = packBlocks([
+  block({ id: 'short', start: '09:00', end: '09:30' }),
+  block({ id: 'long', start: '09:00', end: '11:00' }),
+])
+assert.deepEqual(sameStart.get('long'), { lane: 0, lanes: 2 })
+assert.deepEqual(sameStart.get('short'), { lane: 1, lanes: 2 })
+
+// The longer block is left even when it starts a little later.
+const laterLong = packBlocks([
+  block({ id: 'short', start: '09:00', end: '09:30' }),
+  block({ id: 'long', start: '09:10', end: '11:00' }),
+])
+assert.deepEqual(laterLong.get('long'), { lane: 0, lanes: 2 })
+assert.deepEqual(laterLong.get('short'), { lane: 1, lanes: 2 })
+
+// A lane order written by dragging overrides the default.
+const dragged = packBlocks([
+  block({ id: 'short', start: '09:00', end: '09:30', laneOrder: 0 }),
+  block({ id: 'long', start: '09:00', end: '11:00', laneOrder: 1 }),
+])
+assert.deepEqual(dragged.get('short'), { lane: 0, lanes: 2 })
+assert.deepEqual(dragged.get('long'), { lane: 1, lanes: 2 })
+
+// --- where a chip from the day's work lands --------------------------------
+
+// The first gap after 08:00 that fits the block. A deadline is a point and
+// claims no time, so it is not an obstacle.
+const occupied = [
+  block({ id: 'a', start: '09:00', end: '10:00' }),
+  block({ id: 'd', start: '10:00', end: '10:00', deadline: true }),
+]
+assert.equal(nextFreeStart(occupied, 60), '08:00')
+assert.equal(nextFreeStart(occupied, 120), '10:00', '8:00–10:00 does not fit in an hour')
+assert.equal(nextFreeStart([block({ id: 'a', start: '08:00', end: '10:00' })], 120), '10:00')
+// A full day falls back to the working morning; the dialog opens there and the
+// user moves it rather than getting no answer at all.
+assert.equal(nextFreeStart([block({ id: 'a', start: '08:00', end: '23:59' })], 60), '08:00')
+// A short item still claims at least half an hour, so chips do not stack into
+// unclickable slivers.
+assert.equal(nextFreeStart([block({ id: 'a', start: '08:00', end: '08:30' })], 10), '08:30')
+
+// --- pulling a block's edge ------------------------------------------------
+
+// The dragged end may not cross the other, and the block keeps half an hour.
+const H = (h, m = 0) => h * 60 + m
+assert.deepEqual(resizeEdge(H(9), H(10), 'start', H(9, 30)), { start: H(9, 30), end: H(10) })
+assert.deepEqual(resizeEdge(H(9), H(10), 'start', H(11)), { start: H(9, 30), end: H(10) }, 'no crossing')
+assert.deepEqual(resizeEdge(H(9), H(10), 'end', H(8)), { start: H(9), end: H(9, 30) }, 'no crossing')
+assert.deepEqual(resizeEdge(H(9), H(10), 'end', 24 * 60), { start: H(9), end: H(23, 59) }, 'clamped to the day')
+assert.deepEqual(resizeEdge(0, 30, 'start', -50), { start: 0, end: 30 }, 'clamped to midnight')
 
 console.log('check-schedule: ok')
 await server.close()

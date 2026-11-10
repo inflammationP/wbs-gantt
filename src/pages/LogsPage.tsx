@@ -193,7 +193,7 @@ export function LogsPage() {
         ) : (
           // Keyed on the mode so the swap remounts the grid and replays the
           // animation — a transition cannot express "the contents were replaced".
-          <div key={mode} className="swap-in grid items-start gap-x-4 gap-y-6 grid-cols-[repeat(auto-fill,minmax(200px,1fr))]" style={{ maxWidth: 1120 }}>
+          <div key={mode} className="swap-in grid items-start gap-x-4 gap-y-6 grid-cols-[repeat(auto-fill,minmax(200px,1fr))]">
             {visible.map(({ date, logs: dayLogs, note, itemLogs: dayItemLogs }) => {
               const d = toDate(date)
               // Group by task; show only parent (depth-0) items in the thumbnail

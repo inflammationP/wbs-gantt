@@ -61,6 +61,10 @@ export function HabitDialog({
   // `<input type="date">` reads and writes. It is turned back into `null` on the
   // way out, which is the shape the data actually wants.
   const [endDate, setEndDate] = useState(habit?.endDate ?? '')
+  // Minutes, kept as the string the input holds; blank means "not said".
+  const [duration, setDuration] = useState(
+    habit?.durationMinutes != null ? String(habit.durationMinutes) : '',
+  )
   const [paused, setPaused] = useState(habit?.paused ?? false)
 
   // A routine that holds others is a heading: whether it appears is whether its
@@ -94,7 +98,12 @@ export function HabitDialog({
 
   const save = () => {
     if (!valid) return
-    const values = { title: title.trim(), note, parentId, weekdays, endDate: endDate || null }
+    const minutes = Number(duration)
+    const durationMinutes =
+      duration.trim() !== '' && Number.isFinite(minutes) && minutes > 0
+        ? Math.min(1440, Math.round(minutes))
+        : null
+    const values = { title: title.trim(), note, parentId, weekdays, endDate: endDate || null, durationMinutes }
     if (habit) {
       // A heading is patched with the three fields it owns and no more: its days
       // come from its children, and writing the form's copy back would quietly
@@ -193,9 +202,24 @@ export function HabitDialog({
           </div>
         </Field>
 
-        {/* The two fields a heading does not have — see `hasKids` above. */}
+        {/* The fields a heading does not have — see `hasKids` above. */}
         {!hasKids && (
           <>
+            <Field label={t('habit.duration')}>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={1440}
+                  step={5}
+                  className={`${inputCls} max-w-[7rem]`}
+                  value={duration}
+                  onChange={(e) => setDuration(e.currentTarget.value)}
+                />
+                <span className="text-[11px] text-dim">{t('habit.durationUnit')}</span>
+              </div>
+            </Field>
+
             <Field label={t('habit.endDate')}>
               <input
                 type="date"

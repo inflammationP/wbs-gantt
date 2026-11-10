@@ -14,6 +14,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { Row, RowArchiveGroup, RowProject, RowTask, RowTodoGroup, isArchived } from '../../lib/tree'
+import { parentPath } from '../../lib/dayTasks'
 import { routineLeftOn } from '../../lib/habits'
 import { todaysChores } from '../../lib/chores'
 import { STATUS_META, priorityWash, sig, sigAlpha, sigText } from '../../lib/ui'
@@ -339,6 +340,12 @@ export function RowLeft({ row, todo, archived, editing, dimmed, picked, onRowCli
           } ${filed ? 'text-dim' : ''}`}
           style={isTodo ? { outlineColor: sigAlpha('todo', 0.55), color: sig('todo') } : undefined}
         >
+          {row.archiveParentPath && row.ancestors.length > 0 && (
+            <span className="text-dim">
+              {parentPath(row.ancestors).join(t('common.pathSeparator'))}
+              {t('common.pathSeparator')}
+            </span>
+          )}
           {row.task.name}
         </span>
       </div>

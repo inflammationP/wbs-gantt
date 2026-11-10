@@ -125,7 +125,7 @@ export function TaskDetailPanel({ taskId }: { taskId: string }) {
   // anything left to say, and only a to-do (no schedule, so nothing to write
   // about) and a folder (its children's work, recorded on them) are without one.
   const isLoggable = filed
-    || taskStatus === 'in-progress' || taskStatus === 'delayed' || taskStatus === 'completed'
+    || taskStatus === 'in-progress' || taskStatus === 'overrun' || taskStatus === 'delayed' || taskStatus === 'completed'
   const pausedDays = task.paused && task.pauseDate ? Math.max(0, diffDays(toDate(task.pauseDate), new Date())) : 0
 
   // Parking wipes the schedule of the whole unfinished branch, so the count goes

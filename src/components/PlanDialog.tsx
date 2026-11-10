@@ -8,6 +8,7 @@ import { capacityOf, dayLoad, loadRead, planOn } from '../lib/schedule'
 import { STATUS_META, sig } from '../lib/ui'
 import { toDate } from '../lib/dates'
 import { formatDayMonthYear } from '../lib/i18n'
+import { daysSinceProgress } from '../lib/progress'
 import { useLang, useT } from '../lib/useT'
 import { LoadMeter } from './LoadMeter'
 
@@ -18,6 +19,8 @@ interface Candidate {
   progress: number | null
   status: TaskStatus
   strict: boolean
+  /** Days since a log or a tick last moved it; null when nothing has yet. */
+  daysSince: number | null
   /** In the plan but no longer part of the day's automatic list. */
   stale?: boolean
 }
@@ -80,6 +83,7 @@ export function PlanDialog({
         progress: r.progress,
         status: r.status,
         strict: r.strict,
+        daysSince: daysSinceProgress(r.task, logs, day),
       }))
     const shown = new Set(base.map((r) => r.id))
     // Keep a planned task visible even after its window changed or it became a
@@ -97,6 +101,7 @@ export function PlanDialog({
         progress: state?.progress ?? null,
         status: state?.status ?? 'not-started',
         strict: false,
+        daysSince: daysSinceProgress(task, logs, day),
         stale: true,
       })
       shown.add(id)
@@ -216,6 +221,11 @@ export function PlanDialog({
                     <span className={`flex-1 min-w-0 truncate text-[12px] ${r.status === 'completed' ? 'line-through text-dim' : 'text-fg/90'}`}>
                       {r.name}
                     </span>
+                    {r.daysSince != null && r.daysSince > 0 && (
+                      <span className="shrink-0 text-[10px] text-dim">
+                        {t('plan.sinceLastLog', { count: r.daysSince })}
+                      </span>
+                    )}
                     {r.strict && <span className="shrink-0 text-[11px] text-today">*</span>}
                     {r.stale && <span className="shrink-0 text-[10px] text-dim">{t('plan.notScheduled')}</span>}
                   </label>

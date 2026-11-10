@@ -148,7 +148,16 @@ seed([
   task({ id: 'kid', projectId: 'p1', parentId: 'parent', startDate: '2026-09-01', endDate: '2026-09-20' }),
 ])
 useStore.getState().syncParentDates()
-assert.equal(board().find((t) => t.id === 'parent').startDate, '2026-09-01', 'the parent was rewritten')
+assert.equal(
+  board().find((t) => t.id === 'parent').startDate,
+  '2026-09-10',
+  'the start stays on the container’s own day',
+)
+assert.equal(
+  board().find((t) => t.id === 'parent').endDate,
+  '2026-09-20',
+  'the end was rewritten from the child',
+)
 assert.equal(steps().length, 0, 'and rewriting it is not a step')
 
 // --- undo one step, exactly -----------------------------------------------

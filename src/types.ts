@@ -1,4 +1,12 @@
-export type TaskStatus = 'todo' | 'not-started' | 'in-progress' | 'completed' | 'paused' | 'delayed'
+export type TaskStatus =
+  | 'todo'
+  | 'not-started'
+  | 'in-progress'
+  | 'completed'
+  | 'paused'
+  /** The planned end has passed, but a later ddl has not — past plan, not late. */
+  | 'overrun'
+  | 'delayed'
 export type TaskPriority = 'low' | 'medium' | 'high' | 'top'
 export type TaskType = 'phase' | 'long-term'
 export type ViewMode = 'day' | 'week' | 'month' | 'quarter' | 'year'
@@ -59,6 +67,27 @@ export interface DayPlan {
  * time) follows a rename — see `updateTask`. A deadline is a zero-length
  * marker: `end === start` and `deadline: true`.
  */
+/**
+ * One class in the imported weekly timetable.
+ *
+ * Kept apart from `ScheduleBlock` on purpose: a block is a dated commitment the
+ * user made, while a class repeats by week and semester position, belongs to no
+ * day the user chose, and must not count toward the day's load. Both are drawn
+ * in the timetable, the class underneath.
+ */
+export interface CourseSession {
+  /** Semester week, 1-based, matching the `S11` sheet names. */
+  week: number
+  /** 0 = Monday … 6 = Sunday, the order the sheets lay the days out in. */
+  weekday: number
+  start: string // HH:MM
+  end: string
+  title: string
+  location: string
+  /** Teacher, group or any other line the sheet carried. */
+  note: string
+}
+
 export interface ScheduleBlock {
   id: string
   date: string // yyyy-MM-dd
@@ -66,6 +95,16 @@ export interface ScheduleBlock {
   end: string // HH:MM; equals start for a deadline
   title: string
   taskId?: string
+  /** The routine this block was created for, when it came from the day's work. */
+  habitId?: string
+  /** The chore this block was created for, likewise. */
+  choreId?: string
+  /**
+   * Left-to-right preference among blocks that overlap in time. Absent means
+   * the timetable's default; smaller is further left. Written by dragging a
+   * block sideways.
+   */
+  laneOrder?: number
   deadline?: boolean
 }
 
@@ -297,6 +336,16 @@ export interface Habit {
    * every habit written before this field existed is backfilled to.
    */
   weekdays: number[]
+  /**
+   * How long this routine is meant to take on a day, in minutes, or null when
+   * nobody has said.
+   *
+   * Optional because every routine written before it existed has no answer, and
+   * because a routine's length is a guess the user may not want to make. The
+   * timetable uses it as the default block length when the routine is put on
+   * the day; nothing else reads it.
+   */
+  durationMinutes?: number | null
   /**
    * Suspended: off the daily list from `pauseDate` on, but still ticked in the
    * past and still on the days it was actually run.

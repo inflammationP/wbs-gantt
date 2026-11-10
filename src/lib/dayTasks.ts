@@ -81,11 +81,12 @@ export interface DaySummary {
 // Urgency first — this is a "what do I handle today" list, not a tree.
 const STATUS_RANK: Record<TaskStatus, number> = {
   delayed: 0,
-  'in-progress': 1,
-  'not-started': 2,
-  paused: 3,
-  completed: 4,
-  todo: 5,
+  overrun: 1,
+  'in-progress': 2,
+  'not-started': 3,
+  paused: 4,
+  completed: 5,
+  todo: 6,
 }
 
 /** Highest first. A missing priority (legacy rows) sits below `low`. */
@@ -610,7 +611,10 @@ export function daySummary(
     // `hasComeDue` keeps a delayed task owing a log either way. A simplified
     // task gets the same treatment now that the calendar no longer finishes it
     // on its own.
-    const overdue = (strict || plain) && st.status === 'delayed'
+    // `overrun` keeps a row whose window has closed but whose ddl has not been
+    // missed: it is unfinished work and still the day's problem, exactly as
+    // `delayed` was before the two were told apart.
+    const overdue = (strict || plain) && (st.status === 'delayed' || st.status === 'overrun')
     if (!active && !overdue) continue
     // The plan narrows what was already the day's work; it never adds a task
     // whose window does not cover the day. Applied after the active/overdue

@@ -55,6 +55,37 @@ assert.equal(
 )
 // The old end-date rule still applies to tasks with no DDL.
 assert.equal(deriveTaskStatus(task({ endDate: '2026-10-10' }), 20, '2026-10-11'), 'delayed')
+// A window that ended while the DDL still lies ahead is an overrun, not a
+// missed deadline — the promise is intact.
+assert.equal(
+  deriveTaskStatus(task({ endDate: '2026-10-10', deadline: '2026-10-20' }), 20, '2026-10-11'),
+  'overrun',
+)
+// The DDL's own day is still inside it.
+assert.equal(
+  deriveTaskStatus(task({ endDate: '2026-10-10', deadline: '2026-10-11' }), 20, '2026-10-11'),
+  'overrun',
+)
+// Once the DDL arrives, the same task is late.
+assert.equal(
+  deriveTaskStatus(task({ endDate: '2026-10-10', deadline: '2026-10-11' }), 20, '2026-10-12'),
+  'delayed',
+)
+// A DDL equal to the end date leaves no window to be overrun: both passed.
+assert.equal(
+  deriveTaskStatus(task({ endDate: '2026-10-10', deadline: '2026-10-10' }), 20, '2026-10-11'),
+  'delayed',
+)
+// Pause outranks the overrun, as it outranks the old end-date rule; finished
+// work outranks both.
+assert.equal(
+  deriveTaskStatus(task({ endDate: '2026-10-10', deadline: '2026-10-20', paused: true, pauseDate: '2026-10-09' }), 20, '2026-10-11'),
+  'paused',
+)
+assert.equal(
+  deriveTaskStatus(task({ endDate: '2026-10-10', deadline: '2026-10-20' }), 100, '2026-10-11'),
+  'completed',
+)
 // A DDL before the start date is still a missed date.
 assert.equal(
   deriveTaskStatus(task({ startDate: '2026-10-20', deadline: '2026-10-10' }), 0, '2026-10-15'),
@@ -77,6 +108,19 @@ assert.equal(statusOn(...Object.values(parentAndChild(null))), 'in-progress')
 // Every child finished: the roll-up's completed wins over the parent's date.
 const done = parentAndChild('2026-10-10', [log('c1', '2026-10-10', 100)])
 assert.equal(statusOn(done.tasks, done.logs), 'completed')
+
+// A child past its plan but inside its ddl rolls up as overrun — and a child
+// that actually missed its ddl still outranks it for the branch.
+const overrunChild = [
+  task({ id: 'p1', startDate: '2026-10-01', endDate: '2026-10-30' }),
+  task({ id: 'c1', parentId: 'p1', startDate: '2026-10-01', endDate: '2026-10-10', deadline: '2026-10-20' }),
+]
+assert.equal(dayStates(overrunChild, [], '2026-10-12').get('p1').status, 'overrun')
+const mixedLateness = [
+  ...overrunChild,
+  task({ id: 'c2', parentId: 'p1', startDate: '2026-10-01', endDate: '2026-10-10', deadline: '2026-10-10' }),
+]
+assert.equal(dayStates(mixedLateness, [], '2026-10-12').get('p1').status, 'delayed')
 
 // --- the calendar's due day ----------------------------------------------
 

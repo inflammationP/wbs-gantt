@@ -1,6 +1,6 @@
 import { Project, Task, TaskLog, TaskStatus } from '../types'
 import { completedOn, isPausedOnDay, taskProgress } from './progress'
-import { todayISO } from './dates'
+import { toISO, todayISO } from './dates'
 
 export interface EffState {
   start: string | null
@@ -744,6 +744,7 @@ export function deriveStatus(statuses: TaskStatus[]): TaskStatus {
   if (statuses.length === 0) return 'not-started'
   if (statuses.every((s) => s === 'completed')) return 'completed'
   if (statuses.some((s) => s === 'delayed')) return 'delayed'
+  if (statuses.some((s) => s === 'overrun')) return 'overrun'
   if (statuses.some((s) => s === 'in-progress')) return 'in-progress'
   if (statuses.some((s) => s === 'paused')) return 'paused'
   if (statuses.every((s) => s === 'not-started')) return 'not-started'
@@ -771,11 +772,25 @@ export function deriveTaskStatus(task: Task, progress: number | null, today: str
   // ticked off, so it can run out of window like any other. The `progress >= 100`
   // line above still settles the finished case first. Long-term goals have no
   // end date; the deadline check above is the only late rule that can reach one.
-  if (task.type !== 'long-term' && task.endDate != null && today > task.endDate) return 'delayed'
+  //
+  // With a ddl still ahead, the window ending is an overrun, not a missed
+  // deadline — the promise has not been broken yet. The `today > deadline` line
+  // above has already caught the case where it has, so anything reaching here
+  // with a ddl is still inside it. With no ddl the end date is the only promise
+  // there is, and passing it is the delay the old rule always meant.
+  if (task.type !== 'long-term' && task.endDate != null && today > task.endDate) {
+    return task.deadline != null ? 'overrun' : 'delayed'
+  }
   return 'in-progress'
 }
 
 const stateIndexes = new WeakMap<Task[], WeakMap<TaskLog[], { day: string; states: Map<string, EffState> }>>()
+
+/** The local day a task was created, or null when the stamp is unreadable. */
+function createdDay(task: Task): string | null {
+  const at = new Date(task.createdAt)
+  return Number.isNaN(at.getTime()) ? null : toISO(at)
+}
 
 export function effectiveStates(tasks: Task[], logs: TaskLog[]): Map<string, EffState> {
   const now = new Date()
@@ -848,8 +863,10 @@ export function effectiveStates(tasks: Task[], logs: TaskLog[]): Map<string, Eff
         // phase parent's do.
         r = { start: t.startDate, end: null, progress, status }
       } else {
-        const starts = timed.map((e) => e.start).filter((s): s is string => s != null)
-        const start = starts.length ? starts.reduce((min, s) => (s < min ? s : min), starts[0]) : t.startDate
+        // A container's start is when it was created, not when its earliest
+        // child happens to begin: adding an earlier subtask must not move the
+        // parent's left edge back in time.
+        const start = createdDay(t) ?? t.startDate
         // End date is driven by non-completed children only: a late-scheduled
         // child that was completed early shouldn't skew the parent's end date.
         const active = timed.filter((e) => e.status !== 'completed')
@@ -933,17 +950,14 @@ export function archiveCascade(tasks: Task[], ids: string[]): string[] {
 
 
 /**
- * Keep each phase parent's dates in step with the span of its children — both
- * ways round.
+ * Keep each phase parent's window in step with its children — the end from
+ * their span, the start from its own creation day.
  *
- * **Both ends, and the start is the half that was missing.** A phase parent is a
- * container: it has no window of its own, and `effectiveStates` has always
- * derived both ends from its children. Only the end was ever written back — so a
- * parent's stored `startDate` stayed wherever it was first put, and since
- * `TaskBar` draws the *stored* window rather than the derived one, dragging a
- * subtask to the right moved the subtask's bar while the parent's left edge
- * stayed put. That is the whole of the "a parent seems to have a minimum length"
- * report: not a clamp anywhere, just a stored date nobody was updating.
+ * A phase parent is a container: it has no window of its own. Its end is the
+ * latest child end (the part that used to need writing back, because `TaskBar`
+ * draws the stored window); its start is fixed at the day the task was created,
+ * so adding an earlier-dated subtask cannot drag the parent's left edge
+ * backwards.
  *
  * **And the writing back is a cache, so it has to give back what it took.** The
  * stored pair is overwritten with the children's span while there is a span to
@@ -989,9 +1003,11 @@ export function syncParentDates(tasks: Task[], logs: TaskLog[]): Task[] {
     // from. Re-stashing on a later write would put the *derived* dates in there
     // and throw away the ones being kept.
     const ownWindow = t.ownWindow ?? { start: t.startDate, end: t.endDate }
-    if (t.ownWindow && e.start === t.startDate && e.end === t.endDate) return t
+    // The start is the container's own creation day; only the end rolls up.
+    const startDate = createdDay(t) ?? e.start
+    if (t.ownWindow && startDate === t.startDate && e.end === t.endDate) return t
     changed = true
-    return { ...t, ownWindow, startDate: e.start, endDate: e.end }
+    return { ...t, ownWindow, startDate, endDate: e.end }
   })
   return changed ? next : tasks
 }
@@ -1017,6 +1033,12 @@ export interface RowTask {
    * below belong to it, and folds them again.
    */
   todoGroup?: { id: string; count: number }
+  /**
+   * An archived row whose parent is still on the board. The drawer prints the
+   * parent path in front of its name, the same way the day's task list does,
+   * because the parent line itself is not in the drawer.
+   */
+  archiveParentPath?: boolean
 }
 
 // A folder-like header collecting the to-do children of one task. Synthesized by
@@ -1361,12 +1383,18 @@ export function buildRows(tasks: Task[], expanded: Record<string, boolean>, proj
       const inside = buildChildrenMap(tasks)
       const visitArchived = (t: Task, depth: number) => {
         const kids = inside.get(t.id) ?? []
+        const parent = t.parentId == null ? undefined : allById.get(t.parentId)
         rows.push({
           kind: 'task',
           id: t.id,
           task: t,
           depth,
           ancestors: ancestorNames(t, allById),
+          // A child filed away from a parent still on the board has no parent
+          // line here; it prints the path in front of its name instead, the same
+          // way the day's task list does. A row under an archived parent is
+          // already under it and needs no second copy of the path.
+          archiveParentPath: !!parent && !isArchived(parent),
           // No number to print: an archived task has left the numbering, and
           // inventing one here would disagree with the WBS the day the branch
           // comes back. The cell stays empty rather than carrying a placeholder,

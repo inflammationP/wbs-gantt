@@ -24,7 +24,7 @@ import { createServer } from 'vite'
 
 const server = await createServer({ server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' })
 const { opensLogDay, isLogDayOpen } = await server.ssrLoadModule('/src/lib/logs.ts')
-const { taskProgress } = await server.ssrLoadModule('/src/lib/progress.ts')
+const { taskProgress, lastProgressOn, daysSinceProgress } = await server.ssrLoadModule('/src/lib/progress.ts')
 
 /** Local midnight, the way `toDate` builds the dates the app passes in. */
 const on = (iso) => {
@@ -114,6 +114,27 @@ assert.equal(opensLogDay([log('a', DAY, 40)], 'a', DAY), false)
 // No entry at all for the task: the fallback still counts logged days, which is
 // what keeps the logs written before the field existed from reading 0%.
 assert.equal(taskProgress(T, [log('a', '2026-09-01')], on('2026-09-01')), 20)
+
+// --- when the task last moved -----------------------------------------------
+//
+// The planning dialog asks this to mark work that has gone quiet. Both ways a
+// task's number moves count (a log, a tick), and the answer is read as of the
+// day being planned — a log dated later is not that day's progress.
+
+const TICKED = task({ confirmedDays: [DAY] })
+
+assert.equal(lastProgressOn(T, [], DAY), null, 'nothing written and nothing ticked')
+assert.equal(lastProgressOn(T, [log('a', '2026-08-30'), log('a', '2026-09-01')], DAY), '2026-09-01')
+assert.equal(lastProgressOn(T, [log('a', '2026-09-03')], DAY), null, 'a later day is not this day')
+assert.equal(lastProgressOn(T, [log('b', DAY)], DAY), null, "another task's work is not this task's")
+// Whichever happened later wins, whichever kind of task it is.
+assert.equal(lastProgressOn(TICKED, [log('a', '2026-09-01')], DAY), DAY)
+assert.equal(lastProgressOn(task({ confirmedDays: ['2026-09-01'] }), [log('a', '2026-09-02')], DAY), '2026-09-02')
+// The planning dialog's sentence: positive is "this many days ago".
+assert.equal(daysSinceProgress(T, [log('a', '2026-08-31')], DAY), 2)
+assert.equal(daysSinceProgress(T, [], DAY), null, 'nothing to count from')
+assert.equal(daysSinceProgress(task({ confirmedDays: ['2026-08-31'] }), [], DAY), 2, 'a tick is the record too')
+assert.equal(daysSinceProgress(TICKED, [], DAY), 0, 'moved today')
 
 await server.close()
 console.log('log progress: ok')

@@ -156,6 +156,8 @@ body,
   --c-completed-text: 26 127 55;
   --c-paused: 9 105 218;
   --c-paused-text: 9 105 218;
+  --c-overrun: 173 83 13;
+  --c-overrun-text: 173 83 13;
   --c-delayed: 207 34 46;
   --c-delayed-text: 207 34 46;
 
@@ -181,6 +183,8 @@ body,
   --c-completed-text: 63 185 80;
   --c-paused: 88 166 255;
   --c-paused-text: 88 166 255;
+  --c-overrun: 245 138 60;
+  --c-overrun-text: 245 138 60;
   --c-delayed: 248 81 73;
   --c-delayed-text: 248 81 73;
 }

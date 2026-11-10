@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
-import { Check, ChevronDown, ChevronRight, NotebookText, Pencil, Plus, ScrollText, TriangleAlert } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, NotebookText, Pencil, Plus, ScrollText, Trash2, TriangleAlert } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { Chore, ChoreSlot, DaySortMode, Habit, ItemLog, TaskLog } from '../types'
 import { DayRow, dayProgressRate, dayRowStruck, daySummary, parentPath } from '../lib/dayTasks'
@@ -427,7 +427,7 @@ export function DayBoard({
         </ProgressRing>
 
         {layout === 'side' ? (
-          <div className="flex-1 min-w-0 grid grid-cols-3 gap-3">
+          <div className="flex-1 min-w-0 grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-3">
             <Stat soft label={t('common.progress')} value={ringValue} sub={ringView.caption} />
             <Stat soft label={t('common.tasks')} value={String(taskCount)} sub={t('day.tasksBreakdown', { strict: summary.strict.length, other: summary.nonStrict.length })} />
             <Stat soft label={t('chore.section')} value={`${choresDone}/${dayChores.length}`} sub={choresSub} />
@@ -848,6 +848,7 @@ export function ChoreRow({
   const t = useT()
   const lang = useLang()
   const toggleChore = useStore((s) => s.toggleChore)
+  const deleteChore = useStore((s) => s.deleteChore)
   const { ask, element: dialogs } = useDialogs()
   const [editing, setEditing] = useState(false)
   // Only an *open* chore can be carried: one finished after its day is done,
@@ -910,14 +911,26 @@ export function ChoreRow({
       )}
 
       {editable && (
-        <button
-          onClick={() => setEditing(true)}
-          title={t('chore.edit')}
-          aria-label={t('chore.edit')}
-          className="shrink-0 mt-[1px] p-0.5 rounded-[3px] text-dim hover:text-fg opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
-        >
-          <Pencil size={12} />
-        </button>
+        <>
+          <button
+            onClick={() => setEditing(true)}
+            title={t('chore.edit')}
+            aria-label={t('chore.edit')}
+            className="shrink-0 mt-[1px] p-0.5 rounded-[3px] text-dim hover:text-fg opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+          >
+            <Pencil size={12} />
+          </button>
+          {/* No confirm, matching the dialog's own delete: a chore is a line of
+              text, and asking costs more than retyping it. */}
+          <button
+            onClick={() => deleteChore(chore.id)}
+            title={t('common.delete')}
+            aria-label={t('common.delete')}
+            className="shrink-0 mt-[1px] p-0.5 rounded-[3px] text-dim hover:text-delayed opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+          >
+            <Trash2 size={12} />
+          </button>
+        </>
       )}
 
       {editing && <ChoreDialog chore={chore} onClose={() => setEditing(false)} />}
@@ -1251,6 +1264,11 @@ export function HabitLine({
         <div className={`text-[12px] break-words ${ticked ? 'line-through text-dim' : 'text-fg/90'}`}>
           {habit.title}
         </div>
+        {!hasKids && habit.durationMinutes != null && (
+          <div className="text-[10px] text-dim mt-0.5">
+            {t('time.minutes', { count: habit.durationMinutes })}
+          </div>
+        )}
         {/* The note goes on its own line rather than beside the title, for the
             reason `ChoreRow` puts its carried badge there: the pane is only ever
             a few hundred pixels wide, and the part being read is the name. */}
@@ -1289,6 +1307,14 @@ export function HabitLine({
             className="shrink-0 mt-[1px] p-0.5 rounded-[3px] text-dim hover:text-fg opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
           >
             <Pencil size={12} />
+          </button>
+          <button
+            onClick={() => ask(t('habit.deleteAsk', { name: habit.title }), () => deleteHabit(habit.id))}
+            title={t('common.delete')}
+            aria-label={t('common.delete')}
+            className="shrink-0 mt-[1px] p-0.5 rounded-[3px] text-dim hover:text-delayed opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+          >
+            <Trash2 size={12} />
           </button>
         </>
       )}

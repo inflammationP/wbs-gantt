@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { CircleAlert } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { planOn, plannedIds, promptDue } from '../lib/schedule'
@@ -21,17 +21,27 @@ export function PlanPrompt() {
   const t = useT()
   const today = useStore((s) => s.today)
   const dayPlans = useStore((s) => s.dayPlans)
+  const hasTasks = useStore((s) => s.tasks.length > 0)
   const skipTodayPlan = useStore((s) => s.skipTodayPlan)
   const [open, setOpen] = useState(() => {
     const s = useStore.getState()
-    return promptDue(planOn(s.dayPlans, s.today), s.planSkippedOn, s.today)
+    return promptDue(planOn(s.dayPlans, s.today), s.planSkippedOn, s.today, s.tasks.length > 0)
   })
+
+  // An empty board has nothing to plan, and asking a fresh install to plan a
+  // blank day is the first thing it would say. Today is recorded as put off so
+  // that creating a task later today still gets its prompt tomorrow rather than
+  // at the next cold start; if tomorrow is empty too, this runs again and
+  // pushes it one more day.
+  useEffect(() => {
+    if (!hasTasks) skipTodayPlan()
+  }, [hasTasks, skipTodayPlan])
 
   const unplanned = plannedIds(planOn(dayPlans, today)) === undefined
 
   return (
     <>
-      {unplanned && !open && (
+      {hasTasks && unplanned && !open && (
         <button
           onClick={() => setOpen(true)}
           title={t('plan.promptTag')}

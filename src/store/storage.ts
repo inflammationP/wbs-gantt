@@ -1,4 +1,4 @@
-import { Chore, DayPlan, DaySortMode, Habit, ItemLog, Note, Project, ScheduleBlock, Stamp, StickyNote, Task, TaskLog, TaskPriority } from '../types'
+import { Chore, CourseSession, DayPlan, DaySortMode, Habit, ItemLog, Note, Project, ScheduleBlock, Stamp, StickyNote, Task, TaskLog, TaskPriority } from '../types'
 import { DEFAULT_LANG, isLang, Lang } from '../lib/i18n'
 import { liftTimes, paragraphs } from '../lib/logs'
 import { isArchived } from '../lib/tree'
@@ -65,6 +65,14 @@ export interface PersistedData {
   scheduleBlocks?: ScheduleBlock[]
   /** The corkboard's cards — see `StickyNote` in types.ts. Optional like the rest. */
   stickyNotes?: StickyNote[]
+  /** The imported weekly timetable — see `CourseSession` in types.ts. */
+  courses?: CourseSession[]
+  /**
+   * Monday of semester week 1, `yyyy-MM-dd`, or null before anything is
+   * imported. A class stores its week number; this is what turns a date into
+   * one, so without it nothing can be placed on a day.
+   */
+  semesterStart?: string | null
 }
 
 /**
@@ -85,6 +93,7 @@ export function workData(source: LoadedData): LoadedData {
     itemLogs: source.itemLogs, todoFolders: source.todoFolders,
     dayPlans: source.dayPlans, scheduleBlocks: source.scheduleBlocks,
     stickyNotes: source.stickyNotes,
+    courses: source.courses, semesterStart: source.semesterStart,
   }
 }
 
@@ -117,6 +126,18 @@ export interface Prefs {
    * not view state: it is chosen once and should still be there tomorrow.
    */
   daySort: DaySortMode
+  /**
+   * Share of the Today page's width the timetable takes; the task area takes
+   * the rest. 0.2–0.6, default a thick left pane.
+   */
+  daySplit: number
+  /**
+   * The user's own DeepSeek key. Stored locally in clear text, outside the
+   * board export, like `reminderToken`; it never enters a saved board.
+   */
+  aiApiKey: string
+  /** DeepSeek model name; `deepseek-flash` unless the user says otherwise. */
+  aiModel: string
   /**
    * The "create as to-do" note has been read and acknowledged.
    *
@@ -277,6 +298,9 @@ export const DEFAULT_PREFS: Prefs = {
   lang: DEFAULT_LANG,
   theme: DEFAULT_THEME,
   daySort: 'status',
+  daySplit: 0.32,
+  aiApiKey: '',
+  aiModel: 'deepseek-flash',
   todoNoteDismissed: false,
   updateAnchorAt: null,
   nagShownAt: null,
@@ -360,6 +384,18 @@ export function loadPrefs(): Prefs {
       lang: typeof parsed.lang === 'string' && isLang(parsed.lang) ? parsed.lang : DEFAULT_PREFS.lang,
       theme: typeof parsed.theme === 'string' && isThemeId(parsed.theme) ? parsed.theme : DEFAULT_THEME,
       daySort: parsed.daySort === 'priority' ? 'priority' : DEFAULT_PREFS.daySort,
+      daySplit:
+        typeof parsed.daySplit === 'number' &&
+        Number.isFinite(parsed.daySplit) &&
+        parsed.daySplit >= 0.2 &&
+        parsed.daySplit <= 0.6
+          ? parsed.daySplit
+          : DEFAULT_PREFS.daySplit,
+      aiApiKey: typeof parsed.aiApiKey === 'string' ? parsed.aiApiKey : DEFAULT_PREFS.aiApiKey,
+      aiModel:
+        typeof parsed.aiModel === 'string' && parsed.aiModel.trim()
+          ? parsed.aiModel.trim()
+          : DEFAULT_PREFS.aiModel,
       todoNoteDismissed:
         typeof parsed.todoNoteDismissed === 'boolean'
           ? parsed.todoNoteDismissed
@@ -568,6 +604,46 @@ function readPlanHours(v: unknown, ids: Set<string>): Record<string, number> | u
 }
 
 /**
+ * Imported classes, sanitized like every other row that arrives from a file.
+ *
+ * A class that cannot be placed — a week or weekday outside the range, an
+ * unreadable time, an empty title — is dropped rather than guessed at. The
+ * semester start is what makes a week number mean a date, so it is validated
+ * separately.
+ */
+export function readCourses(value: unknown): CourseSession[] {
+  if (!Array.isArray(value)) return []
+  const seen = new Set<string>()
+  const out: CourseSession[] = []
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
+    const row = raw as Record<string, unknown>
+    const week = typeof row.week === 'number' && Number.isInteger(row.week) ? row.week : 0
+    const weekday = typeof row.weekday === 'number' && Number.isInteger(row.weekday) ? row.weekday : -1
+    const start = typeof row.start === 'string' ? row.start : ''
+    const end = typeof row.end === 'string' ? row.end : ''
+    const title = typeof row.title === 'string' ? row.title.trim().slice(0, 200) : ''
+    if (week < 1 || week > 60 || weekday < 0 || weekday > 6) continue
+    if (!isHHMM(start) || !isHHMM(end) || (minutesOf(end) ?? 0) <= (minutesOf(start) ?? 0) || !title) continue
+    const location = typeof row.location === 'string' ? row.location.trim().slice(0, 120) : ''
+    const note = typeof row.note === 'string' ? row.note.trim().slice(0, 500) : ''
+    // Location and note are in the key: two groups' variants can share a
+    // title and a time, and they are not the same class.
+    const key = `${week}|${weekday}|${start}|${end}|${title}|${location}|${note}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({ week, weekday, start, end, title, location, note })
+  }
+  return out.sort(
+    (a, b) =>
+      a.week - b.week ||
+      a.weekday - b.weekday ||
+      a.start.localeCompare(b.start) ||
+      a.title.localeCompare(b.title),
+  )
+}
+
+/**
  * Timetable blocks, sanitized on the same terms.
  *
  * Times are strict `HH:MM` because a block's geometry is derived from them; a
@@ -590,8 +666,12 @@ function readScheduleBlocks(value: unknown): ScheduleBlock[] {
     const deadline = row.deadline === true
     if (!deadline && (minutesOf(end) ?? 0) <= (minutesOf(start) ?? 0)) continue
     const taskId = typeof row.taskId === 'string' && row.taskId.trim() !== '' ? row.taskId : undefined
+    const habitId = typeof row.habitId === 'string' && row.habitId.trim() !== '' ? row.habitId : undefined
+    const choreId = typeof row.choreId === 'string' && row.choreId.trim() !== '' ? row.choreId : undefined
     const title = typeof row.title === 'string' ? row.title : ''
-    if (!title.trim() && !taskId) continue
+    const laneOrder =
+      typeof row.laneOrder === 'number' && Number.isFinite(row.laneOrder) ? row.laneOrder : undefined
+    if (!title.trim() && !taskId && !habitId && !choreId) continue
     seen.add(id)
     out.push({
       id,
@@ -600,6 +680,9 @@ function readScheduleBlocks(value: unknown): ScheduleBlock[] {
       end: deadline ? start : end,
       title,
       ...(taskId !== undefined ? { taskId } : {}),
+      ...(habitId !== undefined ? { habitId } : {}),
+      ...(choreId !== undefined ? { choreId } : {}),
+      ...(laneOrder !== undefined ? { laneOrder } : {}),
       ...(deadline ? { deadline: true } : {}),
     })
   }
@@ -720,6 +803,12 @@ function normalize(data: PersistedData): LoadedData {
       // what all seven says. Defaulting to an empty array would read as "never"
       // under a membership test — a silent way to delete somebody's list.
       weekdays: Array.isArray(h.weekdays) && h.weekdays.length ? ALL_DAYS.filter((d) => h.weekdays.includes(d)) : [...ALL_DAYS],
+      // A duration is a positive count of minutes or it is not an answer. A bad
+      // value becomes "not said" rather than a number nothing can render.
+      durationMinutes:
+        typeof h.durationMinutes === 'number' && Number.isFinite(h.durationMinutes) && h.durationMinutes > 0
+          ? Math.min(1440, Math.round(h.durationMinutes))
+          : null,
       paused: h.paused === true,
       pauseDate: h.pauseDate ?? null,
       pauses: Array.isArray(h.pauses) ? h.pauses : [],
@@ -816,6 +905,11 @@ function normalize(data: PersistedData): LoadedData {
     dayPlans: readDayPlans(data.dayPlans),
     scheduleBlocks: readScheduleBlocks(data.scheduleBlocks),
     stickyNotes: readStickyNotes(data.stickyNotes),
+    courses: readCourses(data.courses),
+    semesterStart:
+      typeof data.semesterStart === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(data.semesterStart)
+        ? data.semesterStart
+        : null,
   }
 }
 
@@ -965,6 +1059,8 @@ export function exportJson(data: PersistedData): string {
       dayPlans: data.dayPlans ?? [],
       scheduleBlocks: data.scheduleBlocks ?? [],
       stickyNotes: data.stickyNotes ?? [],
+      courses: data.courses ?? [],
+      semesterStart: data.semesterStart ?? null,
     },
     null,
     2,
@@ -994,6 +1090,8 @@ export function prepareData(parsed: PersistedData): LoadedData {
     dayPlans: parsed.dayPlans ?? [],
     scheduleBlocks: parsed.scheduleBlocks ?? [],
     stickyNotes: parsed.stickyNotes ?? [],
+    courses: parsed.courses ?? [],
+    semesterStart: parsed.semesterStart ?? null,
   })
 }
 

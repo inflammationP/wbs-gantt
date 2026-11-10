@@ -70,7 +70,13 @@ export function ManagePage() {
   const archived = useMemo(() => archivedRoots(tasks), [tasks])
 
   const overview = useMemo(() => {
-    const overdue = leaves.filter((task) => eff.get(task.id)?.status === 'delayed')
+    // Past plan (`overrun`) and past ddl (`delayed`) are one list here: the
+    // section is "work that needs attention", and the row's own status column
+    // is where the two are told apart.
+    const overdue = leaves.filter((task) => {
+      const status = eff.get(task.id)?.status
+      return status === 'delayed' || status === 'overrun'
+    })
     const todayTasks = leaves.filter((task) => task.startDate != null && task.endDate != null && task.startDate <= today && task.endDate >= today)
     const upcoming = leaves.filter((task) => task.startDate != null && task.startDate > today && task.startDate <= weekISO)
     return { overdue, todayTasks, upcoming }
@@ -82,7 +88,13 @@ export function ManagePage() {
       inProgress: byStatus('in-progress'),
       completed: byStatus('completed'),
       paused: byStatus('paused'),
-      delayed: byStatus('delayed'),
+      // The card is titled "Delayed" and has always counted every task past
+      // its planned end. Splitting the status must not make that number drop,
+      // so both halves of late work stay in it.
+      delayed: leaves.filter((task) => {
+        const status = eff.get(task.id)?.status
+        return status === 'delayed' || status === 'overrun'
+      }).length,
       todo: byStatus('todo'),
       // Work that has not started yet but begins inside the week.
       comingSoon: leaves.filter((task) => task.startDate != null && task.startDate > today && task.startDate <= weekISO).length,
@@ -129,14 +141,14 @@ export function ManagePage() {
 
   return (
     <div className="flex-1 overflow-auto">
-      <div className="max-w-6xl mx-auto p-6 space-y-6">
+      <div className="p-6 space-y-6">
         <h1 className="text-[18px] font-semibold text-fg">{t('nav.manage')}</h1>
 
         {/* ---- Overall ---- */}
         <div>
           <h2 className="text-[14px] font-semibold text-fg mb-3">{t('manage.overall')}</h2>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3">
             <Stat label={t('sidebar.projects')} value={String(projects.length)} sub={t('manage.sub.tracked')} />
             {/* The subtasks are the headline because they are the work; the
                 parent count is the shape it hangs from. It used to be the other
@@ -148,7 +160,7 @@ export function ManagePage() {
 
           {/* The bands are nested now, so the parent's `space-y-6` no longer
               separates these two grids — hence the explicit `mt-4`. */}
-          <div className="grid grid-cols-3 gap-4 mt-4">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(250px,1fr))] gap-4 mt-4">
             <Section title={t('time.today')}>
               {overview.todayTasks.length === 0 && <Empty />}
               {overview.todayTasks.map((task) => (
@@ -217,7 +229,7 @@ export function ManagePage() {
             the board; it does not add to it. */}
         <div>
           <h2 className="text-[14px] font-semibold text-fg mb-3">{t('sidebar.projects')}</h2>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(300px,1fr))] gap-3">
             {projects.map((p) => {
               const s = statsFor(p.id)
               return (
@@ -275,7 +287,7 @@ export function ManagePage() {
 
           {/* Counts are not mutually exclusive — one task can be both in progress
               and starting this week — so they do not sum to the total. */}
-          <div className="grid grid-cols-6 gap-3 mb-4">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-3 mb-4">
             <Stat label={t('status.inProgress')} value={String(counts.inProgress)} sub={t('manage.sub.active')} />
             <Stat label={t('status.completed')} value={String(counts.completed)} sub={t('manage.sub.done')} />
             <Stat label={t('status.paused')} value={String(counts.paused)} sub={t('manage.sub.paused')} />
@@ -446,6 +458,9 @@ function HabitRow({
           <span className="shrink-0">
             {everyDay ? t('habit.everyDay') : weekdays.map((d) => labels[d]).join(' · ')}
           </span>
+          {!hasKids && habit.durationMinutes != null && (
+            <span className="shrink-0">{t('time.minutes', { count: habit.durationMinutes })}</span>
+          )}
           {!hasKids && habit.endDate && (
             <span className="shrink-0 font-mono">
               {t('habit.endDate')} {formatShortDate(lang, toDate(habit.endDate))}

@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { create } from 'zustand'
-import { AppView, Chore, ChoreSlot, DayPlan, DaySortMode, Habit, ItemLog, Note, Postponement, Project, ScheduleBlock, StickyNote, Task, TaskLog, TaskPriority, TaskType, ViewMode } from '../types'
+import { AppView, Chore, ChoreSlot, CourseSession, DayPlan, DaySortMode, Habit, ItemLog, Note, Postponement, Project, ScheduleBlock, StickyNote, Task, TaskLog, TaskPriority, TaskType, ViewMode } from '../types'
 import { ALL_DAYS, habitBranch, runsOn } from '../lib/habits'
 import { todaysChores } from '../lib/chores'
 import { todayISO, addDays, diffDays, pad, toDate, toISO } from '../lib/dates'
@@ -12,6 +12,7 @@ import {
   buildRows,
   collectDescendants,
   hasChildren,
+  effectiveStates,
   isArchived,
   liveTasks,
   placeTasks,
@@ -164,6 +165,15 @@ export interface State {
   scheduleBlocks: ScheduleBlock[]
   /** The corkboard's cards — see `StickyNote` in types.ts. */
   stickyNotes: StickyNote[]
+  /** The imported weekly timetable — see `CourseSession` in types.ts. */
+  courses: CourseSession[]
+  /** Monday of semester week 1, `yyyy-MM-dd`; null before anything is imported. */
+  semesterStart: string | null
+  /**
+   * Tasks that just became completed, whose rows carry a "plan next" chip until
+   * the day is planned again. Runtime only: a restart is not a reminder.
+   */
+  planNudges: string[]
   activeView: AppView
   // Bumped by `openGantt` and used as the Gantt page's React key, so clicking
   // the nav item remounts it rather than reusing the mounted one.
@@ -191,6 +201,11 @@ export interface State {
   theme: ThemeId
   /** How the Today and date-detail task lists are ordered. */
   daySort: DaySortMode
+  /** Timetable's share of the Today page's width; the task area takes the rest. */
+  daySplit: number
+  /** The user's DeepSeek key; local only, never part of a board export. */
+  aiApiKey: string
+  aiModel: string
   /**
    * The to-do note in the task dialog has been acknowledged. A preference, not
    * view state: it survives a reload, and it is not part of an imported board.
@@ -272,6 +287,8 @@ export interface State {
   setLang: (l: Lang) => void
   setTheme: (t: ThemeId) => void
   setDaySort: (s: DaySortMode) => void
+  setDaySplit: (value: number) => void
+  setAiConfig: (patch: { apiKey?: string; model?: string }) => void
   setActiveView: (v: AppView) => void
   openGantt: () => void
   setSelected: (id: string | null) => void
@@ -434,6 +451,18 @@ export interface State {
   setDayCapacity: (date: string, hours: number) => void
   addScheduleBlock: (input: Omit<ScheduleBlock, 'id'>) => string
   updateScheduleBlock: (id: string, patch: Partial<Omit<ScheduleBlock, 'id' | 'date'>>) => void
+  /**
+   * Replace the classes of every week the import touched, and keep the rest.
+   * Re-importing a file with weeks 7–12 must not wipe weeks 13–16 from an
+   * earlier file.
+   */
+  importCourses: (sessions: CourseSession[], semesterStart: string) => void
+  /** Edit one imported class in place; `target` is the row as it was shown. */
+  updateCourse: (
+    target: CourseSession,
+    patch: Partial<Pick<CourseSession, 'title' | 'location' | 'start' | 'end'>>,
+  ) => void
+  clearCourses: () => void
   deleteScheduleBlock: (id: string) => void
 
   /** Pin a blank card at a viewport point; returns its id. */
@@ -503,7 +532,13 @@ export interface State {
    */
   addHabit: (
     title: string,
-    init?: { note?: string; weekdays?: number[]; endDate?: string | null; parentId?: string | null },
+    init?: {
+      note?: string
+      weekdays?: number[]
+      endDate?: string | null
+      parentId?: string | null
+      durationMinutes?: number | null
+    },
   ) => void
   updateHabit: (id: string, patch: Partial<Habit>) => void
   /** No day argument on purpose — see the implementation. */
@@ -595,16 +630,23 @@ function readBlockInput(
   const date = input.date?.trim() ?? ''
   const title = input.title.trim()
   const taskId = input.taskId?.trim() || undefined
+  const habitId = input.habitId?.trim() || undefined
+  const choreId = input.choreId?.trim() || undefined
   if (!date || !isHHMM(input.start) || !isHHMM(input.end)) return null
   const deadline = input.deadline === true
   if (!deadline && (minutesOf(input.end) ?? 0) <= (minutesOf(input.start) ?? 0)) return null
-  if (!title && !taskId) return null
+  if (!title && !taskId && !habitId && !choreId) return null
+  const laneOrder =
+    typeof input.laneOrder === 'number' && Number.isFinite(input.laneOrder) ? input.laneOrder : undefined
   return {
     date,
     start: input.start,
     end: deadline ? input.start : input.end,
     title,
     ...(taskId ? { taskId } : {}),
+    ...(habitId ? { habitId } : {}),
+    ...(choreId ? { choreId } : {}),
+    ...(laneOrder !== undefined ? { laneOrder } : {}),
     ...(deadline ? { deadline: true } : {}),
   }
 }
@@ -647,6 +689,9 @@ function persistPrefs(): void {
     lang,
     theme,
     daySort,
+    daySplit,
+    aiApiKey,
+    aiModel,
     todoNoteDismissed,
     updateAnchorAt,
     nagShownAt,
@@ -667,6 +712,9 @@ function persistPrefs(): void {
     lang,
     theme,
     daySort,
+    daySplit,
+    aiApiKey,
+    aiModel,
     todoNoteDismissed,
     updateAnchorAt,
     nagShownAt,
@@ -731,6 +779,30 @@ function persistWork(): void {
   } else if (state.storageIssue) {
     useStore.setState({ storageIssue: null })
   }
+}
+
+/** The board's states right now, for comparing with what a write leaves behind. */
+function statesNow(): ReturnType<typeof effectiveStates> {
+  const state = useStore.getState()
+  return effectiveStates(state.tasks, state.logs)
+}
+
+/**
+ * Mark the task this write has just finished, so the Gantt can offer "plan
+ * next" on its row. `before` is the state map read before the write.
+ *
+ * The task written about, not every ancestor it may roll up into: the chip is
+ * for the piece of work that just ended, and a parent finishing with its last
+ * child is not a second thing to answer.
+ */
+function noteCompleted(taskId: string, before: ReturnType<typeof effectiveStates>): void {
+  if (before.get(taskId)?.status === 'completed') return
+  const state = useStore.getState()
+  if (effectiveStates(state.tasks, state.logs).get(taskId)?.status !== 'completed') return
+  const task = state.tasks.find((t) => t.id === taskId)
+  if (!task || task.isTodo || isArchived(task)) return
+  if (state.planNudges.includes(taskId)) return
+  useStore.setState({ planNudges: [...state.planNudges, taskId] })
 }
 
 /** `HH:MM`, local. The tree is read at a glance; a date would be noise. */
@@ -843,6 +915,9 @@ export const useStore = create<State>()((rawSet, get) => {
   dayPlans: initial.dayPlans,
   scheduleBlocks: initial.scheduleBlocks,
   stickyNotes: initial.stickyNotes,
+  courses: initial.courses,
+  semesterStart: initial.semesterStart,
+  planNudges: [],
   lastUndo: null,
   history: EMPTY_HISTORY,
   activeView: 'gantt',
@@ -860,6 +935,9 @@ export const useStore = create<State>()((rawSet, get) => {
   lang: prefs.lang,
   theme: prefs.theme,
   daySort: prefs.daySort,
+  daySplit: prefs.daySplit,
+  aiApiKey: prefs.aiApiKey,
+  aiModel: prefs.aiModel,
   todoNoteDismissed: prefs.todoNoteDismissed,
   updatePhase: 'idle',
   updateInfo: null,
@@ -900,6 +978,20 @@ export const useStore = create<State>()((rawSet, get) => {
   },
   setDaySort: (s) => {
     set({ daySort: s })
+    persistPrefs()
+  },
+  setDaySplit: (value) => {
+    if (!Number.isFinite(value)) return
+    const next = Math.max(0.2, Math.min(0.6, value))
+    if (get().daySplit === next) return
+    set({ daySplit: next })
+    persistPrefs()
+  },
+  setAiConfig: (patch) => {
+    const apiKey = patch.apiKey === undefined ? get().aiApiKey : patch.apiKey.trim()
+    const model = patch.model === undefined ? get().aiModel : patch.model.trim() || 'deepseek-flash'
+    if (apiKey === get().aiApiKey && model === get().aiModel) return
+    set({ aiApiKey: apiKey, aiModel: model })
     persistPrefs()
   },
   setActiveView: (v) => set({ activeView: v }),
@@ -1363,6 +1455,7 @@ export const useStore = create<State>()((rawSet, get) => {
     // The callers hide the way in; this is the line that makes the rule true,
     // so an entry cannot arrive from a path that forgot to ask.
     if (!isLogDayOpen(input.date, get().today)) return ''
+    const before = statesNow()
     const existing = get().logs.find((l) => l.taskId === input.taskId && l.date === input.date)
     if (existing) {
       set((s) => ({
@@ -1390,6 +1483,7 @@ export const useStore = create<State>()((rawSet, get) => {
             : l,
         ),
       }))
+      noteCompleted(input.taskId, before)
       return existing.id
     }
 
@@ -1413,21 +1507,23 @@ export const useStore = create<State>()((rawSet, get) => {
         },
       ],
     }))
+    noteCompleted(input.taskId, before)
     return id
   },
 
   // Never persisted, and nothing else has to be told: the notice and the
   // sidebar's dot both read this beside the phase, so one write puts both away.
-  updateLog: (id, targetProgress) =>
-    set((s) => {
-      const target = s.logs.find((l) => l.id === id)
-      if (!target || !isLogDayOpen(target.date, s.today)) return {}
-      return {
-        logs: s.logs.map((l) =>
-          l.id === id ? { ...l, targetProgress, updatedAt: new Date().toISOString() } : l,
-        ),
-      }
-    }),
+  updateLog: (id, targetProgress) => {
+    const target = get().logs.find((l) => l.id === id)
+    if (!target || !isLogDayOpen(target.date, get().today)) return
+    const before = statesNow()
+    set((s) => ({
+      logs: s.logs.map((l) =>
+        l.id === id ? { ...l, targetProgress, updatedAt: new Date().toISOString() } : l,
+      ),
+    }))
+    noteCompleted(target.taskId, before)
+  },
 
   pauseTask: (id, reason) => {
     const text = reason.trim()
@@ -1589,7 +1685,8 @@ export const useStore = create<State>()((rawSet, get) => {
   // The one write a simplified task's progress ever gets: this day happened, or
   // it didn't. A day can be ticked after the fact — that is how a missed one is
   // backfilled from the day panel — but nothing here takes a number.
-  toggleTaskDay: (id, day) =>
+  toggleTaskDay: (id, day) => {
+    const before = statesNow()
     set((s) => ({
       tasks: s.tasks.map((t) => {
         // Filing a task away stops the ticking with the rest of it: the day
@@ -1603,7 +1700,9 @@ export const useStore = create<State>()((rawSet, get) => {
           updatedAt: new Date().toISOString(),
         }
       }),
-    })),
+    }))
+    noteCompleted(id, before)
+  },
 
   // File a branch away, or bring it back. One `archivedAt` for the whole
   // branch, taken once so that "everything archived together says so", and one
@@ -1711,6 +1810,8 @@ export const useStore = create<State>()((rawSet, get) => {
       }
       return { dayPlans: s.dayPlans.map((p) => (p === existing ? next : p)) }
     })
+    // Saving a plan is the answer to "plan next"; the chips have done their job.
+    if (get().planNudges.length > 0) set({ planNudges: [] })
   },
 
   skipTodayPlan: () => {
@@ -1769,7 +1870,7 @@ export const useStore = create<State>()((rawSet, get) => {
       const row = readBlockInput(rest)
       if (!row) return {}
       const next = { id, ...row }
-      const same = (['date', 'start', 'end', 'title', 'taskId', 'deadline'] as const).every(
+      const same = (['date', 'start', 'end', 'title', 'taskId', 'habitId', 'choreId', 'laneOrder', 'deadline'] as const).every(
         (key) => existing[key] === next[key],
       )
       return same ? {} : { scheduleBlocks: s.scheduleBlocks.map((b) => (b.id === id ? next : b)) }
@@ -1778,6 +1879,41 @@ export const useStore = create<State>()((rawSet, get) => {
 
   deleteScheduleBlock: (id) =>
     set((s) => ({ scheduleBlocks: s.scheduleBlocks.filter((b) => b.id !== id) })),
+
+  importCourses: (sessions, semesterStart) => {
+    const weeks = new Set(sessions.map((s) => s.week))
+    set((s) => ({
+      courses: [...s.courses.filter((c) => !weeks.has(c.week)), ...sessions].sort(
+        (a, b) =>
+          a.week - b.week ||
+          a.weekday - b.weekday ||
+          a.start.localeCompare(b.start) ||
+          a.title.localeCompare(b.title),
+      ),
+      semesterStart,
+    }))
+  },
+
+  updateCourse: (target, patch) =>
+    set((s) => {
+      let changed = false
+      const courses = s.courses.map((course) => {
+        const match =
+          course.week === target.week &&
+          course.weekday === target.weekday &&
+          course.start === target.start &&
+          course.end === target.end &&
+          course.title === target.title &&
+          course.location === target.location &&
+          course.note === target.note
+        if (!match) return course
+        changed = true
+        return { ...course, ...patch }
+      })
+      return changed ? { courses } : {}
+    }),
+
+  clearCourses: () => set({ courses: [], semesterStart: null }),
 
   addStickyNote: (at) => {
     const id = uid()
@@ -1950,6 +2086,7 @@ export const useStore = create<State>()((rawSet, get) => {
           // it. `addHabit` is also the Today column's quick path — a title and
           // Enter — where there is nothing to narrow it with.
           weekdays: init?.weekdays?.length ? init.weekdays : [...ALL_DAYS],
+          durationMinutes: init?.durationMinutes ?? null,
           paused: false,
           pauseDate: null,
           pauses: [],
@@ -2106,7 +2243,9 @@ useStore.subscribe((state, prev) => {
     state.todoFolders !== prev.todoFolders ||
     state.dayPlans !== prev.dayPlans ||
     state.scheduleBlocks !== prev.scheduleBlocks ||
-    state.stickyNotes !== prev.stickyNotes
+    state.stickyNotes !== prev.stickyNotes ||
+    state.courses !== prev.courses ||
+    state.semesterStart !== prev.semesterStart
   ) {
     if (inGesture) persistenceDirty = true
     else persistWork()

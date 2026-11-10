@@ -127,6 +127,35 @@ export function taskProgress(task: Task, logs: TaskLog[], onDate: Date): number 
 }
 
 /**
+ * The latest day this task moved, or null when nothing has moved it yet.
+ *
+ * The two halves are the two ways a task's number changes (`taskProgress`): a
+ * log written about it, or a tick on its simplified calendar. Reading both is
+ * what lets the planning dialog ask one question of every kind of task.
+ *
+ * Bounded by `day`: work dated after the day being planned is not progress that
+ * day can count.
+ */
+export function lastProgressOn(task: Task, logs: TaskLog[], day: string): string | null {
+  let last: string | null = null
+  for (const l of logsFor(logs, task.id)) if (l.date <= day && (last === null || l.date > last)) last = l.date
+  for (const d of task.confirmedDays ?? []) if (d <= day && (last === null || d > last)) last = d
+  return last
+}
+
+/**
+ * Days from a task's last movement to `day`, or null when it has none yet.
+ *
+ * Signed into the one direction the planner reads: positive means "this many
+ * days ago". The subtraction is kept here rather than at the call site so the
+ * sign is asserted once, with the rest of the progress rules.
+ */
+export function daysSinceProgress(task: Task, logs: TaskLog[], day: string): number | null {
+  const last = lastProgressOn(task, logs, day)
+  return last == null ? null : diffDays(toDate(last), toDate(day))
+}
+
+/**
  * The day a task was actually finished, or null while it is not.
  *
  * Asked by walking the days this task's number could have moved on and taking

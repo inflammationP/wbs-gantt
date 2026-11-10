@@ -1,4 +1,4 @@
-import { Chore, DayPlan, Habit, ItemLog, Note, Project, ScheduleBlock, StickyNote, Task, TaskLog } from '../types'
+import { Chore, CourseSession, DayPlan, Habit, ItemLog, Note, Project, ScheduleBlock, StickyNote, Task, TaskLog } from '../types'
 
 // Fresh installs start empty — no bundled demo data.
 //
@@ -17,6 +17,8 @@ export function buildSeed(): {
   dayPlans: DayPlan[]
   scheduleBlocks: ScheduleBlock[]
   stickyNotes: StickyNote[]
+  courses: CourseSession[]
+  semesterStart: string | null
 } {
   return {
     projects: [],
@@ -30,5 +32,7 @@ export function buildSeed(): {
     dayPlans: [],
     scheduleBlocks: [],
     stickyNotes: [],
+    courses: [],
+    semesterStart: null,
   }
 }

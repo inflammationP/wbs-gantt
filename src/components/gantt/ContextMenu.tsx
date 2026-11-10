@@ -204,7 +204,7 @@ export function ContextMenu({ menu, onClose, onAddChild, onAddSibling, onEdit, o
             theirs. Finished work is on the list for the same reason. A to-do
             is not: it has no schedule, so there is no window for a day of it
             to be part of, and `taskProgress` reads nothing back for one. */}
-        {menu.row.eff.status === 'in-progress' || menu.row.eff.status === 'delayed' || menu.row.eff.status === 'completed' ? (
+        {menu.row.eff.status === 'in-progress' || menu.row.eff.status === 'overrun' || menu.row.eff.status === 'delayed' || menu.row.eff.status === 'completed' ? (
           <Item icon={<NotebookText size={13} />} label={t('log.write')} onClick={() => { onWriteLog(menu.row); onClose() }} />
         ) : null}
         <Item icon={<CornerUpLeft size={13} />} label={t('gantt.moveToTopLevel')} onClick={() => { onOutdent(menu.row); onClose() }} />

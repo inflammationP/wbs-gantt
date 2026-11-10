@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { GanttPage } from './pages/GanttPage'
 import { TodayPage } from './pages/TodayPage'
@@ -12,6 +12,7 @@ import { DayDetailPanel } from './components/DayDetailPanel'
 import { UpdateOverlays } from './components/UpdateOverlays'
 import { StorageNotice } from './components/StorageNotice'
 import { PlanPrompt } from './components/PlanPrompt'
+import { AiCopilot } from './components/AiPanel'
 import { StickyNotes } from './components/StickyNotes'
 import { useStore } from './store/useStore'
 import { useT } from './lib/useT'
@@ -21,6 +22,7 @@ import { isTauri } from './lib/updater'
 export default function App() {
   const t = useT()
   const view = useStore((s) => s.activeView)
+  const [aiOpen, setAiOpen] = useState(false)
   // Re-keyed on every click of the nav's Gantt item, so the page remounts (and
   // scrolls back to today) instead of resuming where it was left.
   const ganttKey = useStore((s) => s.ganttKey)
@@ -94,7 +96,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-bg text-fg">
-      <Sidebar />
+      <Sidebar onOpenAi={() => setAiOpen(true)} />
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <StorageNotice />
         {view === 'gantt' && <GanttPage key={ganttKey} />}
@@ -105,6 +107,7 @@ export default function App() {
         {view === 'settings' && <SettingsPage />}
         <PlanPrompt />
         <UpdateOverlays />
+        <AiCopilot open={aiOpen} onClose={() => setAiOpen(false)} />
       </main>
       {/* Sits left of the task panel, so opening a task from a day keeps the
           day's list on screen. Opened from the timeline header in the Gantt and

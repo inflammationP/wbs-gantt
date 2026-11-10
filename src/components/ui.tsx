@@ -53,7 +53,9 @@ export function Modal({
         className={`bg-panel border shadow-2xl max-h-[88vh] overflow-hidden flex flex-col ${
           soft ? 'rounded-2xl border-border/70' : 'rounded-[4px] border-border'
         }`}
-        style={{ width }}
+        // Never wider than the window: a dialog that overflows sideways on a
+        // small screen puts its own buttons out of reach.
+        style={{ width, maxWidth: 'calc(100vw - 24px)' }}
       >
         <div
           className={`flex items-center justify-between shrink-0 border-b border-border/70 ${

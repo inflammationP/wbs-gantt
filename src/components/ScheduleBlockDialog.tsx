@@ -10,9 +10,20 @@ import { useLang, useT } from '../lib/useT'
 
 type Kind = 'task' | 'event' | 'deadline'
 
+/** A routine or chore a block is being made for, from the day's work strip. */
+export interface ScheduleItem {
+  kind: 'habit' | 'chore'
+  id: string
+  title: string
+}
+
 export type ScheduleDraft =
-  /** `end` is given when the new block came from a drag across several slots. */
-  | { kind: 'new'; date: string; start: string; end?: string }
+  /**
+   * `end` is given when the new block came from a drag across several slots.
+   * `taskId` / `item` are given when it came from the day's "to schedule" strip:
+   * the link is what keeps the strip from offering the same work twice.
+   */
+  | { kind: 'new'; date: string; start: string; end?: string; taskId?: string; item?: ScheduleItem }
   | { kind: 'edit'; block: ScheduleBlock }
 
 /**
@@ -23,7 +34,13 @@ export type ScheduleDraft =
  * the grid already offers. That keeps the block's identity simple and means a
  * block can never be moved somewhere the current view cannot show it.
  */
-export function ScheduleBlockDialog({ draft, onClose }: { draft: ScheduleDraft; onClose: () => void }) {
+export function ScheduleBlockDialog({
+  draft,
+  onClose,
+}: {
+  draft: ScheduleDraft
+  onClose: () => void
+}) {
   const t = useT()
   const lang = useLang()
   const tasks = useStore((s) => s.tasks)
@@ -36,10 +53,25 @@ export function ScheduleBlockDialog({ draft, onClose }: { draft: ScheduleDraft; 
   const date = draft.kind === 'edit' ? draft.block.date : draft.date
   const firstStart = draft.kind === 'edit' ? draft.block.start : draft.start
 
-  const initialKind: Kind = existing ? (existing.deadline ? 'deadline' : existing.taskId ? 'task' : 'event') : 'task'
+  // A block made from the day's work keeps its link, so the strip knows the
+  // item has been given a time. It shows as one read-only line instead of the
+  // kind picker: the kind is already decided by where it came from.
+  const item = draft.kind === 'new' ? draft.item : undefined
+  const linkedKind = existing?.habitId ? 'habit' : existing?.choreId ? 'chore' : null
+  const linkedId = existing?.habitId ?? existing?.choreId ?? null
+  const linkedItem = item ?? (linkedKind && linkedId
+    ? { kind: linkedKind, id: linkedId, title: existing?.title ?? '' }
+    : null)
+  const draftTask = draft.kind === 'new' && draft.taskId
+    ? tasks.find((task) => task.id === draft.taskId)
+    : undefined
+
+  const initialKind: Kind = existing
+    ? (existing.deadline ? 'deadline' : existing.taskId ? 'task' : 'event')
+    : linkedItem ? 'event' : 'task'
   const [kind, setKind] = useState<Kind>(initialKind)
-  const [taskId, setTaskId] = useState(existing?.taskId ?? '')
-  const [title, setTitle] = useState(existing?.title ?? '')
+  const [taskId, setTaskId] = useState(existing?.taskId ?? draftTask?.id ?? '')
+  const [title, setTitle] = useState(existing?.title ?? item?.title ?? draftTask?.name ?? '')
   const [start, setStart] = useState(firstStart)
   const [end, setEnd] = useState(
     existing && !existing.deadline
@@ -52,7 +84,9 @@ export function ScheduleBlockDialog({ draft, onClose }: { draft: ScheduleDraft; 
   const linked = taskId ? tasks.find((task) => task.id === taskId) : undefined
   const linkedMissing = taskId !== '' && !live.some((task) => task.id === taskId)
 
-  const nameValid = kind === 'task' ? taskId !== '' : kind === 'event' ? title.trim() !== '' : title.trim() !== '' || taskId !== ''
+  const nameValid = linkedItem
+    ? true
+    : kind === 'task' ? taskId !== '' : kind === 'event' ? title.trim() !== '' : title.trim() !== '' || taskId !== ''
   const timesValid =
     isHHMM(start) && (kind === 'deadline' || (isHHMM(end) && (minutesOf(end) ?? 0) > (minutesOf(start) ?? 0)))
   const error = !timesValid
@@ -63,9 +97,11 @@ export function ScheduleBlockDialog({ draft, onClose }: { draft: ScheduleDraft; 
 
   const changeKind = (next: Kind) => {
     setKind(next)
-    // An event has no task; switching to it has to clear the link rather than
-    // leave one hidden behind the form.
-    if (next === 'event') setTaskId('')
+    // The selected task is deliberately kept when switching away and back: it
+    // is the form's memory, not a link on screen. `save` decides whether it is
+    // written, so an event still saves without one. Clearing it here is what
+    // made switching to Event and back to Task leave a task kind with no task,
+    // which no amount of typing in the title could satisfy.
     if (next !== 'deadline' && (minutesOf(end) ?? 0) <= (minutesOf(start) ?? 0)) {
       setEnd(toHHMM(Math.min(24 * 60 - 1, (minutesOf(start) ?? 9 * 60) + 60)))
     }
@@ -88,10 +124,16 @@ export function ScheduleBlockDialog({ draft, onClose }: { draft: ScheduleDraft; 
       date,
       start,
       end: kind === 'deadline' ? start : end,
-      title: snapshot,
+      // A linked block keeps the item's name; a free one keeps what the user
+      // typed, or the task's name when the box was left empty.
+      title: linkedItem ? linkedItem.title : snapshot,
       // Explicit `undefined`/`false` so an edit *clears* a link or a deadline
       // rather than leaving the old value behind the merge in the store.
-      taskId: taskId || undefined,
+      // A free event has no task link, whatever the picker remembers; the
+      // remembered id comes back if the kind is switched to Task again.
+      taskId: linkedItem || kind === 'event' ? undefined : taskId || undefined,
+      habitId: linkedItem?.kind === 'habit' ? linkedItem.id : undefined,
+      choreId: linkedItem?.kind === 'chore' ? linkedItem.id : undefined,
       deadline: kind === 'deadline',
     }
     if (existing) {
@@ -115,48 +157,63 @@ export function ScheduleBlockDialog({ draft, onClose }: { draft: ScheduleDraft; 
           {formatDayMonthYear(lang, toDate(date))}
         </div>
 
-        <Field label={t('schedule.kind')}>
-          <Segmented<Kind>
-            pill
-            value={kind}
-            onChange={changeKind}
-            options={[
-              { value: 'task', label: t('schedule.kind.task') },
-              { value: 'event', label: t('schedule.kind.event') },
-              { value: 'deadline', label: t('schedule.kind.deadline') },
-            ]}
-          />
-        </Field>
-
-        {kind !== 'event' && (
-          <Field label={t('schedule.task')}>
-            <select className={softInputCls} value={taskId} onChange={(e) => pickTask(e.target.value)} autoFocus>
-              <option value="">{t('schedule.noTask')}</option>
-              {linkedMissing && linked && <option value={linked.id} disabled>{linked.name}</option>}
-              {projects.map((project) => {
-                const list = live.filter((task) => task.projectId === project.id)
-                if (list.length === 0) return null
-                return (
-                  <optgroup key={project.id} label={project.name}>
-                    {list.map((task) => (
-                      <option key={task.id} value={task.id}>{task.name}</option>
-                    ))}
-                  </optgroup>
-                )
-              })}
-            </select>
+        {linkedItem ? (
+          // The kind came from the row it was started on, so asking again would
+          // only offer ways to contradict it. The name is the item's own.
+          <Field label={t('schedule.name')}>
+            <div className={`${softInputCls} flex items-center gap-2`}>
+              <span className="shrink-0 text-[11px] text-dim">
+                {t(linkedItem.kind === 'habit' ? 'habit.section' : 'chore.section')}
+              </span>
+              <span className="min-w-0 truncate text-fg/90">{linkedItem.title}</span>
+            </div>
           </Field>
-        )}
+        ) : (
+          <>
+            <Field label={t('schedule.kind')}>
+              <Segmented<Kind>
+                pill
+                value={kind}
+                onChange={changeKind}
+                options={[
+                  { value: 'task', label: t('schedule.kind.task') },
+                  { value: 'event', label: t('schedule.kind.event') },
+                  { value: 'deadline', label: t('schedule.kind.deadline') },
+                ]}
+              />
+            </Field>
 
-        <Field label={t('schedule.name')}>
-          <input
-            className={softInputCls}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder={linked?.name ?? t('schedule.name')}
-            autoFocus={kind === 'event'}
-          />
-        </Field>
+            {kind !== 'event' && (
+              <Field label={t('schedule.task')}>
+                <select className={softInputCls} value={taskId} onChange={(e) => pickTask(e.target.value)} autoFocus>
+                  <option value="">{t('schedule.noTask')}</option>
+                  {linkedMissing && linked && <option value={linked.id} disabled>{linked.name}</option>}
+                  {projects.map((project) => {
+                    const list = live.filter((task) => task.projectId === project.id)
+                    if (list.length === 0) return null
+                    return (
+                      <optgroup key={project.id} label={project.name}>
+                        {list.map((task) => (
+                          <option key={task.id} value={task.id}>{task.name}</option>
+                        ))}
+                      </optgroup>
+                    )
+                  })}
+                </select>
+              </Field>
+            )}
+
+            <Field label={t('schedule.name')}>
+              <input
+                className={softInputCls}
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder={linked?.name ?? t('schedule.name')}
+                autoFocus={kind === 'event'}
+              />
+            </Field>
+          </>
+        )}
 
         <div className={`grid ${kind === 'deadline' ? 'grid-cols-1' : 'grid-cols-2'} gap-3`}>
           <Field label={t('schedule.start')}>

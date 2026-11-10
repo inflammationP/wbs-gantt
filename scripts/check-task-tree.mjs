@@ -35,6 +35,20 @@ import { createServer } from 'vite'
 globalThis.document = { documentElement: { dataset: {}, style: { setProperty() {} } } }
 globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} }
 
+// The parent-date assertions below read a task's creation day, so the clock has
+// to be frozen like every other check's — see `check-archive.mjs`.
+const RealDate = Date
+const FROZEN = new RealDate(2026, 8, 15, 12, 0, 0) // Tue 2026-09-15, local midday
+globalThis.Date = class extends RealDate {
+  constructor(...args) {
+    super(...args)
+    if (args.length === 0) this.setTime(FROZEN.getTime())
+  }
+  static now() {
+    return FROZEN.getTime()
+  }
+}
+
 const server = await createServer({
   server: { middlewareMode: true },
   appType: 'custom',
@@ -238,17 +252,18 @@ assert.equal(board().find((t) => t.id === grandkid).projectId, 'q')
 assert.ok(rootsOf('q').includes(a), 'and it is now one of project q’s roots')
 assert.ok(!read().includes(a), 'while project p’s own roots no longer list it')
 
-// --- parent dates follow their children ------------------------------------
+// --- the parent's end follows its children; its start is creation day ------
 
-// The defect this replaced: only the end was synced, so dragging a subtask
-// right moved its bar and left the parent's left edge where it was.
+// A container's left edge used to be the earliest child's start, so adding an
+// earlier-dated subtask dragged it backwards. It now stays on the day the task
+// was created — the frozen 2026-09-15.
 const parent = addTask({ name: 'parent', projectId: 'p', startDate: '2026-09-10', endDate: '2026-09-10' })
 const k1 = addTask({ name: 'k1', parentId: parent, projectId: 'p', startDate: '2026-09-01', endDate: '2026-09-05' })
 const k2 = addTask({ name: 'k2', parentId: parent, projectId: 'p', startDate: '2026-09-20', endDate: '2026-09-25' })
 const synced = syncParentDates(board(), [])
 const p2 = synced.find((t) => t.id === parent)
-assert.equal(p2.startDate, '2026-09-01', 'the parent starts when its earliest child does')
-assert.equal(p2.endDate, '2026-09-25', 'and ends when its latest one does')
+assert.equal(p2.startDate, '2026-09-15', 'the parent starts the day it was created')
+assert.equal(p2.endDate, '2026-09-25', 'and ends when its latest child does')
 
 // Converged: a second pass over the result finds nothing to change, which is
 // what stops the App effect that calls this from looping.
@@ -272,7 +287,8 @@ assert.equal(syncParentDates(synced, []), synced, 'a settled board is returned u
 const solo = addTask({ name: 'solo', projectId: 'p', startDate: '2026-09-10', endDate: '2026-09-12' })
 const soloKid = addTask({ name: 'solo kid', parentId: solo, projectId: 'p', startDate: '2026-10-01', endDate: '2026-10-05' })
 const worn = board().find((t) => t.id === solo)
-assert.equal(worn.startDate, '2026-10-01', 'a parent wears its child’s span while it holds one')
+assert.equal(worn.startDate, '2026-09-15', 'a parent’s start stays on its creation day while it holds a child')
+assert.equal(worn.endDate, '2026-10-05', 'while its end wears the child’s span')
 assert.deepEqual(
   worn.ownWindow,
   { start: '2026-09-10', end: '2026-09-12' },

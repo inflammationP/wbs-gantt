@@ -30,7 +30,7 @@ export const CHROME_TOKENS = [
 
 /** The signal tokens, likewise. */
 export const SIGNAL_TOKENS = [
-  'todo', 'not-started', 'in-progress', 'completed', 'paused', 'delayed',
+  'todo', 'not-started', 'in-progress', 'completed', 'paused', 'overrun', 'delayed',
 ] as const
 
 /**

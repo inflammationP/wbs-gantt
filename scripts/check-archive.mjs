@@ -165,6 +165,49 @@ assert.deepEqual(shape({ [archiveGroupId]: true, P: false }, nested).map((r) => 
   'project:p', 'archiveGroup', 'P',
 ])
 
+// A live parent does not get a folder of its own; its filed-away children
+// print the parent path in front of their names, the way the day list does.
+const liveHouse = [
+  task({ id: 'house', name: 'house', order: 0 }),
+  filed({ id: 'roomA', name: 'roomA', parentId: 'house', order: 0 }),
+  filed({ id: 'roomB', name: 'roomB', parentId: 'house', order: 1 }),
+  filed({ id: 'attic', name: 'attic', order: 2 }),
+]
+const houseRows = buildRows(liveHouse, { [archiveGroupId]: true }, [P], [])
+const houseRow = (id) => houseRows.find((r) => r.kind === 'task' && r.id === id)
+assert.deepEqual(shape({ [archiveGroupId]: true }, liveHouse), [
+  ['project', 'project:p', 0, ''],
+  ['task', 'house', 0, '1'],
+  ['archiveGroup', archiveGroupId, 0, ''],
+  ['task', 'roomA', 1, ''],
+  ['task', 'roomB', 1, ''],
+  ['task', 'attic', 1, ''],
+])
+assert.equal(houseRow('roomA').archiveParentPath, true, 'the child from a live parent prints its path')
+assert.deepEqual(houseRow('roomA').ancestors, ['house'])
+assert.equal(houseRow('roomB').archiveParentPath, true)
+assert.equal(houseRow('attic').archiveParentPath, false, 'a top-level archive needs no path')
+assert.equal(liveHouse.length, 4, 'no parent copy is written')
+assert.deepEqual(archivedRoots(liveHouse).map((t) => t.id), ['roomA', 'roomB', 'attic'])
+
+// Filing the parent away nests the children under it and turns the annotation
+// off: the parent row already says where they are.
+const parentFiled = { ...liveHouse[0], archivedAt: '2026-10-01T00:00:00.000Z' }
+const withParentFiled = [parentFiled, liveHouse[1], liveHouse[2], liveHouse[3]]
+assert.deepEqual(shape({ [archiveGroupId]: true }, withParentFiled), [
+  ['project', 'project:p', 0, ''],
+  ['archiveGroup', archiveGroupId, 0, ''],
+  ['task', 'house', 1, ''],
+  ['task', 'roomA', 2, ''],
+  ['task', 'roomB', 2, ''],
+  ['task', 'attic', 1, ''],
+])
+const filedHouseRow = (id) =>
+  buildRows(withParentFiled, { [archiveGroupId]: true }, [P], []).find(
+    (r) => r.kind === 'task' && r.id === id,
+  )
+assert.equal(filedHouseRow('roomA').archiveParentPath, false, 'the archived parent is already the line above')
+
 // --- a branch is the unit --------------------------------------------------
 
 // Two levels, one archive action: the group holds the branch root, and the
@@ -286,6 +329,26 @@ assert.ok(
   !strictLogObligations(board(), [], '2026-09-05').some((o) => o.task.id === running),
   'and it stops owing logs where it ran',
 )
+
+// The drawer row for a child of a live parent carries the parent path; the row
+// under an archived parent does not. Neither writes a parent copy.
+const drawerRows = () => buildRows(board(), { [archiveGroupId]: true }, [P], [])
+const drawerRow = (id) =>
+  drawerRows().find((r) => r.kind === 'task' && r.id === id && isArchived(r.task))
+assert.equal(drawerRow(running)?.archiveParentPath, true, 'the live parent path is printed')
+assert.deepEqual(drawerRow(running)?.ancestors, ['shell'])
+const countBeforeRestore = board().length
+unarchiveTasks([running])
+assert.equal(board().length, countBeforeRestore, 'restoring the child did not copy the parent back')
+assert.equal(drawerRow(running), undefined, 'and it is back on the board, not in the drawer')
+
+archiveTasks([running])
+assert.equal(drawerRow(running)?.archiveParentPath, true)
+archiveTasks([shell])
+const afterParentFiled = drawerRows()
+assert.equal(drawerRow(running)?.archiveParentPath, false, 'the archived parent is the line above')
+assert.ok(afterParentFiled.some((r) => r.kind === 'task' && r.id === shell), 'the parent is in the drawer')
+assert.ok(afterParentFiled.some((r) => r.kind === 'task' && r.id === running), 'with its child under it')
 
 // --- restoring ------------------------------------------------------------
 

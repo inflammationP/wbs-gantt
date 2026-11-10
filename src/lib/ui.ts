@@ -22,6 +22,7 @@ export type SignalToken =
   | 'in-progress'
   | 'completed'
   | 'paused'
+  | 'overrun'
   | 'delayed'
 
 /**
@@ -69,6 +70,7 @@ export const STATUS_META: Record<TaskStatus, StatusMeta> = {
   'in-progress': { labelKey: 'status.inProgress', token: 'in-progress' },
   completed: { labelKey: 'status.completed', token: 'completed' },
   paused: { labelKey: 'status.paused', token: 'paused' },
+  overrun: { labelKey: 'status.overrun', token: 'overrun' },
   delayed: { labelKey: 'status.delayed', token: 'delayed' },
 }
 
@@ -115,7 +117,7 @@ export function priorityWash(p: TaskPriority | null): string | undefined {
   return `linear-gradient(to right, ${sigAlpha(token, 0.22)}, ${sigAlpha(token, 0)} 56px)`
 }
 
-export const STATUS_ORDER: TaskStatus[] = ['todo', 'not-started', 'in-progress', 'completed', 'paused', 'delayed']
+export const STATUS_ORDER: TaskStatus[] = ['todo', 'not-started', 'in-progress', 'completed', 'paused', 'overrun', 'delayed']
 export const PRIORITY_ORDER: TaskPriority[] = ['low', 'medium', 'high', 'top']
 
 // Project identity colours, chosen by the user in the project dialog. Not part

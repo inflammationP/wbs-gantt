@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import {
   BarChart2, Calendar, ClipboardList, Download, LayoutDashboard, ListChecks, Minus,
-  Newspaper, Pencil, Plus, Settings, Upload,
+  Newspaper, Pencil, Plus, Settings, Sparkles, Upload,
 } from 'lucide-react'
 import { AppView, Project } from '../types'
 import { useStore } from '../store/useStore'
@@ -29,7 +29,7 @@ const NAV: { id: AppView; labelKey: keyof Dict; icon: typeof BarChart2 }[] = [
   { id: 'settings', labelKey: 'nav.settings', icon: Settings },
 ]
 
-export function Sidebar() {
+export function Sidebar({ onOpenAi }: { onOpenAi: () => void }) {
   const t = useT()
   const { notice, element: dialogs } = useDialogs()
   const activeView = useStore((s) => s.activeView)
@@ -169,6 +169,14 @@ export function Sidebar() {
           )
         })}
       </nav>
+
+      <button
+        onClick={onOpenAi}
+        className="w-full flex items-center gap-2.5 px-4 h-9 text-[12px] text-muted hover:text-fg hover:bg-panel2/50 border-l-2 border-transparent transition-colors"
+      >
+        <Sparkles size={15} className="text-accent" />
+        {t('ai.open')}
+      </button>
 
       <div className="mx-4 my-2 border-t border-line" />
 

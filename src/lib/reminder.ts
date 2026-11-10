@@ -374,7 +374,10 @@ export function collectDay(board: Board, day: string, leadDays: number): DayCats
     .filter(
       (x) =>
         (isLeaf(x) || (x.deadline != null && x.deadline < day)) &&
-        states.get(x.id)?.status === 'delayed',
+        // An overrun task's ddl has not arrived, but its planned end has: it
+        // was in this digest before the two states were told apart, and a task
+        // dropping out of the reminder is a task nobody gets nudged about.
+        (states.get(x.id)?.status === 'delayed' || states.get(x.id)?.status === 'overrun'),
     )
     .sort(byDateThenName)
     .map((x): DigestItem => ({

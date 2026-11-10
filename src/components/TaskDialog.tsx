@@ -334,12 +334,30 @@ export function TaskForm({ onClose, existing, defaultParentId, defaultProjectId,
             {/* A commitment, not a span: editable even on a rolled-up parent,
                 and shown for long-term goals, whose only hard date this is. */}
             <Field label={t('task.deadlineOptional')}>
-              <input
-                type="date"
-                className={inputCls}
-                value={form.deadline}
-                onChange={(e) => set('deadline', e.target.value)}
-              />
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  className={`${inputCls} min-w-0 flex-1`}
+                  value={form.deadline}
+                  onChange={(e) => set('deadline', e.target.value)}
+                />
+                {/* Usually the ddl is the planned end — offer the copy instead of
+                    making it a second date to retype and keep in step by hand. */}
+                {!isLT && form.endDate && form.deadline !== form.endDate && (
+                  <button
+                    type="button"
+                    onClick={() => set('deadline', form.endDate)}
+                    className="shrink-0 h-8 px-2.5 text-[11px] text-muted hover:text-fg border border-border rounded-[3px]"
+                  >
+                    {t('task.deadlineFromEnd')}
+                  </button>
+                )}
+              </div>
+              {/* The ddl is the outer bound; a plan that ends after it is a plan
+                  that will be late the moment it is followed. */}
+              {!isLT && form.endDate && form.deadline && form.endDate > form.deadline && (
+                <div className="mt-1 text-[10px] leading-relaxed text-delayed">{t('task.deadlineBeforeEnd')}</div>
+              )}
               <div className="mt-1 text-[10px] leading-relaxed text-dim">{t('task.deadlineHint')}</div>
             </Field>
 

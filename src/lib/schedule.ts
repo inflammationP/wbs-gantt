@@ -158,16 +158,59 @@ export function dayLoad(plan: DayPlan | undefined, blocks: ScheduleBlock[], date
 }
 
 /**
- * Whether the start-of-day prompt is due: the day was never planned, and the
- * user has not already put it off today. `skippedOn` is a date, not a flag, so
- * the same answer holds all day and expires by itself at midnight.
+ * Whether the start-of-day prompt is due: the day was never planned, the user
+ * has not already put it off today, and there is something on the board to plan.
+ *
+ * `skippedOn` is a date, not a flag, so the same answer holds all day and
+ * expires by itself at midnight. `hasTasks` is what keeps a fresh install — an
+ * empty board, where the dialog would only say there is nothing to choose from —
+ * from being asked before the user has created anything.
  */
 export function promptDue(
   plan: DayPlan | undefined,
   skippedOn: string | null,
   today: string,
+  hasTasks: boolean,
 ): boolean {
-  return plannedIds(plan) === undefined && skippedOn !== today
+  return hasTasks && plannedIds(plan) === undefined && skippedOn !== today
+}
+
+/**
+ * The span after pulling one edge of a block to the half-hour `at`.
+ *
+ * The other edge stays put; the dragged one may not cross it, and the block
+ * keeps at least half an hour. Minutes, because the timetable's geometry is in
+ * minutes and the caller converts back to `HH:MM` only when it writes.
+ */
+export function resizeEdge(
+  start: number,
+  end: number,
+  edge: 'start' | 'end',
+  at: number,
+): { start: number; end: number } {
+  if (edge === 'start') return { start: Math.max(0, Math.min(at, end - 30)), end }
+  return { start, end: Math.min(MINUTES_PER_DAY - 1, Math.max(at, start + 30)) }
+}
+
+/**
+ * The first half-hour from `from` where a block of `minutes` fits, as `HH:MM`.
+ *
+ * A drop on the grid has a slot; a click on the day's "to schedule" strip has
+ * none, so this is the answer the click gets — the earliest gap after the
+ * working morning, so a new block does not land on one already drawn. A full
+ * day falls back to `from`: the dialog opens there and the user moves it.
+ *
+ * `blocks` is the day's own list, not the whole board.
+ */
+export function nextFreeStart(blocks: ScheduleBlock[], minutes: number, from = 8 * 60): string {
+  const span = Math.max(30, minutes)
+  const busy = blocks
+    .filter((b) => !b.deadline)
+    .map((b) => [minutesOf(b.start) ?? 0, minutesOf(b.end) ?? 0] as const)
+  for (let t = from; t + span < MINUTES_PER_DAY; t += 30) {
+    if (!busy.some(([s, e]) => t < e && s < t + span)) return toHHMM(t)
+  }
+  return toHHMM(from)
 }
 
 /** `3.5` / `8` — no trailing zeros, for a header with very little room. */
@@ -211,7 +254,9 @@ export function packBlocks(blocks: ScheduleBlock[]): Map<string, BlockLane> {
     .filter((x): x is { block: ScheduleBlock; start: number; end: number } =>
       x.start !== null && x.end !== null && x.end > x.start,
     )
-    .sort((a, b) => a.start - b.start || a.end - b.end)
+    // A longer block goes left when two start together — the "thick one on the
+    // left" default. A user's own `laneOrder` overrides it in `flush`.
+    .sort((a, b) => a.start - b.start || b.end - a.end || a.block.id.localeCompare(b.block.id))
 
   const out = new Map<string, BlockLane>()
   let cluster: typeof timed = []
@@ -219,9 +264,24 @@ export function packBlocks(blocks: ScheduleBlock[]): Map<string, BlockLane> {
 
   const flush = () => {
     if (cluster.length === 0) return
+    // The default rank puts the thickest block left, then the earlier one; a
+    // block dragged sideways carries a rank of its own, and the rest keep the
+    // default.
+    const defaults = cluster
+      .map((x, i) => ({ x, i }))
+      .sort(
+        (a, b) =>
+          b.x.end - b.x.start - (a.x.end - a.x.start) ||
+          a.x.start - b.x.start ||
+          a.i - b.i,
+      )
+    const defaultRank = new Map(defaults.map((d, rank) => [d.x.block.id, rank]))
+    const ordered = cluster
+      .map((x, i) => ({ x, i, rank: x.block.laneOrder ?? defaultRank.get(x.block.id)! }))
+      .sort((a, b) => a.rank - b.rank || a.i - b.i)
     const laneEnds: number[] = []
     const laneOf = new Map<string, number>()
-    for (const x of cluster) {
+    for (const { x } of ordered) {
       let lane = laneEnds.findIndex((end) => end <= x.start)
       if (lane === -1) {
         lane = laneEnds.length

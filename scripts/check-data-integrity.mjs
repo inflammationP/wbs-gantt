@@ -123,7 +123,7 @@ try {
   // literal passed directly to the serializer.
   seed([task('a', { deadline: '2026-10-20' })], {
     chores: [{ id: 'c', title: 'chore', note: '', date: '2026-10-13', done: false, completedDate: null }],
-    habits: [{ id: 'h', title: 'habit', note: '', parentId: null, startDate: '2026-10-13', endDate: null, weekdays: [0, 1], paused: false, pauseDate: null, pauses: [], doneDays: [] }],
+    habits: [{ id: 'h', title: 'habit', note: '', parentId: null, startDate: '2026-10-13', endDate: null, weekdays: [0, 1], durationMinutes: 25, paused: false, pauseDate: null, pauses: [], doneDays: [] }],
     notes: [{ date: '2026-10-13', body: 'note', updatedAt: '', stamps: [{ at: '12:00' }] }],
     itemLogs: [{ kind: 'chore', ownerId: 'c', date: '2026-10-13', content: 'entry', createdAt: '', updatedAt: '' }],
     todoFolders: { folder: 'custom name' },
@@ -131,7 +131,9 @@ try {
       { date: '2026-10-13', taskIds: ['a'], capacityHours: 6, hours: { a: 2.5 } },
       { date: '2026-10-14', taskIds: [] },
     ],
-    scheduleBlocks: [{ id: 'b1', date: '2026-10-13', start: '09:00', end: '10:30', title: 'block' }],
+    scheduleBlocks: [{ id: 'b1', date: '2026-10-13', start: '09:00', end: '10:30', title: 'block', habitId: 'h', laneOrder: 2 }],
+    courses: [{ week: 11, weekday: 0, start: '08:00', end: '09:35', title: 'Maths', location: 'A101', note: '' }],
+    semesterStart: '2026-08-24',
     stickyNotes: [
       { id: 's1', name: '标签 1', text: 'remember', x: 100, y: 120, w: 300, h: 260, z: 3, docked: false, rich: true, createdAt: '', updatedAt: '' },
       { id: 's2', name: '标签 2', text: '', x: 0, y: 0, z: 4, docked: false, snapped: 'left', snapAt: 120, createdAt: '', updatedAt: '' },
@@ -145,6 +147,12 @@ try {
   assert.equal(roundTrip.dayPlans.length, 2)
   assert.deepEqual(roundTrip.dayPlans[0].hours, { a: 2.5 })
   assert.equal(roundTrip.scheduleBlocks.length, 1)
+  assert.equal(roundTrip.scheduleBlocks[0].habitId, 'h', "a routine's block keeps the link through the snapshot")
+  assert.equal(roundTrip.scheduleBlocks[0].laneOrder, 2, "a dragged lane order rides through the snapshot")
+  assert.equal(roundTrip.habits[0].durationMinutes, 25, 'a routine duration rides through the snapshot')
+  assert.equal(roundTrip.courses.length, 1, 'imported classes ride through the snapshot')
+  assert.equal(roundTrip.courses[0].title, 'Maths')
+  assert.equal(roundTrip.semesterStart, '2026-08-24')
   assert.equal(roundTrip.stickyNotes.length, 2)
   assert.equal(roundTrip.stickyNotes[0].text, 'remember')
   assert.equal(roundTrip.stickyNotes[0].docked, false)
@@ -205,6 +213,39 @@ try {
   assert.equal(sanitized.dayPlans.length, 3, 'hours alone are not a plan')
   assert.deepEqual(sanitized.scheduleBlocks.map((b) => b.id), ['ok', 'dead'])
   assert.equal(sanitized.scheduleBlocks[1].end, '17:00', 'a deadline is forced to a point')
+
+  // A routine duration is a positive minute count or nothing at all. An
+  // empty-titled block survives only because it is linked to a routine — that
+  // link is what the day's "to schedule" strip reads.
+  const linkedWork = importing([], {
+    habits: [
+      { id: 'h1', startDate: '2026-10-13', weekdays: [0], durationMinutes: 25 },
+      { id: 'h2', startDate: '2026-10-13', weekdays: [0], durationMinutes: -3 },
+      { id: 'h3', startDate: '2026-10-13', weekdays: [0], durationMinutes: 9999 },
+    ],
+    scheduleBlocks: [
+      { id: 'linked', date: '2026-10-13', start: '10:00', end: '10:30', title: '', habitId: 'h1' },
+    ],
+  })
+  assert.deepEqual(linkedWork.habits.map((h) => h.durationMinutes), [25, null, 1440])
+  assert.deepEqual(linkedWork.scheduleBlocks.map((b) => b.id), ['linked'])
+  assert.equal(linkedWork.scheduleBlocks[0].habitId, 'h1')
+
+  // Classes that cannot be placed are dropped, and a semester start that is
+  // not a date is "not set" rather than a string that makes every week wrong.
+  const courseRows = importing([], {
+    semesterStart: 'not a date',
+    courses: [
+      { week: 11, weekday: 0, start: '08:00', end: '09:35', title: 'Maths', location: 'A101', note: '' },
+      { week: 0, weekday: 0, start: '08:00', end: '09:00', title: 'bad week', location: '', note: '' },
+      { week: 11, weekday: 7, start: '08:00', end: '09:00', title: 'bad day', location: '', note: '' },
+      { week: 11, weekday: 0, start: '9:00', end: '10:00', title: 'bad time', location: '', note: '' },
+      { week: 11, weekday: 0, start: '08:00', end: '09:00', title: '   ', location: '', note: '' },
+      { week: 11, weekday: 0, start: '08:00', end: '09:35', title: 'Maths', location: 'A101', note: '' },
+    ],
+  })
+  assert.deepEqual(courseRows.courses.map((c) => c.title), ['Maths'])
+  assert.equal(courseRows.semesterStart, null)
   assert.deepEqual(sanitized.stickyNotes.map((n) => n.id), ['ok', 'bad-coords', 'blank', 'bad-size'])
   assert.equal(sanitized.stickyNotes[1].text, 'kept', 'a bad coordinate keeps the text')
   assert.equal(sanitized.stickyNotes[1].x, 16, 'and falls back to a visible point')
@@ -326,6 +367,26 @@ try {
   assert.equal('color' in state().stickyNotes.find((n) => n.id === 'bad'), false, 'a non-hex colour is dropped')
   state().updateStickyNote('tinted', { color: null })
   assert.equal(state().stickyNotes.find((n) => n.id === 'tinted').color, null)
+
+  // A finished task leaves a "plan next" reminder; answering it with a plan
+  // clears it. It is runtime state, so it must not ride through a save.
+  seed([task('done', { startDate: state().today, endDate: state().today })])
+  state().addLog({ taskId: 'done', date: state().today, content: 'finished', targetProgress: 100 })
+  assert.ok(state().planNudges.includes('done'), 'a completed task asks for the next plan')
+  state().setDayPlan(state().today, ['done'])
+  assert.deepEqual(state().planNudges, [], 'saving a plan answers the reminder')
+
+  seed([task('half', { startDate: state().today, endDate: state().today })])
+  state().addLog({ taskId: 'half', date: state().today, content: 'half', targetProgress: 50 })
+  assert.deepEqual(state().planNudges, [], 'an unfinished log does not ask')
+
+  // A plain task is finished by its tick rather than a log, and gets the same
+  // reminder; a rest day is a plan and answers it too.
+  seed([task('plain', { strictProgress: false, startDate: state().today, endDate: state().today })])
+  state().toggleTaskDay('plain', state().today)
+  assert.ok(state().planNudges.includes('plain'))
+  state().setDayPlan(state().today, [])
+  assert.deepEqual(state().planNudges, [], 'a rest day also answers the reminder')
 
   console.log('data integrity: all assertions passed')
 } finally {

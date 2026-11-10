@@ -7,6 +7,8 @@ import { STATUS_META } from '../lib/ui'
 import { useT } from '../lib/useT'
 import { isTauri } from '../lib/updater'
 import { ReleaseHistoryDialog } from '../components/ReleaseNotes'
+import { CourseSection } from '../components/CourseImport'
+import { AiSettingsSection } from '../components/AiSettings'
 import { ACCELERATOR_URL, FEEDBACK_EMAIL, REPO_URL, openExternal } from '../lib/links'
 
 export function SettingsPage() {
@@ -18,14 +20,14 @@ export function SettingsPage() {
 
   return (
     <div className="flex-1 overflow-auto">
-      <div className="max-w-6xl mx-auto p-6 space-y-6">
+      <div className="p-6 space-y-6">
         <h1 className="text-[18px] font-semibold text-fg">{t('nav.settings')}</h1>
 
         {/* ---- Language ---- */}
         <section>
           <h2 className="text-[14px] font-semibold text-fg mb-1">{t('settings.language')}</h2>
           <p className="text-[12px] text-muted mb-3">{t('settings.languageHint')}</p>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3">
             {LANGS.map((code) => (
               <LanguageCard key={code} code={code} active={code === lang} onSelect={() => setLang(code)} />
             ))}
@@ -43,6 +45,12 @@ export function SettingsPage() {
             ))}
           </div>
         </section>
+
+        {/* ---- AI ---- */}
+        <AiSettingsSection />
+
+        {/* ---- Timetable ---- */}
+        <CourseSection />
 
         {/* ---- Version ---- */}
         <VersionSection />

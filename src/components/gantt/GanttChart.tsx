@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent, PointerEvent } from 'react'
 import { Row, RowProject, RowTask, buildRows, collectDescendants, isArchived, movingUnits, placeTasks, projectsInView, toggleTicked } from '../../lib/tree'
 import { buildTimeline, dateToX, DateRange, FOCUS_OFFSET_PX } from '../../lib/timeline'
-import { startOfDay, toDate } from '../../lib/dates'
+import { addDays, startOfDay, toDate } from '../../lib/dates'
 import { useStore } from '../../store/useStore'
 import { useLang, useT } from '../../lib/useT'
 import { TimelineHeader } from './TimelineHeader'
@@ -137,9 +137,12 @@ interface Props {
   onAddSibling: (row: RowTask) => void
   onEdit: (row: RowTask) => void
   onArchive: (row: RowTask) => void
+  /** Rows that just completed and carry the "plan next" chip. */
+  nudged: ReadonlySet<string>
+  onPlanNext: () => void
 }
 
-export function GanttChart({ rows, range, todo, archived, editing, todoFocus, onTodoFocus, sel, onSel, onContext, onProjectContext, onAddMenu, onAddSibling, onEdit, onArchive, dailyOpen, choresOpen, onToggleDaily, onToggleChores }: Props) {
+export function GanttChart({ rows, range, todo, archived, editing, todoFocus, onTodoFocus, sel, onSel, onContext, onProjectContext, onAddMenu, onAddSibling, onEdit, onArchive, dailyOpen, choresOpen, onToggleDaily, onToggleChores, nudged, onPlanNext }: Props) {
   const t = useT()
   const lang = useLang()
   const viewMode = useStore((s) => s.viewMode)
@@ -835,6 +838,28 @@ export function GanttChart({ rows, range, todo, archived, editing, todoFocus, on
               {row.kind === 'task' && !isArchived(row.task) && (
                 <TaskBar row={row} timeline={timeline} rowH={heightOf(row)} />
               )}
+
+              {/* A task that just finished — the row offers the next step. Sat
+                  at the bar's end rather than in the left column: this is about
+                  the piece of work that ended, and the bar is where it ended. */}
+              {row.kind === 'task' && !isArchived(row.task) && nudged.has(row.id) && row.eff.status === 'completed' && (() => {
+                const end = row.eff.end ?? row.task.endDate
+                const anchor = end ?? row.eff.start ?? row.task.startDate
+                const x = anchor ? dateToX(addDays(toDate(anchor), end ? 1 : 0), timeline) : 0
+                const left = Math.max(4, Math.min(timeline.totalWidth - 120, x + 6))
+                return (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onPlanNext()
+                    }}
+                    className="absolute z-20 h-6 px-2.5 rounded-full bg-accent text-on-accent text-[11px] font-medium shadow-md hover:brightness-110"
+                    style={{ left, top: (heightOf(row) - 24) / 2 }}
+                  >
+                    {t('gantt.planNext')}
+                  </button>
+                )
+              })()}
             </div>
           ))}
         </div>

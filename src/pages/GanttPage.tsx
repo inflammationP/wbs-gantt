@@ -16,6 +16,7 @@ import { ProjectManageDialog } from '../components/ProjectManageDialog'
 import { HistoryDialog } from '../components/HistoryDialog'
 import { NewDialog, NoProjectDialog } from '../components/NewDialog'
 import { LogDialog } from '../components/LogDialog'
+import { PlanDialog } from '../components/PlanDialog'
 import { StartTodoDialog } from '../components/StartTodoDialog'
 import { ReasonDialog } from '../components/ReasonDialog'
 import { AddMenu, ContextMenu, MenuState, ProjectContextMenu, ProjectMenuState } from '../components/gantt/ContextMenu'
@@ -54,6 +55,8 @@ export function GanttPage() {
   const projectFilter = useStore((s) => s.projectFilter)
   const setProjectFilter = useStore((s) => s.setProjectFilter)
   const projects = useStore((s) => s.projects)
+  const today = useStore((s) => s.today)
+  const planNudges = useStore((s) => s.planNudges)
   const deleteTask = useStore((s) => s.deleteTask)
   const deleteProject = useStore((s) => s.deleteProject)
   const setTaskParent = useStore((s) => s.setTaskParent)
@@ -111,6 +114,8 @@ export function GanttPage() {
   // dialog is up for the same reason pausing's do.
   const [archiveRows, setArchiveRows] = useState<{ rows: RowTask[]; bulk: boolean } | null>(null)
   const [logDialog, setLogDialog] = useState<string | null>(null)
+  // Opened by the "plan next" chip on a just-completed task.
+  const [planOpen, setPlanOpen] = useState(false)
   const [startTodo, setStartTodo] = useState<string[] | null>(null)
   // Shown in place of the task dialog while the board has no project — see
   // `openCreate`.
@@ -179,7 +184,7 @@ export function GanttPage() {
   const overlayOpen =
     menu !== null || dialog !== null || logDialog !== null || startTodo !== null || noProject ||
     mergeOpen || historyOpen || newOpen || daily !== null || add !== null || treeOpen ||
-    pauseRows !== null || archiveRows !== null
+    planOpen || pauseRows !== null || archiveRows !== null
   const hasSelection = sel.size > 0
   useEffect(() => {
     if (!editing || overlayOpen) return
@@ -552,6 +557,8 @@ export function GanttPage() {
         onToggleChores={(at) =>
           setDaily((open) => (open?.kind === 'chores' ? null : { kind: 'chores', ...at }))
         }
+        nudged={new Set(planNudges)}
+        onPlanNext={() => setPlanOpen(true)}
       />
 
       {menu && (
@@ -597,6 +604,15 @@ export function GanttPage() {
 
 
       {daily && <DailyBubble kind={daily.kind} at={daily} onClose={() => setDaily(null)} />}
+
+      {planOpen && (
+        <PlanDialog
+          day={today}
+          onClose={() => setPlanOpen(false)}
+          // Saving it clears the chips in the store; closing without saving
+          // leaves them, because nothing has been answered yet.
+        />
+      )}
 
       {treeOpen && <BoardTreeDialog onClose={() => setTreeOpen(false)} />}
 

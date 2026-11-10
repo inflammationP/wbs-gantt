@@ -175,12 +175,27 @@ export function StartTodoDialog({ taskIds, onClose }: Props) {
         </Field>
 
         <Field label={t('task.deadlineOptional')}>
-          <input
-            type="date"
-            className={inputCls}
-            value={form.deadline}
-            onChange={(e) => set({ deadline: e.target.value })}
-          />
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              className={`${inputCls} min-w-0 flex-1`}
+              value={form.deadline}
+              onChange={(e) => set({ deadline: e.target.value })}
+            />
+            {/* Same copy as `TaskDialog`: the ddl is usually the planned end. */}
+            {!activeHasKids && form.type !== 'long-term' && form.endDate && form.deadline !== form.endDate && (
+              <button
+                type="button"
+                onClick={() => set({ deadline: form.endDate })}
+                className="shrink-0 h-8 px-2.5 text-[11px] text-muted hover:text-fg border border-border rounded-[3px]"
+              >
+                {t('task.deadlineFromEnd')}
+              </button>
+            )}
+          </div>
+          {!activeHasKids && form.type !== 'long-term' && form.endDate && form.deadline && form.endDate > form.deadline && (
+            <div className="mt-1 text-[10px] leading-relaxed text-delayed">{t('task.deadlineBeforeEnd')}</div>
+          )}
           <div className="mt-1 text-[10px] leading-relaxed text-dim">{t('task.deadlineHint')}</div>
         </Field>
 
