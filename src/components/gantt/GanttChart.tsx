@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent, PointerEvent } from 'react'
+import { Sparkles } from 'lucide-react'
 import { Row, RowProject, RowTask, buildRows, collectDescendants, isArchived, movingUnits, placeTasks, projectsInView, toggleTicked } from '../../lib/tree'
 import { buildTimeline, dateToX, DateRange, FOCUS_OFFSET_PX } from '../../lib/timeline'
 import { addDays, startOfDay, toDate } from '../../lib/dates'
@@ -137,12 +138,13 @@ interface Props {
   onAddSibling: (row: RowTask) => void
   onEdit: (row: RowTask) => void
   onArchive: (row: RowTask) => void
-  /** Rows that just completed and carry the "plan next" chip. */
+  /** Rows that just completed and carry the "what next" hint. */
   nudged: ReadonlySet<string>
-  onPlanNext: () => void
+  /** Put one row's hint away. It is a note, so that is its only control. */
+  onDismissNudge: (taskId: string) => void
 }
 
-export function GanttChart({ rows, range, todo, archived, editing, todoFocus, onTodoFocus, sel, onSel, onContext, onProjectContext, onAddMenu, onAddSibling, onEdit, onArchive, dailyOpen, choresOpen, onToggleDaily, onToggleChores, nudged, onPlanNext }: Props) {
+export function GanttChart({ rows, range, todo, archived, editing, todoFocus, onTodoFocus, sel, onSel, onContext, onProjectContext, onAddMenu, onAddSibling, onEdit, onArchive, dailyOpen, choresOpen, onToggleDaily, onToggleChores, nudged, onDismissNudge }: Props) {
   const t = useT()
   const lang = useLang()
   const viewMode = useStore((s) => s.viewMode)
@@ -839,25 +841,33 @@ export function GanttChart({ rows, range, todo, archived, editing, todoFocus, on
                 <TaskBar row={row} timeline={timeline} rowH={heightOf(row)} />
               )}
 
-              {/* A task that just finished — the row offers the next step. Sat
-                  at the bar's end rather than in the left column: this is about
-                  the piece of work that ended, and the bar is where it ended. */}
+              {/* A task that just finished — a small note box saying the next
+                  step is open to you. Sat at the bar's end rather than in the
+                  left column: this is about the piece of work that ended, and
+                  the bar is where it ended. It is a note, not a button: the only
+                  thing to press is 「我知道了」, which puts it away. */}
               {row.kind === 'task' && !isArchived(row.task) && nudged.has(row.id) && row.eff.status === 'completed' && (() => {
                 const end = row.eff.end ?? row.task.endDate
                 const anchor = end ?? row.eff.start ?? row.task.startDate
                 const x = anchor ? dateToX(addDays(toDate(anchor), end ? 1 : 0), timeline) : 0
-                const left = Math.max(4, Math.min(timeline.totalWidth - 120, x + 6))
+                const left = Math.max(4, Math.min(timeline.totalWidth - 230, x + 6))
                 return (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onPlanNext()
-                    }}
-                    className="absolute z-20 h-6 px-2.5 rounded-full bg-accent text-on-accent text-[11px] font-medium shadow-md hover:brightness-110"
-                    style={{ left, top: (heightOf(row) - 24) / 2 }}
+                  <span
+                    className="absolute z-20 flex items-center gap-1.5 whitespace-nowrap rounded-[3px] border border-border bg-panel/95 px-2 text-[11px] text-muted shadow-sm"
+                    style={{ left, top: (heightOf(row) - 24) / 2, height: 24 }}
                   >
-                    {t('gantt.planNext')}
-                  </button>
+                    <Sparkles size={11} className="shrink-0 text-accent" />
+                    {t('gantt.planNudge')}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onDismissNudge(row.task.id)
+                      }}
+                      className="text-accent hover:text-fg"
+                    >
+                      {t('gantt.gotIt')}
+                    </button>
+                  </span>
                 )
               })()}
             </div>

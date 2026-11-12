@@ -445,6 +445,8 @@ export interface State {
   setDayPlan: (date: string, taskIds: string[] | null, hours?: Record<string, number>) => void
   /** Put the start-of-day prompt away for today; the corner tag stays. */
   skipTodayPlan: () => void
+  /** Put one task's "plan next" hint away; the other rows' hints stay. */
+  dismissPlanNudge: (taskId: string) => void
   /** A task's usual daily hours, prefilled next time it is planned; `null` clears. */
   setTaskDefaultHours: (taskId: string, hours: number | null) => void
   /** The day's available hours; `0` (the default — unfilled) removes the override. */
@@ -1817,6 +1819,10 @@ export const useStore = create<State>()((rawSet, get) => {
   skipTodayPlan: () => {
     set({ planSkippedOn: todayISO() })
     persistPrefs()
+  },
+
+  dismissPlanNudge: (taskId) => {
+    set((s) => ({ planNudges: s.planNudges.filter((id) => id !== taskId) }))
   },
 
   setTaskDefaultHours: (taskId, hours) => {

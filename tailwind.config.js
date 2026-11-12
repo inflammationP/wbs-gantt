@@ -36,6 +36,23 @@ export default {
         paused: v('paused'),
         delayed: v('delayed'),
       },
+      // One-off, when the day's ring reaches 100%. Two halves: the ring gives a
+      // short pop, and a halo it throws off fades as it widens.
+      keyframes: {
+        cheer: {
+          '0%': { transform: 'scale(1)', filter: 'none' },
+          '30%': { transform: 'scale(1.06)', filter: 'drop-shadow(0 0 12px rgb(var(--c-completed) / 0.55))' },
+          '100%': { transform: 'scale(1)', filter: 'none' },
+        },
+        'cheer-halo': {
+          '0%': { transform: 'scale(1)', opacity: '0.7' },
+          '100%': { transform: 'scale(1.35)', opacity: '0' },
+        },
+      },
+      animation: {
+        cheer: 'cheer 1s ease-out',
+        'cheer-halo': 'cheer-halo 900ms ease-out forwards',
+      },
     },
   },
   plugins: [],

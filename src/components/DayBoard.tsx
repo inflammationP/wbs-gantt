@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import { Check, ChevronDown, ChevronRight, NotebookText, Pencil, Plus, ScrollText, Trash2, TriangleAlert } from 'lucide-react'
 import { useStore } from '../store/useStore'
@@ -212,6 +212,22 @@ export function DayBoard({
           }
   const RingIcon = ringView.icon
 
+  // A short cheer when the ring lands on 100, and only on the crossing: opening
+  // a day that was already finished is reading a record, not news. The day is
+  // part of the comparison so that switching between two finished days does not
+  // replay it — that would be the effect celebrating a click.
+  const ringDone = !isFuture && ring.total > 0 && ring.done === ring.total
+  const [cheer, setCheer] = useState(false)
+  const cheerFrom = useRef({ day, done: ringDone })
+  useEffect(() => {
+    const wasDone = cheerFrom.current.day === day ? cheerFrom.current.done : ringDone
+    cheerFrom.current = { day, done: ringDone }
+    if (!ringDone || wasDone) return
+    setCheer(true)
+    const id = setTimeout(() => setCheer(false), 1200)
+    return () => clearTimeout(id)
+  }, [day, ringDone])
+
   const rowProps = {
     expanded,
     day,
@@ -403,28 +419,33 @@ export function DayBoard({
           layout === 'side' ? 'bg-gradient-to-b from-panel2/40 to-transparent' : ''
         }`}
       >
-        <ProgressRing
-          value={isFuture ? 0 : ring.pct}
-          fill={ringView.fill}
-          track={ringView.track}
-          label={
-            isFuture
-              ? t('day.notYetDue')
-              : ring.total === 0
-                ? t('day.noStrictTasksScheduled')
-                : t('day.ringPartial', { count: ring.done, total: ring.total })
-          }
-        >
-          <span className="font-mono text-[19px] font-semibold leading-none text-fg">
-            {isFuture || ring.total === 0 ? t('common.none') : `${ring.pct}%`}
-          </span>
-          {/* The ratio under the percentage belongs to the narrow band only. In
-              the wide one it is already in the card beside the ring, and the
-              same `3/5` twice within a hundred pixels reads as a mistake. */}
-          {layout === 'stack' && !isFuture && ring.total > 0 && (
-            <span className="font-mono text-[10px] text-dim mt-0.5">{ring.done}/{ring.total}</span>
+        <div className={`relative shrink-0 rounded-full ${cheer ? 'animate-cheer motion-reduce:animate-none' : ''}`}>
+          <ProgressRing
+            value={isFuture ? 0 : ring.pct}
+            fill={ringView.fill}
+            track={ringView.track}
+            label={
+              isFuture
+                ? t('day.notYetDue')
+                : ring.total === 0
+                  ? t('day.noStrictTasksScheduled')
+                  : t('day.ringPartial', { count: ring.done, total: ring.total })
+            }
+          >
+            <span className="font-mono text-[19px] font-semibold leading-none text-fg">
+              {isFuture || ring.total === 0 ? t('common.none') : `${ring.pct}%`}
+            </span>
+            {/* The ratio under the percentage belongs to the narrow band only.
+                In the wide one it is already in the card beside the ring, and
+                the same `3/5` twice within a hundred pixels reads as a mistake. */}
+            {layout === 'stack' && !isFuture && ring.total > 0 && (
+              <span className="font-mono text-[10px] text-dim mt-0.5">{ring.done}/{ring.total}</span>
+            )}
+          </ProgressRing>
+          {cheer && (
+            <span className="pointer-events-none absolute inset-0 rounded-full opacity-0 ring-2 ring-completed/60 animate-cheer-halo motion-reduce:animate-none" />
           )}
-        </ProgressRing>
+        </div>
 
         {layout === 'side' ? (
           <div className="flex-1 min-w-0 grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-3">
@@ -641,11 +662,7 @@ function DayRowView({
 
   return (
     <div className="group">
-      {/* The log button sits a fixed gap after the name rather than in the far
-          corner: parked at the right edge it got buried behind the badges, and
-          read as part of them. Which is also why the name no longer stretches —
-          "after the name" has to mean the name, not the space it was taking up.
-          The badges keep to the right via `ml-auto`. */}
+      {/* The badges and the hover action keep to the right via `ml-auto`. */}
       <div
         onClick={() => onToggle(row.task.id)}
         className="flex items-center gap-1.5 pl-2 pr-2 h-7 rounded-lg hover:bg-panel2"
@@ -694,21 +711,6 @@ function DayRowView({
             {row.task.name}
           </span>
         </button>
-        {row.strict && onWriteLog && (
-          <button
-            onClick={(e) => {
-              // The row as a whole toggles; writing a log is the one thing here
-              // that must not also expand it.
-              e.stopPropagation()
-              onWriteLog(row.task.id)
-            }}
-            title={t('gantt.writeLogForDay')}
-            aria-label={t('gantt.writeLogForDay')}
-            className="ml-2 shrink-0 p-1 rounded-[3px] text-dim hover:text-accent opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
-          >
-            <NotebookText size={12} />
-          </button>
-        )}
         {/* The counterpart of the log button: the one thing you can do to a
             simplified task, and the only thing that ever moves its number.
             Ticked by hand rather than written up, so it says done/not-done and
@@ -741,6 +743,22 @@ function DayRowView({
             <span className="shrink-0 px-1.5 h-4 inline-flex items-center text-[9px] font-medium rounded-full bg-delayed/15 text-delayed border border-delayed/30">
               {t('manage.overdue')}
             </span>
+          )}
+          {/* Hover-only at the row's end, where the row's actions live. */}
+          {row.strict && onWriteLog && (
+            <button
+              onClick={(e) => {
+                // The row as a whole toggles; writing a log is the one thing here
+                // that must not also expand it.
+                e.stopPropagation()
+                onWriteLog(row.task.id)
+              }}
+              title={t('gantt.writeLogForDay')}
+              aria-label={t('gantt.writeLogForDay')}
+              className="shrink-0 p-1 rounded-[3px] text-dim hover:text-accent opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+            >
+              <NotebookText size={12} />
+            </button>
           )}
         </span>
       </div>

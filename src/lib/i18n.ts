@@ -179,7 +179,8 @@ const en = {
   'gantt.view.quarter': 'Quarter',
   'gantt.view.year': 'Year',
   'gantt.backToToday': 'Back to Today',
-  'gantt.planNext': 'Plan next',
+  'gantt.planNudge': 'Plan the next step, or archive this task',
+  'gantt.gotIt': 'Got it',
   'gantt.newTask': 'New task',
 
   // --- the new-thing dialog ---
@@ -469,6 +470,7 @@ const en = {
   'log.progressAfterDay': 'Progress becomes (%)',
   'log.currentProgress': 'Currently at {percent}%',
   'log.byDays': 'Advance one day',
+  'log.complete': 'Complete',
   'log.byDaysHint': 'Advance one day = add (1 ÷ total days) × 100% of the progress. If less than a fifth of a day’s share is left after that, the task is taken as complete.',
   'log.progressRequired': 'Fill in at least one of the two — put 0 under “{add}” if nothing moved.',
   // Writing on a task that has subtasks: the label above the picker, and the
@@ -1085,7 +1087,8 @@ const zh: Dict = {
   'gantt.view.quarter': '季',
   'gantt.view.year': '年',
   'gantt.backToToday': '回到今天',
-  'gantt.planNext': '继续规划',
+  'gantt.planNudge': '可进行下一步规划或归档',
+  'gantt.gotIt': '我知道了',
   'gantt.newTask': '新建任务',
 
   'new.title': '新建',
@@ -1313,6 +1316,7 @@ const zh: Dict = {
   'log.progressAfterDay': '进度累积至（%）',
   'log.currentProgress': '目前进度 {percent}%',
   'log.byDays': '自动推进一日',
+  'log.complete': '完成',
   'log.byDaysHint': '自动推进一日＝增加（1 ÷ 总日数）× 100% 的进度。如果自动推进一日后剩余进度小于一日进度的 1/5，则会默认任务完成。',
   'log.progressRequired': '两个格子至少填一个 —— 没进展就在「{add}」里填 0。',
   'log.task': '任务',
@@ -1376,7 +1380,7 @@ const zh: Dict = {
   'day.stillMissing': { one: '还差 {count} 项', other: '还差 {count} 项' },
   'day.noStrictTasksScheduled': '当天没有要做的事',
   'day.ringPartial': '已完成 {count}/{total} 项',
-  'day.ringAll': '当天都完成了',
+  'day.ringAll': '全部完成',
   'day.taskCount': { one: '当天有 {count} 项任务', other: '当天有 {count} 项任务' },
   'day.tasksBreakdown': '{strict} 有日志 · {other} 其他',
   'day.taskList': '任务清单',
@@ -1878,7 +1882,8 @@ const fr: Dict = {
   'gantt.view.quarter': 'Trimestre',
   'gantt.view.year': 'Année',
   'gantt.backToToday': 'Revenir à aujourd’hui',
-  'gantt.planNext': 'Planifier la suite',
+  'gantt.planNudge': 'Planifier la suite ou archiver cette tâche',
+  'gantt.gotIt': 'Compris',
   'gantt.newTask': 'Nouvelle tâche',
 
   'new.title': 'Nouveau',
@@ -2118,6 +2123,7 @@ const fr: Dict = {
   'log.progressAfterDay': 'Avancement cumulé (%)',
   'log.currentProgress': 'Actuellement à {percent} %',
   'log.byDays': 'Avancer d’un jour',
+  'log.complete': 'Terminer',
   'log.byDaysHint': 'Avancer d’un jour = ajouter (1 ÷ nombre total de jours) × 100 % de l’avancement. S’il reste moins d’un cinquième d’une journée après cela, la tâche est considérée comme terminée.',
   'log.progressRequired': 'Remplissez au moins l’un des deux — mettez 0 dans « {add} » si rien n’a bougé.',
   'log.task': 'Tâche',

@@ -138,7 +138,17 @@ export function LogDialog({ taskId, existing, onClose }: Props) {
   return (
     <Modal title={existing ? t('log.editProgress') : t('log.write')} onClose={onClose} width={560}>
       <div className="space-y-3">
-        <div className="text-[13px] font-medium text-fg">{task_.name}</div>
+        <div>
+          <div className="text-[13px] font-medium text-fg">{task_.name}</div>
+          {/* The task's note, shown where the log is written: what to write
+              about is often in the note, and opening the task panel for it
+              would be the dialog making you leave it. */}
+          {task_.description.trim() !== '' && (
+            <div className="mt-0.5 text-[11px] leading-relaxed text-dim whitespace-pre-wrap">
+              {task_.description}
+            </div>
+          )}
+        </div>
 
         <LogForm
           task={task_}
@@ -350,41 +360,54 @@ function LogForm({
                 ? t('log.progressRequired', { add: t('log.progressAdd') })
                 : t('log.currentProgress', { percent: base })}
             </div>
-            {/* Splits the span across the window's days, and calls a remainder
-                below a fifth of one a completion. Right of the line rather than
-                under the boxes, because it is a way of filling one of them —
-                not a third thing to fill in. */}
-            {dayShare != null && (
+            {/* Two shortcuts rather than rules, right of the line: each fills
+                one of the boxes, so neither is a third thing to fill in. */}
+            <div className="shrink-0 flex items-center gap-1.5">
+              {dayShare != null && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError(null)
+                    // Advance one day = add (1 ÷ the task's days) × 100.
+                    //
+                    // What is left over after that is then read: a remainder
+                    // below a *fifth* of a day's share is a rounding artifact,
+                    // not work. On a 3-day task the shares are 33, 33, 33 —
+                    // after two logs the task reads 66, and the last day would
+                    // have to claim 34 to land on 100, or write a 1% log to
+                    // clear the crumb. Past that threshold the task is taken as
+                    // complete and the box is filled with 100 instead.
+                    //
+                    // A fifth, not a whole day, because the gap this closes is
+                    // only ever the rounding's: it is a crumb left by 100 ÷ N
+                    // not being a whole number, and one whole day is a day's
+                    // work that still deserves its log.
+                    const after = clampPct(base + dayShare)
+                    setProg(
+                      100 - after < dayShare / 5
+                        ? { src: 'absolute', input: '100' }
+                        : { src: 'delta', input: String(dayShare) },
+                    )
+                  }}
+                  className="h-7 px-2 text-[11px] text-muted hover:text-fg border border-border rounded-[3px] hover:bg-panel2"
+                >
+                  {t('log.byDays')}
+                </button>
+              )}
+              {/* The other short way out: today finished the whole task. It
+                  fills a box rather than saving on the spot, so the log being
+                  written is still the thing that is saved. */}
               <button
                 type="button"
                 onClick={() => {
                   setError(null)
-                  // Advance one day = add (1 ÷ the task's days) × 100.
-                  //
-                  // What is left over after that is then read: a remainder
-                  // below a *fifth* of a day's share is a rounding artifact,
-                  // not work. On a 3-day task the shares are 33, 33, 33 — after
-                  // two logs the task reads 66, and the last day would have to
-                  // claim 34 to land on 100, or write a 1% log to clear the
-                  // crumb. Past that threshold the task is taken as complete and
-                  // the box is filled with 100 instead.
-                  //
-                  // A fifth, not a whole day, because the gap this closes is
-                  // only ever the rounding's: it is a crumb left by 100 ÷ N not
-                  // being a whole number, and one whole day is a day's work
-                  // that still deserves its log.
-                  const after = clampPct(base + dayShare)
-                  setProg(
-                    100 - after < dayShare / 5
-                      ? { src: 'absolute', input: '100' }
-                      : { src: 'delta', input: String(dayShare) },
-                  )
+                  setProg({ src: 'absolute', input: '100' })
                 }}
-                className="shrink-0 text-[11px] text-accent hover:text-fg"
+                className="h-7 px-2 text-[11px] text-muted hover:text-fg border border-border rounded-[3px] hover:bg-panel2"
               >
-                {t('log.byDays')}
+                {t('log.complete')}
               </button>
-            )}
+            </div>
           </div>
           {/* The rule in words, under the boxes. It used to be the button's
               `title`, which is the browser's own tooltip and cannot be made to
